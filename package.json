@@ -1,5 +1,5 @@
 {
-  "name": "game-mcp-server",
+  "name": "maowo",
   "version": "0.2.0",
   "description": "Multiplayer game MCP server with web frontend, chat, and persistent storage",
   "main": "server.js",

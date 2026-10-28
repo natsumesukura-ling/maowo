@@ -156,7 +156,7 @@ function handleMcpMessage(message) {
     case 'initialize':
       return { jsonrpc: '2.0', id, result: {
         protocolVersion: '2024-11-05', capabilities: { tools: {} },
-        serverInfo: { name: 'game-mcp-server', version: '0.2.0' }
+        serverInfo: { name: 'maowo', version: '0.2.0' }
       }};
     case 'notifications/initialized': return null;
     case 'tools/list': return { jsonrpc: '2.0', id, result: { tools: getMcpTools() } };
