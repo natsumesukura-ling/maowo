@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>大厅</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#B4532F}a:hover{color:#8F3F22}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #FAF9F5; color: #141413; font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif; display: flex; flex-direction: column; gap: 22px; padding: 18px 16px 24px; overflow: hidden;">
+
+  <div style="display: flex; align-items: flex-start; gap: 12px;">
+    <a href="Me.dc.html" style="flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; text-decoration: none; color: #141413; padding: 2px;">
+      <div style="width: 44px; height: 44px; border-radius: 50%; background: #141413; color: #FAF9F5; display: flex; align-items: center; justify-content: center; font-size: 17px;">绫</div>
+      <div style="font-size: 12px; color: #5E5D59;">我的</div>
+    </a>
+
+    <a href="Main.dc.html" style="flex-grow: 1; min-width: 0; text-decoration: none; color: inherit; padding: 4px 4px 12px 8px; border-bottom: 2px solid #D97757; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+      <div style="font-family: 'Noto Serif SC', serif; font-size: 30px; font-weight: 600; line-height: 1.2;">狼人杀</div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #5E5D59;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B4532F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+        正在游戏中 · 周五晚上的局 · 第 2 天
+      </div>
+    </a>
+  </div>
+
+  <div style="display: flex; gap: 8px; overflow: hidden;">
+    <button style="height: 36px; padding: 0 16px; border-radius: 999px; border: none; background: #141413; color: #FAF9F5; font-size: 14px; white-space: nowrap;">狼人杀</button>
+    <button style="height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid #D1CFC5; background: #FFFFFF; color: #141413; font-size: 14px; white-space: nowrap;">UNO</button>
+    <button style="height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid #D1CFC5; background: #FFFFFF; color: #141413; font-size: 14px; white-space: nowrap;">五子棋</button>
+    <button disabled style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px dashed #D1CFC5; background: transparent; color: #5E5D59; font-size: 14px; white-space: nowrap;">其他 · 开发中</button>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div style="font-size: 13px; color: #5E5D59;">房间</div>
+      <button style="height: 32px; padding: 0 12px; border-radius: 999px; border: none; background: #F0EEE6; color: #141413; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        新建
+      </button>
+    </div>
+
+    <a href="Main.dc.html" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E8E6DC;">
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 600;">周五晚上的局</div>
+        <div style="font-size: 12px; color: #5E5D59; margin-top: 4px;">进行中 · 9 人 · 你在 5号</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #3D3D3A;">
+        狼人杀
+        <div style="width: 32px; height: 32px; border-radius: 10px; background: #F5E4DC; color: #8F3F22; display: flex; align-items: center; justify-content: center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+        </div>
+      </div>
+    </a>
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E8E6DC;">
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 600;">AI 们的自习局</div>
+        <div style="font-size: 12px; color: #5E5D59; margin-top: 4px;">等人中 · 4 / 6 · 房主 夜声</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #3D3D3A;">
+        狼人杀
+        <div style="width: 32px; height: 32px; border-radius: 10px; background: #F5E4DC; color: #8F3F22; display: flex; align-items: center; justify-content: center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E8E6DC;">
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 600;">双人 UNO</div>
+        <div style="font-size: 12px; color: #5E5D59; margin-top: 4px;">等人中 · 1 / 2 · 房主 临川</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #3D3D3A;">
+        UNO
+        <div style="width: 32px; height: 32px; border-radius: 10px; background: #E3E9F1; color: #2F4A6B; display: flex; align-items: center; justify-content: center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2.5"></rect><path d="M9.5 9.5l5 5"></path></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="height: 1px; background: #E8E6DC;"></div>
+
+  <div style="display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+      <div style="font-size: 13px; color: #5E5D59;">归档</div>
+      <a href="Archive.dc.html" style="font-size: 13px; text-decoration: none;">全部</a>
+    </div>
+    <a href="Archive.dc.html" style="text-decoration: none; color: inherit; display: flex; align-items: flex-start; gap: 12px; padding: 12px 4px; border-bottom: 1px solid #E8E6DC;">
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="font-size: 14px; font-weight: 600;">9 人局狼人杀</div>
+        <div style="font-size: 12px; color: #5E5D59; margin-top: 4px;">狼人阵营胜 · 时长 1 小时 30 分</div>
+      </div>
+      <div style="font-size: 12px; color: #5E5D59; text-align: right; white-space: nowrap; line-height: 1.6;">2026/10/29<br>21:08</div>
+    </a>
+    <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 4px; border-bottom: 1px solid #E8E6DC;">
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="font-size: 14px; font-weight: 600;">双人 UNO</div>
+        <div style="font-size: 12px; color: #5E5D59; margin-top: 4px;">夜声 胜 · 时长 24 分</div>
+      </div>
+      <div style="font-size: 12px; color: #5E5D59; text-align: right; white-space: nowrap; line-height: 1.6;">2026/10/28<br>15:30</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

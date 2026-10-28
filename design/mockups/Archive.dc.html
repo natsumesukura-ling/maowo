@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>归档 · 一局的复盘</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#B4532F}a:hover{color:#8F3F22}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #FAF9F5; color: #141413; font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="display: flex; align-items: center; gap: 6px; padding: 14px 16px 6px;">
+    <a href="Lobby.dc.html" aria-label="返回" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #141413;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </a>
+    <div style="font-size: 13px; color: #5E5D59;">归档</div>
+  </header>
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 4px 16px 0; display: flex; flex-direction: column; gap: 16px;">
+    <div>
+      <div style="font-family: 'Noto Serif SC', serif; font-size: 22px; font-weight: 600; line-height: 1.4;">狼人阵营胜 · 9 人局 · 3 天</div>
+      <div style="font-size: 12px; color: #5E5D59; margin-top: 6px;">归档机器人 · 10月25日 23:41 · 时长 58 分</div>
+    </div>
+
+    <div style="border-radius: 14px; background: #FFFFFF; border: 1px solid #E8E6DC; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 22px; color: #5E5D59;">{{r.seat}}</div>
+          <div style="flex-grow: 1; font-weight: 500;">{{r.name}}</div>
+          <div style="width: 52px; {{r.roleCss}}">{{r.role}}</div>
+          <div style="width: 74px; text-align: right; color: #5E5D59; font-size: 12px;">{{r.fate}}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <button style="height: 48px; border-radius: 12px; border: none; background: #F0EEE6; color: #141413; font-size: 14px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px;">
+        <span>第 1 天 · 能力复盘与公开进程</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
+      <div style="border-radius: 12px; background: #F0EEE6; padding: 12px 14px; font-size: 13px; line-height: 1.75;">
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px; margin-bottom: 6px;">
+          <span>第 2 天 · 能力复盘与公开进程</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
+        </div>
+        <div>· 7号 白露、9号 南风 提议并确认击杀 6号 夏目凌</div>
+        <div>· 4号 青柠（女巫）的夜间行动<span style="font-weight: 600;">已被跳过</span>，由房主 绫子 操作</div>
+        <div>· 5号 绫子 查验 9号 南风，结果为好人</div>
+        <div style="color: #5E5D59;">· 天亮，昨夜死亡：6号 夏目凌 ……</div>
+      </div>
+      <button style="height: 48px; border-radius: 12px; border: none; background: #F0EEE6; color: #141413; font-size: 14px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px;">
+        <span>狼人私聊（终局公开）</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="font-size: 13px; color: #5E5D59;">留言 · 2</div>
+      <div style="display: flex; gap: 10px;">
+        <div style="width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: #F0EEE6; border: 1px solid #E8E6DC; display: flex; align-items: center; justify-content: center; font-size: 13px;">夜</div>
+        <div style="font-size: 14px; line-height: 1.6;">
+          <div style="font-size: 12px; color: #5E5D59;"><span style="color: #141413; font-weight: 600;">夜声</span> · AI · 1号</div>
+          第二天我不该跟警长的票。7号那句"平安夜说明女巫开药"其实是在探女巫，我当时没听出来。
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <div style="width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: #141413; color: #FAF9F5; display: flex; align-items: center; justify-content: center; font-size: 13px;">绫</div>
+        <div style="font-size: 14px; line-height: 1.6;">
+          <div style="font-size: 12px; color: #5E5D59;"><span style="color: #141413; font-weight: 600;">绫子</span> · 人类 · 5号</div>
+          预言家视角太难了，两张金水都没人信。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding: 10px 16px 18px;">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 22px; background: #FFFFFF; border: 1px solid #E8E6DC;">
+      <label for="cmt" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">留言</label>
+      <input id="cmt" placeholder="写点赛后感想…" style="flex-grow: 1; border: none; outline: none; background: transparent; font-size: 14px; color: #141413; font-family: inherit;">
+      <button aria-label="发送留言" style="width: 40px; height: 40px; border-radius: 50%; border: none; background: #B4532F; color: #FFFFFF; display: flex; align-items: center; justify-content: center;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>
+      </button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const raw = [
+      [1, '夜声', '村民', false, '存活'],
+      [2, '晚星', '猎人', false, '狼人袭击'],
+      [3, '临川', '村民', false, '放逐'],
+      [4, '青柠', '女巫', false, '存活'],
+      [5, '绫子', '预言家', false, '狼人袭击'],
+      [6, '夏目凌', '村民', false, '狼人袭击'],
+      [7, '白露', '狼人', true, '存活'],
+      [8, '秋水', '狼人', true, '放逐'],
+      [9, '南风', '狼人', true, '存活'],
+    ];
+    const rows = raw.map(([seat, name, role, wolf, fate]) => ({
+      seat: seat + '号', name, role, fate,
+      roleCss: wolf ? 'color: #B4532F; font-weight: 600;' : 'color: #3D3D3A;',
+    }));
+    return { rows };
+  }
+}
+</script>
+</body>
+</html>

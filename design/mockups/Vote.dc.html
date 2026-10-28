@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>房间 · 投票</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#B4532F}a:hover{color:#8F3F22}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #FAF9F5; color: #141413; font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px;">
+    <button aria-label="返回大厅" style="width: 44px; height: 44px; border: none; background: transparent; padding: 0; display: flex; align-items: center; justify-content: center; color: #141413;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </button>
+    <div style="flex-grow: 1; min-width: 0;">
+      <div style="font-family: 'Noto Serif SC', serif; font-size: 18px; font-weight: 600;">周五晚上的局</div>
+      <div style="font-size: 12px; color: #5E5D59; margin-top: 2px;">9 人局 · 3 狼 3 民 · 预言家 女巫 猎人</div>
+    </div>
+    <div style="font-size: 12px; padding: 6px 10px; border-radius: 999px; background: #F0EEE6; color: #3D3D3A; white-space: nowrap;">第 2 天 · 投票</div>
+  </header>
+
+  <div style="margin: 0 16px; padding: 10px 14px; border-radius: 12px; background: #F0EEE6; font-size: 13px; line-height: 1.5;">
+    <div><span style="font-weight: 600;">放逐投票</span> · 已投 4 / 7</div>
+    <div style="color: #5E5D59; font-size: 12px;">还在等：3号 临川、6号 夏目凌、你</div>
+  </div>
+
+  <div style="padding: 14px 16px 6px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 4px;">
+    <sc-for list="{{seats}}" as="s" hint-placeholder-count="9">
+      <button style="border: none; background: transparent; padding: 4px 0; display: flex; flex-direction: column; align-items: center; gap: 4px; font: inherit; color: inherit; {{s.cellCss}}">
+        <div style="position: relative; width: 44px; height: 44px;">
+          <div style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; {{s.avatarCss}}">{{s.initial}}</div>
+          <div style="position: absolute; left: -4px; top: -4px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #FAF9F5; border: 1px solid #D1CFC5; font-size: 11px; line-height: 16px; text-align: center; color: #3D3D3A;">{{s.seat}}</div>
+          <sc-if value="{{s.sheriff}}" hint-placeholder-val="{{false}}">
+            <div style="position: absolute; right: -6px; bottom: -2px; height: 18px; padding: 0 4px; border-radius: 9px; background: #B4532F; color: #FFFFFF; font-size: 10px; line-height: 18px;">警</div>
+          </sc-if>
+        </div>
+        <div style="font-size: 12px; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; {{s.nameCss}}">{{s.name}}</div>
+        <div style="font-size: 10px; height: 13px; {{s.noteCss}}">{{s.note}}</div>
+      </button>
+    </sc-for>
+  </div>
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 14px 16px 0; display: flex; flex-direction: column; gap: 12px;">
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-size: 12px; color: #5E5D59;"><span style="color: #141413; font-weight: 600;">1号 夜声</span> · 警长收口</div>
+      <div style="background: #F0EEE6; border-radius: 14px; padding: 10px 14px; font-size: 14px; line-height: 1.65;">今天的票我建议落在 6号。昨天她改票的理由前后对不上，3号也问到了，她到现在没正面回答。</div>
+    </div>
+    <div style="text-align: center; font-size: 12px; color: #5E5D59;">4号 青柠 已被跳过发言</div>
+    <div style="text-align: center; font-size: 12px; color: #5E5D59;">发言结束，开始放逐投票。不能投自己，可以弃票</div>
+  </div>
+
+  <div style="padding: 10px 16px 18px; display: flex; flex-direction: column; gap: 8px;">
+    <div style="font-size: 12px; color: #5E5D59; padding-left: 4px;">点上面的座位选择，再确认</div>
+    <div style="display: flex; gap: 8px;">
+      <button style="height: 48px; padding: 0 18px; border-radius: 14px; border: 1px solid #D1CFC5; background: #FFFFFF; color: #141413; font-size: 15px;">弃票</button>
+      <button style="flex-grow: 1; height: 48px; border-radius: 14px; border: none; background: #B4532F; color: #FFFFFF; font-size: 15px; font-weight: 600;">放逐 6号 夏目凌</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const raw = [
+      { seat: 1, name: '夜声', sheriff: true, note: '已投' },
+      { seat: 2, name: '晚星', dead: true, note: '出局' },
+      { seat: 3, name: '临川', note: '' },
+      { seat: 4, name: '青柠', note: '已投' },
+      { seat: 5, name: '绫子', me: true, note: '你' },
+      { seat: 6, name: '夏目凌', picked: true, note: '已选' },
+      { seat: 7, name: '白露', note: '已投' },
+      { seat: 8, name: '秋水', dead: true, note: '出局' },
+      { seat: 9, name: '南风', note: '已投' },
+    ];
+    const seats = raw.map((s) => ({
+      ...s,
+      sheriff: !!s.sheriff,
+      initial: s.name.slice(0, 1),
+      cellCss: s.dead || s.me ? 'opacity: 0.4;' : '',
+      avatarCss: s.picked
+        ? 'background: #B4532F; border: none; color: #FFFFFF;'
+        : s.me
+          ? 'background: #141413; border: none; color: #FAF9F5;'
+          : 'background: #F0EEE6; border: 1px solid #E8E6DC; color: #3D3D3A;',
+      nameCss: s.dead ? 'text-decoration: line-through; color: #5E5D59;' : s.picked ? 'color: #B4532F; font-weight: 600;' : 'color: #141413;',
+      noteCss: s.picked ? 'color: #B4532F;' : 'color: #5E5D59;',
+    }));
+    return { seats };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "game-mcp-server",
+  "version": "0.2.0",
+  "description": "Multiplayer game MCP server with web frontend, chat, and persistent storage",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "better-sqlite3": "^11.7.0",
+    "uuid": "^10.0.0"
+  }
+}

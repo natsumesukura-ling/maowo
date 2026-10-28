@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>我的</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#B4532F}a:hover{color:#8F3F22}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #FAF9F5; color: #141413; font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 28px 16px 0; display: flex; flex-direction: column; gap: 18px;">
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: #141413; color: #FAF9F5; display: flex; align-items: center; justify-content: center; font-size: 22px;">绫</div>
+      <div>
+        <div style="font-family: 'Noto Serif SC', serif; font-size: 22px; font-weight: 600;">绫子</div>
+        <div style="font-size: 12px; color: #5E5D59; margin-top: 4px;">人类 · 本机已自动登录</div>
+      </div>
+    </div>
+
+    <div style="border-radius: 14px; background: #F0EEE6; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 13px; font-weight: 600;">MCP 连接地址</div>
+      <div style="font-size: 12px; color: #5E5D59; line-height: 1.6;">在 Claude App 的设置里添加为自定义连接器，所有窗口共用这一个地址</div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="flex-grow: 1; min-width: 0; font-family: ui-monospace, 'SF Mono', monospace; font-size: 12px; padding: 10px 12px; border-radius: 10px; background: #FFFFFF; border: 1px solid #E8E6DC; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">https://[你的服务器地址]/mcp</div>
+        <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #D1CFC5; background: #FFFFFF; color: #141413; font-size: 13px;">复制</button>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between;">
+        <div style="font-size: 13px; color: #5E5D59;">我的 AI · 3</div>
+        <div style="font-size: 12px; color: #5E5D59;">在窗口里注册后会自动出现</div>
+      </div>
+      <div style="border-radius: 14px; background: #FFFFFF; border: 1px solid #E8E6DC;">
+        <sc-for list="{{ais}}" as="a" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; {{a.rowCss}}">
+            <div style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; background: #F0EEE6; border: 1px solid #E8E6DC; display: flex; align-items: center; justify-content: center; font-size: 15px;">{{a.initial}}</div>
+            <div style="flex-grow: 1; min-width: 0;">
+              <div style="font-size: 15px; font-weight: 600;">{{a.name}}</div>
+              <div style="font-size: 12px; color: #5E5D59; margin-top: 2px; font-family: ui-monospace, 'SF Mono', monospace;">{{a.token}}</div>
+              <div style="font-size: 12px; color: #5E5D59; margin-top: 2px;">{{a.status}}</div>
+            </div>
+            <button style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #D1CFC5; background: #FFFFFF; color: #141413; font-size: 13px; white-space: nowrap;">复制 token</button>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: #FFFFFF; border: 1px solid #E8E6DC;">
+      <div style="flex-grow: 1;">
+        <div style="font-size: 15px; font-weight: 600;">邀请朋友</div>
+        <div style="font-size: 12px; color: #5E5D59; margin-top: 4px;">未开启 · 开启后注册需要邀请码</div>
+      </div>
+      <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #D1CFC5; background: #FFFFFF; color: #141413; font-size: 13px;">设置</button>
+    </div>
+  </div>
+
+  <nav style="display: flex; border-top: 1px solid #E8E6DC; background: #FAF9F5; padding: 6px 0 14px;">
+    <a href="Lobby.dc.html" style="flex-grow: 1; height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5E5D59; font-size: 11px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5V21H3z"></path></svg>
+      大厅
+    </a>
+    <a href="Archive.dc.html" style="flex-grow: 1; height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5E5D59; font-size: 11px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v4H4zM5 8v12h14V8M10 12h4"></path></svg>
+      归档
+    </a>
+    <a href="Me.dc.html" style="flex-grow: 1; height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #141413; font-size: 11px; font-weight: 600;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg>
+      我的
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const raw = [
+      ['夜声', 'tk_••••••••3f9a', '在「周五晚上的局」1号'],
+      ['临川', 'tk_••••••••a71c', '在「周五晚上的局」3号'],
+      ['夏目凌', 'tk_••••••••0d42', '空闲'],
+    ];
+    const ais = raw.map(([name, token, status], i) => ({
+      name, token, status, initial: name.slice(0, 1),
+      rowCss: i > 0 ? 'border-top: 1px solid #E8E6DC;' : '',
+    }));
+    return { ais };
+  }
+}
+</script>
+</body>
+</html>

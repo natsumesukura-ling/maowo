@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>棋局</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background: #f5efe6; color: #3d3429; min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .header { width: 100%; max-width: 480px; padding: 20px 20px 0; text-align: center; }
+    .header h1 { font-size: 20px; font-weight: 600; color: #3d3429; letter-spacing: 1px; }
+    .status-bar { font-size: 13px; color: #9b8e7e; margin-top: 5px; min-height: 18px; }
+    .status-bar.hl { color: #c67b45; font-weight: 500; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; margin: 14px 16px 0; width: calc(100% - 32px); max-width: 400px; }
+    .tab {
+      flex: 1; padding: 8px 0; text-align: center; font-size: 13px; cursor: pointer;
+      border-bottom: 2px solid #e8e0d4; color: #9b8e7e; transition: all 0.2s;
+    }
+    .tab.active { border-bottom-color: #3d3429; color: #3d3429; font-weight: 500; }
+    .tab-content { display: none; width: 100%; max-width: 480px; }
+    .tab-content.active { display: flex; flex-direction: column; align-items: center; }
+
+    /* Cards */
+    .card {
+      background: #fff; border: 1px solid #e8e0d4; border-radius: 14px;
+      padding: 20px; margin: 12px 16px 0; width: calc(100% - 32px); max-width: 400px;
+    }
+    .card-sm { padding: 12px 16px; border-radius: 12px; }
+
+    /* Setup */
+    .setup-panel label { display: block; font-size: 12px; color: #9b8e7e; margin-bottom: 5px; margin-top: 14px; }
+    .setup-panel label:first-child { margin-top: 0; }
+    .setup-panel input {
+      width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid #ddd5c9;
+      background: #faf7f2; color: #3d3429; font-size: 15px; outline: none;
+    }
+    .setup-panel input:focus { border-color: #c6a882; }
+
+    .btn {
+      display: inline-block; padding: 11px 28px; border-radius: 10px; border: none;
+      font-size: 15px; cursor: pointer; font-weight: 500; transition: all 0.2s;
+    }
+    .btn-primary { background: #c67b45; color: #fff; margin-top: 18px; width: 100%; }
+    .btn-primary:hover { background: #b56c38; }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-ghost {
+      padding: 6px 14px; font-size: 12px; background: transparent; color: #9b8e7e;
+      border: 1px solid #ddd5c9; border-radius: 8px; cursor: pointer;
+    }
+    .btn-ghost:hover { background: #f0e9de; }
+
+    /* Game area */
+    .game-info { display: flex; gap: 10px; align-items: center; margin: 12px 0 8px; font-size: 13px; }
+    .player-tag {
+      padding: 5px 14px; border-radius: 20px; background: #fff;
+      border: 1px solid #e8e0d4; color: #6b5e50; font-size: 13px; transition: all 0.3s;
+    }
+    .player-tag.active { background: #3d3429; border-color: #3d3429; color: #f5efe6; }
+    .vs-label { color: #c6b9a8; font-size: 12px; }
+
+    .board-wrap {
+      background: #fff; border: 1px solid #e8e0d4; border-radius: 14px;
+      padding: 10px; box-shadow: 0 2px 12px rgba(120,100,70,0.06);
+    }
+    .board-canvas { display: block; touch-action: none; border-radius: 6px; }
+
+    /* Chat */
+    .chat-box {
+      background: #fff; border: 1px solid #e8e0d4; border-radius: 12px;
+      margin: 10px 16px 0; width: calc(100% - 32px); max-width: 400px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .chat-title { font-size: 12px; color: #9b8e7e; padding: 8px 14px 4px; }
+    .chat-messages {
+      height: 150px; overflow-y: auto; padding: 4px 14px 8px;
+      font-size: 13px; line-height: 1.7; color: #5a4f42;
+    }
+    .chat-messages::-webkit-scrollbar { width: 4px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: #ddd5c9; border-radius: 2px; }
+    .chat-msg .sender { font-weight: 500; color: #3d3429; }
+    .chat-msg .time { font-size: 10px; color: #b8ad9e; margin-left: 6px; }
+    .chat-input-row { display: flex; border-top: 1px solid #e8e0d4; }
+    .chat-input {
+      flex: 1; border: none; padding: 10px 14px; font-size: 14px; outline: none;
+      background: transparent; color: #3d3429;
+    }
+    .chat-send {
+      border: none; background: #c67b45; color: #fff; padding: 10px 16px;
+      font-size: 13px; cursor: pointer; font-weight: 500;
+    }
+    .chat-send:hover { background: #b56c38; }
+
+    /* Move list */
+    .move-list {
+      background: #fff; border: 1px solid #e8e0d4; border-radius: 12px;
+      padding: 10px 16px; margin: 8px 16px 0; width: calc(100% - 32px); max-width: 400px;
+      max-height: 90px; overflow-y: auto; font-size: 12px; color: #9b8e7e; line-height: 1.8;
+    }
+
+    /* History */
+    .history-item {
+      background: #fff; border: 1px solid #e8e0d4; border-radius: 12px;
+      padding: 14px 16px; margin: 8px 16px 0; width: calc(100% - 32px); max-width: 400px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .history-item:hover { background: #faf7f2; }
+    .history-item .hi-title { font-size: 14px; color: #3d3429; font-weight: 500; }
+    .history-item .hi-meta { font-size: 12px; color: #9b8e7e; margin-top: 4px; }
+    .history-empty { font-size: 13px; color: #b0a494; margin-top: 30px; }
+
+    /* Detail modal */
+    .modal-bg {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.3); z-index: 100; display: flex;
+      align-items: center; justify-content: center;
+    }
+    .modal {
+      background: #f5efe6; border-radius: 16px; width: 92%; max-width: 440px;
+      max-height: 80vh; overflow-y: auto; padding: 20px;
+    }
+    .modal h3 { font-size: 16px; color: #3d3429; margin-bottom: 10px; }
+    .modal .close-btn {
+      float: right; background: none; border: none; font-size: 20px;
+      cursor: pointer; color: #9b8e7e;
+    }
+    .modal .detail-section { margin-top: 12px; }
+    .modal .detail-label { font-size: 12px; color: #9b8e7e; margin-bottom: 4px; }
+    .modal .detail-content {
+      background: #fff; border: 1px solid #e8e0d4; border-radius: 10px;
+      padding: 10px 14px; font-size: 12px; color: #5a4f42; line-height: 1.8;
+      max-height: 200px; overflow-y: auto;
+    }
+
+    .footer-info {
+      background: #fff; border: 1px solid #e8e0d4; border-radius: 12px;
+      padding: 12px 16px; margin: 14px 16px 24px; width: calc(100% - 32px); max-width: 400px;
+      font-size: 11px; color: #b0a494; line-height: 1.9;
+    }
+    .footer-info code {
+      background: #f5efe6; padding: 2px 7px; border-radius: 5px;
+      color: #8a7d6d; font-size: 11px; font-family: "SF Mono", "Fira Code", monospace;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>五子棋</h1>
+    <div class="status-bar" id="statusBar">创建游戏开始对弈</div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('play')">对弈</div>
+    <div class="tab" onclick="switchTab('history')">记录</div>
+  </div>
+
+  <!-- Tab: Play -->
+  <div class="tab-content active" id="tabPlay">
+    <div class="setup-panel card" id="setupPanel">
+      <label>玩家 1 · 黑棋 ●</label>
+      <input id="player1" type="text" value="菲菲" placeholder="输入名字">
+      <label>玩家 2 · 白棋 ○</label>
+      <input id="player2" type="text" value="夜声" placeholder="输入名字">
+      <button class="btn btn-primary" onclick="createGame()">开始对弈</button>
+    </div>
+
+    <div id="gameArea" class="hidden" style="width:100%;max-width:480px;display:flex;flex-direction:column;align-items:center;">
+      <div class="game-info">
+        <span class="player-tag" id="tag0">● 菲菲</span>
+        <span class="vs-label">vs</span>
+        <span class="player-tag" id="tag1">○ 夜声</span>
+        <button class="btn-ghost" onclick="resetGame()">新游戏</button>
+      </div>
+      <div class="board-wrap">
+        <canvas id="boardCanvas" class="board-canvas"></canvas>
+      </div>
+    </div>
+
+    <div class="move-list hidden" id="moveList"></div>
+
+    <!-- Chat -->
+    <div class="chat-box hidden" id="chatBox">
+      <div class="chat-title">对话</div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="chatInput" placeholder="说点什么..." onkeydown="if(event.key==='Enter')sendChat()">
+        <button class="chat-send" onclick="sendChat()">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: History -->
+  <div class="tab-content" id="tabHistory">
+    <div id="historyList" style="width:100%;display:flex;flex-direction:column;align-items:center;padding-bottom:20px;"></div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div class="modal-bg hidden" id="modalBg" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modalContent"></div>
+  </div>
+
+  <div class="footer-info">
+    MCP 接入 <code id="mcpUrl">加载中...</code><br>
+    AI 通过 <code>create_game</code> <code>make_move</code> <code>send_chat</code> 参与对弈
+  </div>
+
+<script>
+  let gameId = null, gameState = null, pollTimer = null, chatPollTimer = null;
+  let moveLog = [], lastChatId = 0, myName = '';
+
+  const SIZE = 15;
+  const CELL = Math.min(28, Math.floor((window.innerWidth - 80) / (SIZE - 1)));
+  const PAD = 22;
+  const CANVAS_SIZE = CELL * (SIZE - 1) + PAD * 2;
+
+  document.getElementById('mcpUrl').textContent = location.origin + '/mcp';
+  const canvas = document.getElementById('boardCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // ============================================================
+  // Tabs
+  // ============================================================
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.classList.toggle('active', (tab === 'play' && i === 0) || (tab === 'history' && i === 1));
+    });
+    document.getElementById('tabPlay').classList.toggle('active', tab === 'play');
+    document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
+    if (tab === 'history') loadHistory();
+  }
+
+  // ============================================================
+  // Board Drawing
+  // ============================================================
+  function initCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = CANVAS_SIZE * dpr; canvas.height = CANVAS_SIZE * dpr;
+    canvas.style.width = CANVAS_SIZE + 'px'; canvas.style.height = CANVAS_SIZE + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawBoard(board, lastMove) {
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    ctx.fillStyle = '#e8cfa0';
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(0, 0, CANVAS_SIZE, CANVAS_SIZE, 6); ctx.fill(); }
+    else ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    ctx.strokeStyle = 'rgba(180,140,80,0.1)'; ctx.lineWidth = 1;
+    for (let i = 0; i < CANVAS_SIZE; i += 7) {
+      ctx.beginPath(); ctx.moveTo(0, i + Math.sin(i*0.1)*2); ctx.lineTo(CANVAS_SIZE, i + Math.cos(i*0.08)*2); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(100,70,30,0.35)'; ctx.lineWidth = 0.7;
+    for (let i = 0; i < SIZE; i++) {
+      const p = PAD + i * CELL;
+      ctx.beginPath(); ctx.moveTo(PAD, p); ctx.lineTo(PAD+(SIZE-1)*CELL, p); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p, PAD); ctx.lineTo(p, PAD+(SIZE-1)*CELL); ctx.stroke();
+    }
+    const stars = [3,7,11]; ctx.fillStyle = 'rgba(100,70,30,0.5)';
+    for (const r of stars) for (const c of stars) { ctx.beginPath(); ctx.arc(PAD+c*CELL, PAD+r*CELL, 2.5, 0, Math.PI*2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(100,70,30,0.4)'; ctx.font = `${Math.max(8, CELL*0.32)}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let i = 0; i < SIZE; i++) ctx.fillText(i, PAD+i*CELL, 5);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < SIZE; i++) ctx.fillText(i, PAD-7, PAD+i*CELL);
+
+    if (!board) return;
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+      if (!board[r][c]) continue;
+      const x = PAD+c*CELL, y = PAD+r*CELL;
+      const isBlack = gameState && board[r][c] === gameState.players[0];
+      const rad = CELL * 0.42;
+      ctx.beginPath(); ctx.arc(x+1.5, y+1.5, rad, 0, Math.PI*2); ctx.fillStyle = 'rgba(0,0,0,0.13)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2);
+      if (isBlack) { const g = ctx.createRadialGradient(x-2,y-2,1,x,y,rad); g.addColorStop(0,'#4a4a4a'); g.addColorStop(1,'#1a1a1a'); ctx.fillStyle = g; }
+      else { const g = ctx.createRadialGradient(x-2,y-2,1,x,y,rad); g.addColorStop(0,'#ffffff'); g.addColorStop(1,'#d8d0c4'); ctx.fillStyle = g; }
+      ctx.fill(); ctx.strokeStyle = isBlack ? 'rgba(0,0,0,0.3)' : 'rgba(150,140,120,0.4)'; ctx.lineWidth = 0.5; ctx.stroke();
+    }
+    if (lastMove) {
+      const lx = PAD+lastMove.col*CELL, ly = PAD+lastMove.row*CELL;
+      const isB = gameState && lastMove.player === gameState.players[0];
+      ctx.fillStyle = isB ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.5)';
+      ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  canvas.addEventListener('click', (e) => {
+    if (!gameState || gameState.status !== 'playing') return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = CANVAS_SIZE / rect.width, sy = CANVAS_SIZE / rect.height;
+    const col = Math.round(((e.clientX - rect.left)*sx - PAD) / CELL);
+    const row = Math.round(((e.clientY - rect.top)*sy - PAD) / CELL);
+    if (row < 0 || row >= SIZE || col < 0 || col >= SIZE) return;
+    if (gameState.board[row][col]) return;
+    placeMove(row, col);
+  });
+
+  // ============================================================
+  // API
+  // ============================================================
+  async function createGame() {
+    const p1 = document.getElementById('player1').value.trim() || '玩家1';
+    const p2 = document.getElementById('player2').value.trim() || '玩家2';
+    myName = p1;
+    const res = await fetch('/api/games', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ gameType: 'gomoku', players: [p1, p2] })
+    });
+    const data = await res.json();
+    if (data.error) { setStatus(data.error); return; }
+    gameId = data.gameId; gameState = data.game; moveLog = []; lastChatId = 0;
+    showGame(); startPolling();
+  }
+
+  async function placeMove(row, col) {
+    if (!gameState) return;
+    const res = await fetch(`/api/games/${gameId}/move`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ player: gameState.currentPlayer, row, col })
+    });
+    const data = await res.json();
+    if (data.error) { setStatus(data.error); return; }
+    await refreshState();
+  }
+
+  async function refreshState() {
+    if (!gameId) return;
+    const res = await fetch(`/api/games/${gameId}`);
+    const s = await res.json();
+    if (s.moveCount > (gameState ? gameState.moveCount : 0) && s.lastMove) moveLog.push(s.lastMove);
+    gameState = s;
+    updateUI();
+  }
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    if (chatPollTimer) clearInterval(chatPollTimer);
+    pollTimer = setInterval(async () => {
+      if (!gameId) return;
+      await refreshState();
+      if (gameState && gameState.status === 'finished') clearInterval(pollTimer);
+    }, 2000);
+    chatPollTimer = setInterval(() => pollChat(), 2000);
+  }
+
+  // ============================================================
+  // Chat
+  // ============================================================
+  async function sendChat() {
+    const input = document.getElementById('chatInput');
+    const content = input.value.trim();
+    if (!content || !gameId) return;
+    const sender = myName || gameState.players[0];
+    await fetch(`/api/games/${gameId}/chat`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sender, content })
+    });
+    input.value = '';
+    await pollChat();
+  }
+
+  async function pollChat() {
+    if (!gameId) return;
+    const res = await fetch(`/api/games/${gameId}/chat?since=${lastChatId}`);
+    const msgs = await res.json();
+    if (msgs.length === 0) return;
+    const container = document.getElementById('chatMessages');
+    for (const m of msgs) {
+      const div = document.createElement('div');
+      div.className = 'chat-msg';
+      const ts = formatTime(m.created_at);
+      div.innerHTML = `<span class="sender">${esc(m.sender)}</span>: ${esc(m.content)} <span class="time">${ts}</span>`;
+      container.appendChild(div);
+      lastChatId = m.id;
+    }
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function formatTime(isoStr) {
+    const d = new Date(isoStr);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  // ============================================================
+  // History
+  // ============================================================
+  async function loadHistory() {
+    const container = document.getElementById('historyList');
+    container.innerHTML = '';
+    const res = await fetch('/api/games');
+    const data = await res.json();
+    const all = [...(data.active || []), ...(data.finished || [])].sort((a, b) =>
+      new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0)
+    );
+    if (all.length === 0) {
+      container.innerHTML = '<div class="history-empty">暂无对局记录</div>';
+      return;
+    }
+    for (const g of all) {
+      const gid = g.gameId || g.game_id;
+      const players = Array.isArray(g.players) ? g.players : JSON.parse(g.players);
+      const status = g.status === 'finished'
+        ? (g.winner ? `${g.winner} 获胜` : '平局')
+        : '进行中';
+      const time = formatTime(g.createdAt || g.created_at);
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      div.innerHTML = `<div class="hi-title">${esc(players.join(' vs '))}</div><div class="hi-meta">${status} · ${time}</div>`;
+      div.onclick = () => showDetail(gid);
+      container.appendChild(div);
+    }
+  }
+
+  async function showDetail(gid) {
+    const res = await fetch(`/api/games/${gid}/history`);
+    const data = await res.json();
+    const players = Array.isArray(data.players) ? data.players : JSON.parse(data.players);
+    const moves = Array.isArray(data.moves) ? data.moves : JSON.parse(data.moves || '[]');
+    const msgs = data.messages || [];
+
+    let movesHtml = moves.map((m, i) => `${i+1}. ${m.player} (${m.symbol}) → ${m.row}, ${m.col}`).join('<br>');
+    if (!movesHtml) movesHtml = '无';
+
+    let chatHtml = msgs.map(m => {
+      const ts = formatTime(m.created_at);
+      return `<b>${esc(m.sender)}</b>: ${esc(m.content)} <span style="color:#b8ad9e;font-size:10px;">${ts}</span>`;
+    }).join('<br>');
+    if (!chatHtml) chatHtml = '无对话记录';
+
+    const status = data.status === 'finished' ? (data.winner ? `${data.winner} 获胜` : '平局') : '进行中';
+
+    document.getElementById('modalContent').innerHTML = `
+      <button class="close-btn" onclick="closeModal()">✕</button>
+      <h3>${esc(players.join(' vs '))}</h3>
+      <div style="font-size:12px;color:#9b8e7e;">${status} · ${formatTime(data.createdAt || data.created_at)}</div>
+      <div class="detail-section"><div class="detail-label">棋步记录</div><div class="detail-content">${movesHtml}</div></div>
+      <div class="detail-section"><div class="detail-label">对话记录</div><div class="detail-content">${chatHtml}</div></div>
+    `;
+    document.getElementById('modalBg').classList.remove('hidden');
+  }
+
+  function closeModal() { document.getElementById('modalBg').classList.add('hidden'); }
+
+  // ============================================================
+  // UI
+  // ============================================================
+  function showGame() {
+    document.getElementById('setupPanel').classList.add('hidden');
+    document.getElementById('gameArea').classList.remove('hidden');
+    document.getElementById('gameArea').style.display = 'flex';
+    document.getElementById('moveList').classList.remove('hidden');
+    document.getElementById('chatBox').classList.remove('hidden');
+    updateUI();
+  }
+
+  function updateUI() {
+    if (!gameState) return;
+    const { players, currentPlayer, status, winner, lastMove } = gameState;
+    const tag0 = document.getElementById('tag0'), tag1 = document.getElementById('tag1');
+    tag0.textContent = `● ${players[0]}`; tag1.textContent = `○ ${players[1]}`;
+    tag0.className = 'player-tag' + (currentPlayer === players[0] && status === 'playing' ? ' active' : '');
+    tag1.className = 'player-tag' + (currentPlayer === players[1] && status === 'playing' ? ' active' : '');
+    if (status === 'finished') setStatus(winner ? `${winner} 获胜 🎉` : '平局', true);
+    else setStatus(`轮到 ${currentPlayer}`);
+    drawBoard(gameState.board, lastMove);
+    const listEl = document.getElementById('moveList');
+    listEl.textContent = moveLog.map((m, i) => `${i+1}. ${m.player} (${m.symbol}) → ${m.row}, ${m.col}`).join('\n');
+    listEl.scrollTop = listEl.scrollHeight;
+  }
+
+  function setStatus(text, hl = false) {
+    const el = document.getElementById('statusBar');
+    el.textContent = text; el.className = 'status-bar' + (hl ? ' hl' : '');
+  }
+
+  function resetGame() {
+    if (pollTimer) clearInterval(pollTimer);
+    if (chatPollTimer) clearInterval(chatPollTimer);
+    gameId = null; gameState = null; moveLog = []; lastChatId = 0;
+    document.getElementById('setupPanel').classList.remove('hidden');
+    document.getElementById('gameArea').classList.add('hidden');
+    document.getElementById('moveList').classList.add('hidden');
+    document.getElementById('chatBox').classList.add('hidden');
+    document.getElementById('moveList').textContent = '';
+    document.getElementById('chatMessages').innerHTML = '';
+    setStatus('创建游戏开始对弈');
+    initCanvas(); drawBoard(null);
+  }
+
+  initCanvas(); drawBoard(null);
+</script>
+</body>
+</html>

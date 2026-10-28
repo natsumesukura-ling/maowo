@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>房间 · 夜晚</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#E38B6D}a:hover{color:#F0A68C}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #1F1E1D; color: #F0EEE6; font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px;">
+    <button aria-label="返回大厅" style="width: 44px; height: 44px; border: none; background: transparent; padding: 0; display: flex; align-items: center; justify-content: center; color: #F0EEE6;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </button>
+    <div style="flex-grow: 1; min-width: 0;">
+      <div style="font-family: 'Noto Serif SC', serif; font-size: 18px; font-weight: 600;">周五晚上的局</div>
+      <div style="font-size: 12px; color: #B7B5AD; margin-top: 2px;">9 人局 · 3 狼 3 民 · 预言家 女巫 猎人</div>
+    </div>
+    <div style="font-size: 12px; padding: 6px 10px; border-radius: 999px; background: #30302E; color: #E5E3DA; white-space: nowrap; display: flex; align-items: center; gap: 6px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+      第 3 夜
+    </div>
+  </header>
+
+  <div style="margin: 0 16px; padding: 14px; border-radius: 14px; background: #2A2927; border: 1px solid #3A3936; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="flex-grow: 1;">
+        <div style="font-size: 12px; color: #B7B5AD;">你的身份 · 5号 绫子</div>
+        <div style="font-family: 'Noto Serif SC', serif; font-size: 22px; font-weight: 600; margin-top: 2px;">预言家</div>
+      </div>
+      <button aria-label="盖住身份" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #3A3936; background: transparent; color: #E5E3DA; display: flex; align-items: center; justify-content: center;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.1 10.1 0 0 1 12 19C5.5 19 2 12 2 12a18.5 18.5 0 0 1 5.1-5.9M9.9 5.2A9.1 9.1 0 0 1 12 5c6.5 0 10 7 10 7a18.6 18.6 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M2 2l20 20"></path></svg>
+      </button>
+    </div>
+    <div style="font-size: 13px; line-height: 1.7; color: #E5E3DA;">
+      <div>第 1 夜 · 6号 夏目凌 是 <span style="font-weight: 600;">好人</span></div>
+      <div>第 2 夜 · 9号 南风 是 <span style="font-weight: 600;">好人</span></div>
+    </div>
+  </div>
+
+  <div style="padding: 16px 16px 6px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 4px;">
+    <sc-for list="{{seats}}" as="s" hint-placeholder-count="9">
+      <button style="border: none; background: transparent; padding: 4px 0; display: flex; flex-direction: column; align-items: center; gap: 4px; font: inherit; color: inherit; {{s.cellCss}}">
+        <div style="position: relative; width: 44px; height: 44px;">
+          <div style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; {{s.avatarCss}}">{{s.initial}}</div>
+          <div style="position: absolute; left: -4px; top: -4px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #1F1E1D; border: 1px solid #4A4945; font-size: 11px; line-height: 16px; text-align: center; color: #E5E3DA;">{{s.seat}}</div>
+          <sc-if value="{{s.sheriff}}" hint-placeholder-val="{{false}}">
+            <div style="position: absolute; right: -6px; bottom: -2px; height: 18px; padding: 0 4px; border-radius: 9px; background: #B4532F; color: #FFFFFF; font-size: 10px; line-height: 18px;">警</div>
+          </sc-if>
+        </div>
+        <div style="font-size: 12px; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; {{s.nameCss}}">{{s.name}}</div>
+        <div style="font-size: 10px; height: 13px; {{s.noteCss}}">{{s.note}}</div>
+      </button>
+    </sc-for>
+  </div>
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 14px 16px 0; display: flex; flex-direction: column; gap: 12px;">
+    <div style="text-align: center; font-size: 12px; color: #B7B5AD;">第 2 天 · 3号 临川 以 4 票被放逐</div>
+    <div style="text-align: center; font-size: 12px; color: #B7B5AD;">第 3 夜 · 天黑请闭眼</div>
+    <div style="text-align: center; font-size: 12px; color: #B7B5AD;">守卫、狼人、女巫已行动完毕</div>
+    <div style="align-self: center; font-size: 12px; color: #E38B6D; padding: 6px 12px; border-radius: 999px; border: 1px solid #5A3A2E;">仅你可见 · 预言家请睁眼，选择查验对象</div>
+  </div>
+
+  <div style="padding: 10px 16px 18px; display: flex; flex-direction: column; gap: 8px;">
+    <div style="font-size: 12px; color: #B7B5AD; padding-left: 4px;">点上面的座位选择，再确认</div>
+    <button style="height: 48px; border-radius: 14px; border: none; background: #C6613F; color: #FFFFFF; font-size: 15px; font-weight: 600;">查验 7号 白露</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const raw = [
+      { seat: 1, name: '夜声', sheriff: true, note: '' },
+      { seat: 2, name: '晚星', dead: true, note: '出局' },
+      { seat: 3, name: '临川', dead: true, note: '出局' },
+      { seat: 4, name: '青柠', note: '' },
+      { seat: 5, name: '绫子', me: true, note: '你' },
+      { seat: 6, name: '夏目凌', note: '好人' },
+      { seat: 7, name: '白露', picked: true, note: '已选' },
+      { seat: 8, name: '秋水', dead: true, note: '出局' },
+      { seat: 9, name: '南风', note: '好人' },
+    ];
+    const seats = raw.map((s) => ({
+      ...s,
+      sheriff: !!s.sheriff,
+      initial: s.name.slice(0, 1),
+      cellCss: s.dead || s.me ? 'opacity: 0.4;' : '',
+      avatarCss: s.picked
+        ? 'background: #C6613F; border: none; color: #FFFFFF;'
+        : s.me
+          ? 'background: #F0EEE6; border: none; color: #1F1E1D;'
+          : 'background: #30302E; border: 1px solid #3A3936; color: #E5E3DA;',
+      nameCss: s.dead ? 'text-decoration: line-through; color: #B7B5AD;' : s.picked ? 'color: #E38B6D; font-weight: 600;' : 'color: #F0EEE6;',
+      noteCss: s.picked ? 'color: #E38B6D;' : 'color: #B7B5AD;',
+    }));
+    return { seats };
+  }
+}
+</script>
+</body>
+</html>
