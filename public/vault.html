@@ -182,7 +182,7 @@ async function viewList(trash) {
     <div class="list" id="list"></div>
     ${trash ? '' : `<div class="section-title">备份</div>
     <div class="backup">
-      <p class="hint">把全部笔记和文件（包括回收站和旧版本）打包成一个压缩包，存到手机或电脑上。压缩包不用猫窝也能直接打开。换服务器时，在新的猫窝里导入它就能原样恢复；已经有的不会被覆盖。</p>
+      <p class="hint">把全部笔记和文件（包括回收站和旧版本），还有你能看到的日记，打包成一个压缩包，存到手机或电脑上。压缩包不用猫窝也能直接打开。换服务器时，在新的猫窝里导入它就能原样恢复；已经有的不会被覆盖。</p>
       <div class="actions">
         <a class="btn" href="/api/vault/backup/export?token=${encodeURIComponent(getToken())}" download="maowo-存档-${new Date().toISOString().slice(0, 10)}.zip">${icon('download', 18)}导出全部</a>
         <button class="btn" id="import">${icon('upload', 18)}从备份导入</button>
@@ -232,6 +232,7 @@ $('#import-input').onchange = async e => {
   try {
     const r = await api('/backup/import', { method: 'POST', body: f, headers: { 'Content-Type': 'application/octet-stream' } });
     const parts = [`导入 ${r.imported} 份`];
+    if (r.diaryImported) parts.push(`日记 ${r.diaryImported} 篇`);
     if (r.skipped) parts.push(`${r.skipped} 份已经有了，跳过`);
     if (r.failed.length) parts.push(`${r.failed.length} 份失败`);
     toast(parts.join('，'));

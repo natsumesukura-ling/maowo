@@ -7,6 +7,7 @@ const platform = require('./platform');
 const games = require('./games');
 const vault = require('./vault');
 const backup = require('./backup');
+const diary = require('./diary');
 const mcp = require('./mcp');
 
 const app = express();
@@ -25,6 +26,8 @@ app.get('/archive/:id', page('archive.html'));
 app.get('/me', page('me.html'));
 app.get('/login', page('login.html'));
 app.get('/vault', page('vault.html'));
+app.get('/diary', page('diary.html'));
+app.get('/diary/:id', page('diary.html'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================================
@@ -81,6 +84,7 @@ api.get('/archives', wrap(req => platform.listArchives(req.account, Number(req.q
 api.get('/archives/:id', wrap(req => platform.archive(platform.getRoom(req.params.id), req.account)));
 api.post('/archives/:id/comments', wrap(req => (platform.comment(req.account, req.params.id, req.body.text), { ok: true })));
 
+app.use('/api/diary', diary.router);
 app.use('/api', api);
 
 // ============================================================

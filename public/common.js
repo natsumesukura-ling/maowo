@@ -31,6 +31,8 @@ const Maowo = (() => {
     chevronDown: '<path d="M6 9l6 6 6-6"/>',
     chevronUp: '<path d="M6 15l6-6 6 6"/>',
     box: '<path d="M4 4h16v4H4zM5 8v12h14V8M10 12h4"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M9 7h6"/>',
     copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
   };
   const icon = (name, size = 18, width = 1.8) =>

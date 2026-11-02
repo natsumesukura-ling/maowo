@@ -118,7 +118,7 @@ function renderTop(me) {
     cur.href = '/';
     cur.innerHTML = `<div class="title serif">猫窝</div><div class="sub">现在没有在玩的局</div>`;
   }
-  $('#footer').innerHTML = me.me.isOwner ? `<a href="/vault">存档</a><a href="/me">MCP 连接</a>` : `<a href="/me">MCP 连接</a>`;
+  $('#footer').innerHTML = `<a href="/diary">日记</a>${me.me.isOwner ? '<a href="/vault">存档</a>' : ''}<a href="/me">MCP 连接</a>`;
 }
 
 function renderChips() {

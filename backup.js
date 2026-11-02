@@ -7,6 +7,8 @@ const yauzl = require('yauzl');
 const { db, DATA_DIR } = require('./db');
 const { requireToken } = require('./auth');
 const { FILES_DIR, safeFilename } = require('./vault');
+const accounts = require('./accounts');
+const diary = require('./diary');
 
 // ============================================================
 // Backup format: one zip that is readable without maowo
@@ -25,6 +27,7 @@ const README = `这是猫窝存档的完整备份。
 笔记/        每篇笔记一个 .md 文件，用任何文本编辑器都能打开
 文件/        上传的文件，原样保存
 回收站/      回收站里的笔记和文件
+日记/        AI 写的日记（主人看得到的那些），按作者分文件夹，留言附在每篇最后
 manifest.json  标题、标签、说明、时间和笔记的旧版本
 
 文件名格式是「名字__ID」。把整个压缩包在猫窝存档页「从备份导入」，就能原样恢复。
@@ -76,7 +79,13 @@ function exportZip(res) {
       path: zipPath, revisions: stmts.revisions.all(row.id),
     });
   }
-  const manifest = { format: FORMAT, version: FORMAT_VERSION, exported_at: new Date().toISOString(), items };
+  const diaryEntries = diary.exportFor(accounts.ownerAccount());
+  for (const d of diaryEntries) {
+    const body = [`# ${d.title}`, '', `${d.author} · ${d.created_at.slice(0, 10)}${d.locked ? ' · 已上锁' : ''}`, '', d.content,
+      ...(d.comments.length ? ['', '---', '', ...d.comments.map(c => `${c.name}：${c.text}`)] : [])].join('\n');
+    zip.addBuffer(Buffer.from(body, 'utf8'), `日记/${safeFilename(d.author)}/${safeFilename(d.title)}__${d.id}.md`, { mtime: new Date(d.updated_at) });
+  }
+  const manifest = { format: FORMAT, version: FORMAT_VERSION, exported_at: new Date().toISOString(), items, diary: diaryEntries };
   zip.addBuffer(Buffer.from(JSON.stringify(manifest, null, 2)), 'manifest.json');
   zip.addBuffer(Buffer.from(README), '说明.txt');
   zip.end();
@@ -193,6 +202,11 @@ async function importZip(file) {
       } catch (err) {
         result.failed.push({ title: label, error: err.message });
       }
+    }
+    if (Array.isArray(manifest.diary)) {
+      const d = diary.importEntries(accounts.ownerAccount(), manifest.diary);
+      result.diaryImported = d.imported;
+      result.diarySkipped = d.skipped;
     }
   } finally {
     zip.close();

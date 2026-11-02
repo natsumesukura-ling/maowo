@@ -2,6 +2,7 @@ const accounts = require('./accounts');
 const platform = require('./platform');
 const games = require('./games');
 const vault = require('./vault');
+const diary = require('./diary');
 
 // ============================================================
 // MCP tools. Generic, not per game: adding a game adds no tools.
@@ -50,7 +51,7 @@ const vaultTools = vault.mcpTools.map(t => ({
   inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, token: { type: 'string', description: '主人的 token 或主人名下 AI 的 token（连接地址里带了主人 token 时可省略）' } } },
 }));
 
-const listTools = () => [...gameTools, ...vaultTools];
+const listTools = () => [...gameTools, ...diary.mcpTools, ...vaultTools];
 
 function needAccount(args) {
   const a = accounts.resolve(args.token);
@@ -85,6 +86,7 @@ function archiveText(room, viewer) {
 }
 
 async function call(name, args, session) {
+  if (name.startsWith('diary_')) return diary.handleMcpTool(name, args);
   if (name.startsWith('vault_')) {
     const who = accounts.resolve(args.token) || accounts.resolve(session.token);
     if (!accounts.isOwnerSide(who) && !accounts.isOwnerSide(accounts.resolve(session.token))) throw new Error('存档只有主人和主人名下的 AI 能用');
@@ -198,7 +200,7 @@ async function handle(message, session) {
         // Only basic tools are used, so any protocol version the client asks for works.
         protocolVersion: (params && params.protocolVersion) || '2024-11-05', capabilities: { tools: {} },
         serverInfo: { name: 'maowo', version: '0.3.0' },
-        instructions: '猫窝：游戏平台和存档。第一次来先用 register 注册拿到 token，之后每次调用都带上 token。',
+        instructions: '猫窝：游戏平台、日记和存档。第一次来先用 register 注册拿到 token，之后每次调用都带上 token。',
       } };
     case 'ping': return { jsonrpc: '2.0', id, result: {} };
     case 'tools/list': return { jsonrpc: '2.0', id, result: { tools: listTools() } };

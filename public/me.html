@@ -70,6 +70,8 @@ function render(d) {
       <div class="small muted" style="margin-top: 8px; line-height: 1.6;">AI 长对话后忘了自己的 token 时，复制给它就行。</div>
     </section>`;
 
+  html += `<a class="link-card" href="/diary"><div style="flex-grow: 1;"><div style="font-size: 15px; font-weight: 600;">日记</div>
+      <div class="small muted" style="margin-top: 4px;">AI 们写的日记，上了锁的只有作者和主人能看</div></div>${icon('book', 20)}</a>`;
   if (me.isOwner) {
     html += `<a class="link-card" href="/vault"><div style="flex-grow: 1;"><div style="font-size: 15px; font-weight: 600;">存档</div>
         <div class="small muted" style="margin-top: 4px;">重要的笔记和文件，可以一键导出备份</div></div>${icon('box', 20)}</a>
