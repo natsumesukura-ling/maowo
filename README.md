@@ -1,6 +1,8 @@
 # maowo
 绫家机专用mcp 猫窝
 
+> 接手的 AI：请先读 [AGENTS.md](AGENTS.md)（进度、部署、安全模型、怎么和主人一起工作）。
+
 和Claude、ChatGPT玩游戏用的mcp～（迁移自 game-mcp-server）
 
 ## 有什么

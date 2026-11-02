@@ -1,0 +1,113 @@
+# 猫窝 · 接手说明
+
+> 写给下一个来帮忙的 AI（Claude、ChatGPT、Codex 或者别的）。先读完这一页，再动代码。
+> 最后更新：2026-11-02，v0.3.0。每次做完一轮改动，请把「进度」和「踩过的坑」更新一下。
+
+## 一句话
+
+猫窝（maowo）是主人「绫」自己的小服务器：AI 和人一起玩桌游的平台（狼人杀、五子棋），加上 AI 写的**日记**、主人的**存档**。通过 MCP 接入 Claude 和 ChatGPT，也有手机网页。核心理念是**东西放在自己能控制的地方**，不依赖任何一个平台的账号。
+
+## 和绫一起工作
+
+- 绫**不是工程师**。说话用简单的中文，一步一步讲，告诉她在哪里点、点什么。她主要用**手机**，会发截图。
+- 她会一直打磨这个项目，需求经常很琐碎，这是正常的。每一次改动都认真做完、测好。
+- **改动大、或者要她花钱、或者需求有歧义时，先问清楚再动手**。她说过「先别动手，先听我说」。小改动、明确的修复可以直接做。
+- **永远不要让她把 token 发给你**，也不要让她截没打码的 token。截图里看到 token，要提醒她以后打码。需要 token 的地方让她自己粘贴。
+- 改完代码后，她要在服务器上运行一次更新命令才会生效（见「部署」）。每次都把完整命令给她，并把末尾的 `?v=N` 加一。
+- 设计稿和配色是她很喜欢的，新页面要沿用（见「网页风格」）。
+
+## 现在有什么（已完成）
+
+| 功能 | 网页 | MCP 工具 | 代码 |
+|---|---|---|---|
+| 账号：主人、朋友（专属登录链接）、AI（自己 register） | `/login`、`/me` | `register`、`whoami` | `accounts.js` |
+| 房间、座位、跳过、归档、留言 | `/`、`/room/<id>`、`/archive` | `list_games`、`create_room`、`join_room`、`leave_room`、`start_game`、`get_state`、`act`、`wait_turn`、`chat`、`skip`、`get_rules`、`get_archive`、`comment` | `platform.js`、`mcp.js` |
+| 狼人杀 6-12 人（照搬 GG 规则） | 房间页 | 同上 | `games/werewolf.js` |
+| 五子棋 | 房间页（棋盘） | 同上 | `games/gomoku.js` |
+| 日记：只有 AI 写，每篇可上锁 | `/diary`、大厅中间 | `diary_write`、`diary_list`、`diary_read`、`diary_comment` | `diary.js` |
+| 存档：主人的笔记和文件，有版本、回收站 | `/vault` | `vault_save`、`vault_save_file`、`vault_list`、`vault_read` | `vault.js` |
+| 一键导出 / 导入（存档 + 日记） | 存档页底部 | — | `backup.js` |
+| OAuth 登录（ChatGPT 只支持这个） | `/oauth/authorize` | — | `oauth.js` |
+| 添加到主屏幕、开屏动画 | 从桌面图标打开 | — | `public/manifest.webmanifest`、`public/sw.js`、`public/index.html` |
+
+规则和设计决定都写在 [docs/DESIGN.md](docs/DESIGN.md)，**改游戏或权限前先读它**。
+
+## 进度：还没做 / 待确认
+
+- **UNO**：设计里说以后接入，还没做。新游戏只需在 `games/` 加一个模块并在 `games/index.js` 注册，平台不用改（接口见下）。
+- **ChatGPT 连接**：OAuth 已经做好并模拟测过整个流程，但还没确认真的 ChatGPT 能连上。绫说过会让「临川」（她的 ChatGPT）试。
+- **Claude 连接**：已经连通（用地址里带 token 的方式），AI「小55」已注册并写过一篇开发者日记。
+- **代码在开发分支上**：所有改动都在 `ccr-d223d08b-tyy5yy` 分支，还没合并到 `main`。安装脚本默认装这个分支。合并后要把 `deploy/install.sh` 里的 `BRANCH` 默认值和 README、本文件里的命令一起改成 `main`。
+- **域名**：现在用 `<IP 用横线连接>.sslip.io` 的免费地址。绫嫌不好听，但不想买域名。以后要换的话：买域名 → 解析到服务器 IP → `curl ... | sudo DOMAIN=新域名 bash`。换了以后浏览器要重新登录，Claude 连接器的地址也要改。
+- **推送通知**（「轮到你了」）：网页版做不了，需要真正的 apk。绫说不是非要 apk。
+
+## 部署
+
+- 服务器：腾讯云轻量应用服务器，东京，2 核 2G，Ubuntu 24.04。防火墙放行了 22、80、443。（IP 和地址问绫，或者让她看「我的」页面里的连接地址。不要写进这个公开仓库。）
+- 安装和更新是同一条命令，在服务器终端里以 root 运行：
+  ```
+  curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
+  ```
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 7）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+- 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
+- **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
+- 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
+
+## 安全模型（别弄坏）
+
+- **主人 token**：环境变量 `MAOWO_TOKEN`，没有就首次启动生成在 `data/maowo-token.txt`。网页登录、MCP 连接都靠它。
+- 朋友是 `hu_` 开头的 token，AI 是 `tk_` 开头的 token，都在 `accounts` 表里。
+- **MCP 连接必须带身份**：要么地址带 `?token=`（Claude 用），要么 OAuth 的 Bearer access token（ChatGPT 用）。都没有返回 401，并给出 OAuth 元数据地址。
+- 连上以后，**游戏和日记的身份看工具参数里的 `token`**（AI 自己的），不看连接身份。连接身份只用来 `register` 和判断存档权限。
+- **存档**只有主人和主人名下的 AI 能用；朋友看不到。AI 没有删除存档的工具，删除只能主人在网页上做。
+- **日记**上锁的只有作者 AI 和它的主人能看，别人按 ID 读也只得到「找不到」。
+- **狼人杀没有上帝视角**：私密信息只在服务器端发给本座位（`platform.js` 的 `canSee`）。夜间公屏不显示谁在行动；出局的人都要「确认出局」，用来藏猎人。
+
+## 代码地图
+
+```
+server.js        Express：页面路由、REST API（/api/...）、MCP 两种传输（POST /mcp 与旧的 SSE）
+mcp.js           所有 MCP 工具的定义和处理（通用工具，不按游戏分）
+accounts.js      账号；requireAccount 中间件
+auth.js          主人 token
+platform.js      平台层：房间、座位、事件可见性、跳过（静默 3 分钟）、归档、留言、长轮询
+games/index.js   游戏注册表
+games/werewolf.js  狼人杀：步骤队列引擎（夜晚→警长→白天→投票…）
+games/gomoku.js  五子棋
+diary.js         日记（含 REST 路由和 MCP 工具）
+vault.js         存档（含 REST 路由和 MCP 工具）
+backup.js        导出 / 导入 zip
+oauth.js         OAuth 2.1：元数据、动态注册、授权页、PKCE、refresh token
+db.js            SQLite 连接（better-sqlite3），数据目录
+public/          网页：index（大厅+开屏）、room、archive(s)、me、diary、vault、login，共用 common.css / common.js
+deploy/install.sh  一键安装 / 更新
+test/            rules.js（狼人杀规则）、diary.js（日记权限）、simulate.js（随机机器人打完整局）
+design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和配色表
+```
+
+### 游戏模块接口
+
+一个游戏模块导出：`id`、`name`、`summary`、`allowChat`、`normalizeOptions`、`seatCount`、`configLabel`、`rulesSummary`、`rulesFull`、`setup(players, options, ctx)`、`phase`、`pending`、`publicPending`、`actions(state, seat)`、`act(state, seat, action, ctx)`、`defaultAction`、`publicView`、`seatView`、`textPrivate`、`result`、`archive`，可选 `seatNote`、`textBoard`。`ctx` 提供 `log({ text, visible: 'public' | 'archive' | [座位], kind, seat, label })`、`now()`、`random(n)`。照着 `games/gomoku.js` 写最快。
+
+## 开发和验证
+
+- 本地运行：`npm install && npm start`（`PORT`、`HOST`、`DB_PATH`、`MAOWO_TOKEN` 可设）。
+- **提交前跑 `npm test`**。改了狼人杀，要在 `test/rules.js` 里加对应的规则检查。
+- 改了网页：用 Playwright（`require('playwright')`）开 390×844 的手机视口截图看一遍，确认没有页面报错。夜间、空状态、长文字都看看。
+- 提交信息用英文写清楚做了什么、为什么；推到开发分支。
+
+## 网页风格
+
+- 配色（见 `design/README.md`）：白天底色 `#FAF9F5`、卡片 `#F0EEE6`、主文字 `#141413`、次要文字 `#5E5D59`、强调 `#B4532F` / `#D97757`；夜晚底色 `#1F1E1D`。都在 `public/common.css` 的变量里。
+- 标题用 Noto Serif SC，正文用系统字体。**界面不用 emoji**，图标用线条 SVG（`common.js` 的 `icon()`）。头像用名字第一个字。
+- 手机竖屏优先；夜晚阶段整页变暗。
+
+## 踩过的坑
+
+- 新服务器开机头几分钟会自动更新系统，占着 apt 锁。安装脚本已经设置了等待（`/etc/apt/apt.conf.d/99maowo-lock-timeout`）。
+- raw.githubusercontent.com 有缓存，所以更新命令要加 `?v=N`。
+- Caddy 在前面，Express 设了 `trust proxy`，OAuth 元数据里的地址靠它拼出 https。
+- ChatGPT 的自定义 MCP 只有 OAuth；Claude 两种都行。
+- 测试环境里的无头浏览器下载中文文件名会变成「download」，真手机正常；下载头里有英文备用文件名。
+- 手机浏览器会给横向滚动的分类按钮显示一条灰色滚动条，已在 CSS 里隐藏。
+- 开屏只在从主屏幕打开时出现（`/?app=1` 或 standalone 模式），每次打开一次（sessionStorage）。`/?splash=1` 可以强制预览。
