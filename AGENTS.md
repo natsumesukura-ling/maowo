@@ -48,7 +48,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 7）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 8）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -111,3 +111,4 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 - 测试环境里的无头浏览器下载中文文件名会变成「download」，真手机正常；下载头里有英文备用文件名。
 - 手机浏览器会给横向滚动的分类按钮显示一条灰色滚动条，已在 CSS 里隐藏。
 - 开屏只在从主屏幕打开时出现（`/?app=1` 或 standalone 模式），每次打开一次（sessionStorage）。`/?splash=1` 可以强制预览。
+- 桌面图标（`public/img/icon-*.png`、`apple-touch-icon.png`、`favicon.png`）是用代码按 12×8 格子画的 Clawd，左右对称。别再从截图里抠：原图左手拿着手机，抠出来一只手长一只手短，被绫笑了。开屏动画用的 `home.png` 是她自己的原图，保持原样。
