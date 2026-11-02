@@ -3,8 +3,12 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const { GomokuGame } = require('./games/gomoku');
 const db = require('./db');
+const auth = require('./auth');
+const vault = require('./vault');
 
 const app = express();
+// MCP calls may carry a base64 file for vault_save_file, so that one route gets a larger limit.
+app.use('/mcp/messages', express.json({ limit: Math.ceil(vault.MAX_FILE_BYTES * 1.4) }));
 app.use(express.json());
 
 // ============================================================
@@ -24,6 +28,12 @@ console.log(`Loaded ${games.size} active game(s) from database`);
 // ============================================================
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/vault', (req, res) => res.sendFile(path.join(__dirname, 'public', 'vault.html')));
+
+// ============================================================
+// REST API — Vault (存档)
+// ============================================================
+app.use('/api/vault', vault.router);
 
 // ============================================================
 // REST API — Games
@@ -131,7 +141,8 @@ app.get('/mcp', (req, res) => {
     'Access-Control-Allow-Origin': '*',
   });
   res.write(`event: endpoint\ndata: /mcp/messages?sessionId=${sessionId}\n\n`);
-  mcpSessions.set(sessionId, { res, createdAt: Date.now() });
+  // A token in the connection URL (/mcp?token=...) unlocks the vault tools for this session.
+  mcpSessions.set(sessionId, { res, createdAt: Date.now(), token: req.query.token });
   const heartbeat = setInterval(() => {
     try { res.write(': heartbeat\n\n'); } catch (e) { clearInterval(heartbeat); }
   }, 30000);
@@ -142,7 +153,7 @@ app.post('/mcp/messages', (req, res) => {
   const { sessionId } = req.query;
   const session = mcpSessions.get(sessionId);
   if (!session) return res.status(404).json({ error: 'Session not found' });
-  const response = handleMcpMessage(req.body);
+  const response = handleMcpMessage(req.body, session);
   if (response) session.res.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
   res.status(202).json({ status: 'accepted' });
 });
@@ -150,7 +161,7 @@ app.post('/mcp/messages', (req, res) => {
 // ============================================================
 // MCP Protocol Handler
 // ============================================================
-function handleMcpMessage(message) {
+function handleMcpMessage(message, session) {
   const { method, id, params } = message;
   switch (method) {
     case 'initialize':
@@ -160,7 +171,7 @@ function handleMcpMessage(message) {
       }};
     case 'notifications/initialized': return null;
     case 'tools/list': return { jsonrpc: '2.0', id, result: { tools: getMcpTools() } };
-    case 'tools/call': return handleToolCall(id, params);
+    case 'tools/call': return handleToolCall(id, params, session);
     default: return { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } };
   }
 }
@@ -231,15 +242,19 @@ function getMcpTools() {
         properties: { game_id: { type: 'string', description: '游戏ID' } },
         required: ['game_id']
       }
-    }
+    },
+    ...vault.mcpTools
   ];
 }
 
-function handleToolCall(id, params) {
-  const { name, arguments: args } = params;
+function handleToolCall(id, params, session) {
+  const { name, arguments: args = {} } = params;
   try {
     let result;
-    switch (name) {
+    if (name.startsWith('vault_')) {
+      if (!auth.checkToken(args.token || session.token)) throw new Error('存档需要正确的 token');
+      result = vault.handleMcpTool(name, args);
+    } else switch (name) {
       case 'create_game': {
         const { game_type = 'gomoku', players } = args;
         if (!players || players.length < 2) throw new Error('需要至少两名玩家');
@@ -312,4 +327,7 @@ app.listen(PORT, () => {
   console.log(`Game MCP Server running on port ${PORT}`);
   console.log(`Web UI: http://localhost:${PORT}`);
   console.log(`MCP SSE: http://localhost:${PORT}/mcp`);
+  console.log(`Vault: http://localhost:${PORT}/vault`);
+  if (auth.TOKEN_SOURCE === 'new') console.log(`New owner token written to ${auth.TOKEN_FILE}`);
+  if (auth.TOKEN_SOURCE !== 'env') console.log(`Owner token is in ${auth.TOKEN_FILE}`);
 });

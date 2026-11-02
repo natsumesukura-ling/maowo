@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>存档 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF9F5; --card: #F0EEE6; --white: #FFFFFF; --border: #E8E6DC;
+    --text: #141413; --muted: #5E5D59; --accent: #B4532F; --accent-line: #D97757;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 48px; }
+  header { display: flex; align-items: center; gap: 6px; padding: 6px 0 4px; }
+  .icon-btn {
+    width: 44px; height: 44px; border: none; background: transparent; color: var(--text);
+    display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; cursor: pointer; padding: 0;
+  }
+  .icon-btn:hover { background: var(--card); }
+  .crumb { font-size: 13px; color: var(--muted); flex-grow: 1; }
+  h1 { font-family: "Noto Serif SC", serif; font-size: 24px; font-weight: 600; margin: 4px 0 4px; line-height: 1.4; word-break: break-word; }
+  .sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+
+  .search { display: flex; gap: 8px; margin-bottom: 12px; }
+  input, textarea {
+    font: inherit; color: var(--text); background: var(--white); border: 1px solid var(--border);
+    border-radius: 12px; padding: 11px 14px; width: 100%; outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--accent-line); }
+  textarea { min-height: 320px; line-height: 1.7; resize: vertical; font-size: 15px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
+
+  .btn {
+    height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--white);
+    color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; text-decoration: none;
+  }
+  .btn:hover { background: var(--card); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #8F3F22; }
+  .btn.danger { color: #9A2F1A; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 16px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chip {
+    height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--border); background: transparent;
+    font: inherit; font-size: 13px; color: var(--muted); cursor: pointer;
+  }
+  .chip.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .item {
+    display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 14px; text-align: left;
+    background: var(--white); border: 1px solid var(--border); color: var(--text); text-decoration: none; font: inherit;
+  }
+  .item:hover { border-color: var(--accent-line); }
+  .item .kind {
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; background: var(--card);
+    display: flex; align-items: center; justify-content: center; color: var(--accent);
+  }
+  .item .body { min-width: 0; flex-grow: 1; }
+  .item .title { font-weight: 500; font-size: 15px; word-break: break-word; }
+  .item .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .item .note { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .tag { color: var(--accent); }
+  .empty { text-align: center; color: var(--muted); font-size: 14px; padding: 48px 0; }
+
+  .paper {
+    background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 16px;
+    white-space: pre-wrap; word-break: break-word; line-height: 1.8; font-size: 15px;
+  }
+  .preview { max-width: 100%; border-radius: 14px; border: 1px solid var(--border); display: block; }
+  .section-title { font-size: 13px; color: var(--muted); margin: 24px 0 8px; }
+  .rev { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--card); font-size: 13px; margin-bottom: 6px; }
+  .rev button { border: none; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0; }
+  .hint { font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+    padding: 10px 16px; border-radius: 12px; font-size: 14px; display: none; max-width: calc(100% - 32px);
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast" role="status"></div>
+<input type="file" id="file-input" class="hidden" multiple>
+
+<script>
+const ICONS = {
+  back: '<path d="M15 18l-6-6 6-6"/>',
+  note: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+  file: '<path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+};
+const icon = (name, size = 20) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = sel => document.querySelector(sel);
+const app = $('#app');
+
+// ---------- token ----------
+function getToken() { try { return localStorage.getItem('maowo-token') || ''; } catch { return ''; } }
+function setToken(t) { try { t ? localStorage.setItem('maowo-token', t) : localStorage.removeItem('maowo-token'); } catch {} }
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api/vault' + path, {
+    ...opts,
+    headers: { Authorization: 'Bearer ' + getToken(), ...(opts.json ? { 'Content-Type': 'application/json' } : {}), ...opts.headers },
+    body: opts.json ? JSON.stringify(opts.json) : opts.body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { setToken(''); route(); throw new Error('token 不对'); }
+  if (!res.ok) throw new Error(data.error || '出错了');
+  return data;
+}
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = 'none', 2400);
+}
+
+const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+const fmtTime = iso => { const d = new Date(iso); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const sourceLabel = s => s === 'mcp' ? 'AI 存入' : '网页存入';
+const downloadUrl = (id, inline) => `/api/vault/${id}/download?token=${encodeURIComponent(getToken())}${inline ? '&inline=1' : ''}`;
+
+function header(crumb, backHash) {
+  return `<header>
+    <a class="icon-btn" href="${backHash}" aria-label="返回">${icon('back', 22)}</a>
+    <div class="crumb">${esc(crumb)}</div>
+  </header>`;
+}
+
+// ---------- views ----------
+function viewGate() {
+  app.innerHTML = `${header('猫窝', '/')}
+    <h1>存档</h1>
+    <div class="sub">只有拿着 token 的人能打开</div>
+    <form id="gate">
+      <label for="tok">token</label>
+      <input id="tok" type="password" autocomplete="current-password" required>
+      <div class="actions"><button class="btn primary" type="submit">打开存档</button></div>
+      <p class="hint">token 在服务器的 <code>data/maowo-token.txt</code> 里，或者是启动时设置的 <code>MAOWO_TOKEN</code>。只需输入一次，这台设备会记住。</p>
+    </form>`;
+  $('#gate').onsubmit = async e => {
+    e.preventDefault();
+    setToken($('#tok').value.trim());
+    try { await api('/'); route(); } catch (err) { toast(err.message); }
+  };
+}
+
+const listState = { q: '', tag: '' };
+
+async function viewList(trash) {
+  const items = await api('/?' + new URLSearchParams(trash ? { trash: '1' } : {}));
+  const tags = [...new Set(items.flatMap(i => i.tags))].sort();
+  app.innerHTML = `${header(trash ? '存档' : '猫窝', trash ? '#/' : '/')}
+    <h1>${trash ? '回收站' : '存档'}</h1>
+    <div class="sub">${trash ? '删掉的东西先放在这里，可以恢复' : '猫自己的地方，重要的东西放这里'}</div>
+    ${trash ? '' : `<div class="actions">
+      <a class="btn primary" href="#/new">${icon('plus', 18)}写一篇笔记</a>
+      <button class="btn" id="upload">${icon('upload', 18)}上传文件</button>
+      <a class="btn" href="#/trash">${icon('trash', 18)}回收站</a>
+    </div>
+    <div class="search"><input id="q" type="search" placeholder="搜索标题、说明、标签、正文" aria-label="搜索" value="${esc(listState.q)}"></div>
+    ${tags.length ? `<div class="chips">${['', ...tags].map(t =>
+      `<button class="chip ${listState.tag === t ? 'on' : ''}" data-tag="${esc(t)}">${t ? esc(t) : '全部'}</button>`).join('')}</div>` : ''}`}
+    <div class="list" id="list"></div>`;
+
+  // Note bodies are searched on the server; titles and tags filter instantly here.
+  let contentHits = new Set();
+  const render = () => {
+    const q = listState.q.toLowerCase();
+    const shown = trash ? items : items.filter(i =>
+      (!listState.tag || i.tags.includes(listState.tag)) &&
+      (!q || [i.title, i.note, i.filename || '', i.tags.join(' ')].some(s => s.toLowerCase().includes(q)) || contentHits.has(i.id)));
+    $('#list').innerHTML = shown.length ? shown.map(i => `
+      <a class="item" href="#/item/${i.id}">
+        <div class="kind">${icon(i.kind === 'note' ? 'note' : 'file')}</div>
+        <div class="body">
+          <div class="title">${esc(i.title)}</div>
+          ${i.note ? `<div class="note">${esc(i.note)}</div>` : ''}
+          <div class="meta">${i.kind === 'note' ? '笔记' : esc(i.filename)} · ${fmtSize(i.size)} · ${fmtTime(trash ? i.deleted_at : i.updated_at)}
+            ${i.tags.map(t => `<span class="tag">#${esc(t)}</span>`).join(' ')}</div>
+        </div>
+      </a>`).join('') : `<div class="empty">${trash ? '回收站是空的' : items.length ? '没有找到' : '这里还空着，存点什么吧'}</div>`;
+  };
+
+  render();
+  if (trash) return;
+  let timer;
+  $('#q').oninput = e => {
+    listState.q = e.target.value; render();
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      contentHits = listState.q ? new Set((await api('/?' + new URLSearchParams({ q: listState.q }))).map(i => i.id)) : new Set();
+      render();
+    }, 250);
+  };
+  document.querySelectorAll('.chip').forEach(c => c.onclick = () => { listState.tag = c.dataset.tag; viewList(); });
+  $('#upload').onclick = () => $('#file-input').click();
+}
+
+$('#file-input').onchange = async e => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  for (const f of files) {
+    try {
+      const params = new URLSearchParams({ filename: f.name, mime: f.type || 'application/octet-stream' });
+      await api('/files?' + params, { method: 'POST', body: f, headers: { 'Content-Type': 'application/octet-stream' } });
+      toast(`已存档：${f.name}`);
+    } catch (err) { toast(`${f.name}：${err.message}`); }
+  }
+  route();
+};
+
+async function viewItem(id) {
+  const item = await api('/' + id);
+  const revisions = item.kind === 'note' ? await api(`/${id}/revisions`) : [];
+  const isImage = /^image\/(png|jpeg|gif|webp)$/.test(item.mime);
+  app.innerHTML = `${header(item.deleted_at ? '回收站' : '存档', item.deleted_at ? '#/trash' : '#/')}
+    <h1>${esc(item.title)}</h1>
+    <div class="sub">${item.kind === 'note' ? '笔记' : esc(item.filename) + ' · ' + esc(item.mime)} · ${fmtSize(item.size)} ·
+      ${sourceLabel(item.source)} · 更新于 ${fmtTime(item.updated_at)}
+      ${item.tags.map(t => `<span class="tag">#${esc(t)}</span>`).join(' ')}</div>
+    ${item.note ? `<p class="hint">${esc(item.note)}</p>` : ''}
+    <div class="actions">
+      ${item.deleted_at
+        ? `<button class="btn primary" id="restore">恢复</button><button class="btn danger" id="purge">彻底删除</button>`
+        : `<a class="btn primary" href="#/edit/${item.id}">编辑</a>
+           <a class="btn" href="${downloadUrl(item.id)}">下载</a>
+           <button class="btn danger" id="del">移到回收站</button>`}
+    </div>
+    ${item.kind === 'note' ? `<div class="paper">${esc(item.content)}</div>`
+      : isImage ? `<img class="preview" src="${downloadUrl(item.id, true)}" alt="${esc(item.title)}">`
+      : item.mime === 'application/pdf' ? `<a class="btn" href="${downloadUrl(item.id, true)}" target="_blank" rel="noopener">在新页面打开 PDF</a>`
+      : `<p class="hint">sha256 ${esc(item.sha256)}</p>`}
+    ${revisions.length ? `<div class="section-title">以前的版本（${revisions.length}）</div>
+      ${revisions.map(r => `<div class="rev"><span>${fmtTime(r.created_at)} · ${sourceLabel(r.source)} · ${fmtSize(r.size || 0)}</span>
+        <button data-rev="${r.id}">查看</button></div>`).join('')}
+      <div id="rev-view"></div>` : ''}`;
+
+  const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
+  on('#del', async () => { await api('/' + id, { method: 'DELETE' }); toast('已移到回收站'); location.hash = '#/'; });
+  on('#restore', async () => { await api(`/${id}/restore`, { method: 'POST' }); toast('已恢复'); viewItem(id); });
+  on('#purge', async () => {
+    if (!confirm(`彻底删除「${item.title}」？删掉就找不回来了。`)) return;
+    await api(`/${id}?purge=1`, { method: 'DELETE' }); toast('已彻底删除'); location.hash = '#/trash';
+  });
+  document.querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => {
+    const rev = await api(`/${id}/revisions/${b.dataset.rev}`);
+    $('#rev-view').innerHTML = `<div class="section-title">${fmtTime(rev.created_at)} 的版本 · ${esc(rev.title)}</div>
+      <div class="paper">${esc(rev.content)}</div>
+      <div class="actions"><button class="btn" id="rev-restore">用这个版本覆盖现在的</button></div>`;
+    $('#rev-restore').onclick = async () => {
+      await api('/' + id, { method: 'PUT', json: { title: rev.title, content: rev.content } });
+      toast('已恢复到这个版本，现在的内容也留在以前的版本里'); viewItem(id);
+    };
+  });
+}
+
+async function viewEdit(id) {
+  const item = id ? await api('/' + id) : { title: '', note: '', tags: [], content: '', kind: 'note' };
+  app.innerHTML = `${header(id ? '编辑' : '新笔记', id ? `#/item/${id}` : '#/')}
+    <h1>${id ? '编辑' : '写一篇笔记'}</h1>
+    <form id="form">
+      <label for="f-title">标题</label><input id="f-title" required value="${esc(item.title)}">
+      <label for="f-tags">标签（用逗号或空格分开）</label><input id="f-tags" value="${esc(item.tags.join(', '))}">
+      <label for="f-note">一句话说明</label><input id="f-note" value="${esc(item.note)}">
+      ${item.kind === 'note' ? `<label for="f-content">正文</label><textarea id="f-content">${esc(item.content)}</textarea>` : ''}
+      <div class="actions"><button class="btn primary" type="submit">保存</button><a class="btn" href="${id ? `#/item/${id}` : '#/'}">取消</a></div>
+    </form>`;
+  $('#form').onsubmit = async e => {
+    e.preventDefault();
+    const body = { title: $('#f-title').value, tags: $('#f-tags').value, note: $('#f-note').value };
+    if (item.kind === 'note') body.content = $('#f-content').value;
+    try {
+      const saved = id ? await api('/' + id, { method: 'PUT', json: body }) : await api('/notes', { method: 'POST', json: body });
+      toast('已保存'); location.hash = `#/item/${saved.id}`;
+    } catch (err) { toast(err.message); }
+  };
+}
+
+// ---------- routing ----------
+async function route() {
+  if (!getToken()) return viewGate();
+  const [, view, id] = location.hash.replace(/^#/, '').split('/');
+  try {
+    if (view === 'item') await viewItem(id);
+    else if (view === 'edit') await viewEdit(id);
+    else if (view === 'new') await viewEdit();
+    else await viewList(view === 'trash');
+  } catch (err) { toast(err.message); }
+  window.scrollTo(0, 0);
+}
+window.onhashchange = route;
+route();
+</script>
+</body>
+</html>

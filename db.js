@@ -5,8 +5,8 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'games.db');
 
 // Ensure data directory exists
 const fs = require('fs');
-const dir = path.dirname(DB_PATH);
-if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+const DATA_DIR = path.dirname(DB_PATH);
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -40,6 +40,36 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_messages_game ON messages(game_id);
+
+  CREATE TABLE IF NOT EXISTS vault_items (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    content TEXT,
+    filename TEXT,
+    stored_name TEXT,
+    mime TEXT,
+    size INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS vault_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (item_id) REFERENCES vault_items(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_vault_revisions_item ON vault_revisions(item_id);
 `);
 
 // ============================================================
@@ -132,4 +162,4 @@ function getMessages(gameId, sinceId = 0) {
   return stmts.getMessages.all(gameId);
 }
 
-module.exports = { saveGame, loadGame, listActiveGames, listFinishedGames, saveMessage, getMessages };
+module.exports = { db, DATA_DIR, saveGame, loadGame, listActiveGames, listFinishedGames, saveMessage, getMessages };
