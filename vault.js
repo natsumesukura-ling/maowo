@@ -335,4 +335,4 @@ function handleMcpTool(name, args) {
   }
 }
 
-module.exports = { router, mcpTools, handleMcpTool, MAX_FILE_BYTES, FILES_DIR, safeFilename };
+module.exports = { router, mcpTools, handleMcpTool, tokenProp, MAX_FILE_BYTES, FILES_DIR, safeFilename };

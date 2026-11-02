@@ -224,7 +224,28 @@
   const PAD = 22;
   const CANVAS_SIZE = CELL * (SIZE - 1) + PAD * 2;
 
-  document.getElementById('mcpUrl').textContent = location.origin + '/mcp';
+  document.getElementById('mcpUrl').textContent = location.origin + '/mcp?token=<token>';
+
+  // Every /api call carries the owner token, shared with the vault page.
+  // A missing or wrong token asks once per page load.
+  const rawFetch = window.fetch.bind(window);
+  let askedForToken = false;
+  function ownerToken(ask) {
+    let t = '';
+    try { t = localStorage.getItem('maowo-token') || ''; } catch {}
+    if ((!t || ask) && !askedForToken) {
+      askedForToken = true;
+      t = (prompt('请输入猫窝 token') || '').trim();
+      try { localStorage.setItem('maowo-token', t); } catch {}
+    }
+    return t;
+  }
+  window.fetch = async (url, opts = {}) => {
+    if (!String(url).startsWith('/api/')) return rawFetch(url, opts);
+    const send = t => rawFetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + t } });
+    const res = await send(ownerToken(false));
+    return res.status === 401 && !askedForToken ? send(ownerToken(true)) : res;
+  };
   const canvas = document.getElementById('boardCanvas');
   const ctx = canvas.getContext('2d');
 

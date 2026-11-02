@@ -38,8 +38,10 @@ app.use('/api/vault/backup', backup.router);
 app.use('/api/vault', vault.router);
 
 // ============================================================
-// REST API — Games
+// REST API — Games (owner token required until there are player accounts)
 // ============================================================
+app.use('/api/games', auth.requireToken);
+
 app.post('/api/games', (req, res) => {
   const { gameType = 'gomoku', players } = req.body;
   if (!players || !Array.isArray(players) || players.length < 2) {
@@ -198,6 +200,7 @@ function getMcpTools() {
       inputSchema: {
         type: 'object',
         properties: {
+          ...vault.tokenProp,
           game_type: { type: 'string', description: '游戏类型: gomoku', default: 'gomoku' },
           players: { type: 'array', items: { type: 'string' }, description: '玩家名称列表，如 ["菲菲", "夜声"]' }
         },
@@ -210,6 +213,7 @@ function getMcpTools() {
       inputSchema: {
         type: 'object',
         properties: {
+          ...vault.tokenProp,
           game_id: { type: 'string', description: '游戏ID' },
           player: { type: 'string', description: '你的玩家名称' }
         },
@@ -222,6 +226,7 @@ function getMcpTools() {
       inputSchema: {
         type: 'object',
         properties: {
+          ...vault.tokenProp,
           game_id: { type: 'string', description: '游戏ID' },
           player: { type: 'string', description: '你的玩家名称' },
           row: { type: 'integer', description: '行坐标 (0-14)' },
@@ -236,6 +241,7 @@ function getMcpTools() {
       inputSchema: {
         type: 'object',
         properties: {
+          ...vault.tokenProp,
           game_id: { type: 'string', description: '游戏ID' },
           sender: { type: 'string', description: '你的名称' },
           content: { type: 'string', description: '消息内容' }
@@ -246,14 +252,14 @@ function getMcpTools() {
     {
       name: 'list_games',
       description: '查看所有进行中和已结束的游戏。',
-      inputSchema: { type: 'object', properties: {} }
+      inputSchema: { type: 'object', properties: { ...vault.tokenProp } }
     },
     {
       name: 'get_game_history',
       description: '查看某局游戏的完整记录（包含对话）。',
       inputSchema: {
         type: 'object',
-        properties: { game_id: { type: 'string', description: '游戏ID' } },
+        properties: { ...vault.tokenProp, game_id: { type: 'string', description: '游戏ID' } },
         required: ['game_id']
       }
     },
@@ -265,8 +271,9 @@ function handleToolCall(id, params, session) {
   const { name, arguments: args = {} } = params;
   try {
     let result;
+    // Every tool needs the owner token, from the connection URL or the token argument.
+    if (!auth.checkToken(args.token || session.token)) throw new Error('需要正确的 token');
     if (name.startsWith('vault_')) {
-      if (!auth.checkToken(args.token || session.token)) throw new Error('存档需要正确的 token');
       result = vault.handleMcpTool(name, args);
     } else switch (name) {
       case 'create_game': {
