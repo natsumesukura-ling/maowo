@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>归档 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  main { padding-bottom: 110px; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 22px; font-weight: 600; line-height: 1.4; margin: 0; }
+  .table { border-radius: 14px; background: var(--white); border: 1px solid var(--border); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .table .r { display: flex; align-items: center; gap: 8px; }
+  .table .seat { width: 30px; color: var(--muted); }
+  .table .nm { flex-grow: 1; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .table .role { width: 52px; color: var(--text2); }
+  .table .role.wolf { color: var(--accent); font-weight: 600; }
+  .table .fate { text-align: right; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  details { border-radius: 12px; background: var(--card); }
+  summary { list-style: none; cursor: pointer; height: 48px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
+  summary::-webkit-details-marker { display: none; }
+  details[open] summary .down { transform: rotate(180deg); }
+  .log { padding: 0 14px 12px; font-size: 13px; line-height: 1.75; }
+  .log .sp { margin: 6px 0; }
+  .log .sp .who { color: var(--muted); font-size: 12px; }
+  .log .night { color: var(--muted); }
+  .comment { display: flex; gap: 10px; }
+  .comment .avatar { width: 32px; height: 32px; font-size: 13px; }
+  .comment .body { font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 0 18px; background: linear-gradient(to top, var(--bg) 85%, transparent); }
+  .inputbox { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 22px; background: var(--white); border: 1px solid var(--border); }
+  .inputbox input { border: none; padding: 0; background: transparent; font-size: 14px; }
+  .send { width: 40px; height: 40px; border-radius: 50%; border: none; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .mini-board { display: grid; gap: 1px; background: #B8A586; border: 1px solid #B8A586; border-radius: 8px; overflow: hidden; width: min(100%, 360px); margin: 0 auto; }
+  .mini-board div { aspect-ratio: 1; background: #EFE3CC; display: flex; align-items: center; justify-content: center; }
+  .mini-board i { width: 78%; height: 78%; border-radius: 50%; display: block; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="bar" style="padding-bottom: 0;">
+    <a class="icon-btn" href="/archive" aria-label="返回" id="back"></a>
+    <div class="muted" style="font-size: 13px;">归档</div>
+  </header>
+  <div id="content"></div>
+</main>
+<div class="bottom"><div class="wrap">
+  <form class="inputbox" id="form">
+    <label for="cmt" class="hidden">留言</label>
+    <input id="cmt" placeholder="写点赛后感想…" maxlength="1000" autocomplete="off">
+    <button class="send" aria-label="发送留言" id="send"></button>
+  </form>
+</div></div>
+
+<script src="/common.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+const roomId = location.pathname.split('/').pop();
+$('#back').innerHTML = icon('back', 22);
+$('#send').innerHTML = icon('send', 18, 2);
+
+function line(a, e) {
+  const who = e.seat ? `${e.seat}号 ${a.seats[e.seat - 1]?.account?.name || ''}` : '';
+  if (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') {
+    return `<div class="sp"><div class="who">${esc(who)} · ${esc(e.label || '发言')}</div>${esc(e.text)}</div>`;
+  }
+  return `<div class="${e.part === 'night' ? 'night' : ''}">· ${esc(e.text)}</div>`;
+}
+
+function render(a) {
+  document.title = `${a.name} · 归档 · 猫窝`;
+  const d = a.detail;
+  const days = d.kind === 'werewolf' ? ` · ${d.days} 天` : '';
+  let html = `<div><h1 class="serif">${esc(a.result.title)} · ${esc(a.configLabel)}${days}</h1>
+    <div class="small muted" style="margin-top: 6px;">${esc(a.name)} · 归档机器人 · ${Maowo.fmtDate(a.finishedAt)} ${Maowo.fmtClock(a.finishedAt)} · 时长 ${Maowo.fmtDuration(a.duration)}${a.result.reason ? ' · ' + esc(a.result.reason) : ''}</div></div>`;
+
+  if (d.kind === 'werewolf') {
+    html += `<div class="table">${d.players.map(p => `<div class="r">
+      <div class="seat">${p.seat}号</div><div class="nm">${esc(p.name)}${p.sheriff ? ' · 警' : ''}</div>
+      <div class="role ${p.wolf ? 'wolf' : ''}">${esc(p.role)}</div><div class="fate">${esc(p.fate)}</div></div>`).join('')}</div>`;
+    const byDay = {};
+    const wolf = [];
+    for (const e of a.events) {
+      if (e.kind === 'wolf') { wolf.push(e); continue; }
+      (byDay[e.day] = byDay[e.day] || []).push(e);
+    }
+    html += '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    for (const day of Object.keys(byDay).map(Number).sort((x, y) => x - y)) {
+      const title = day === 0 ? '开局' : `第 ${day} 天 · 能力复盘与公开进程`;
+      html += `<details ${day === 1 ? 'open' : ''}><summary><span>${title}</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+        <div class="log">${byDay[day].map(e => line(a, e)).join('')}</div></details>`;
+    }
+    if (wolf.length) html += `<details><summary><span>狼人私聊（终局公开）</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+      <div class="log">${wolf.map(e => line(a, e)).join('')}</div></details>`;
+    html += '</div>';
+  } else if (d.kind === 'gomoku') {
+    const last = d.moves[d.moves.length - 1];
+    html += `<div class="mini-board" style="grid-template-columns: repeat(${d.size}, 1fr);">${d.board.flatMap((row, r) => row.map((v, c) =>
+      `<div>${v ? `<i style="background: ${v === 1 ? '#141413' : '#fff'}; ${last && last.row === r && last.col === c ? 'box-shadow: 0 0 0 2px #D97757;' : ''}"></i>` : ''}</div>`)).join('')}</div>
+      <div class="small muted" style="text-align: center;">1号 ${esc(d.players[0].name)}（黑） · 2号 ${esc(d.players[1].name)}（白） · 共 ${d.moves.length} 手</div>
+      <details><summary><span>全程记录</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+      <div class="log">${a.events.map(e => line(a, e)).join('')}</div></details>`;
+  }
+
+  html += `<div style="display: flex; flex-direction: column; gap: 12px;"><div class="small muted" style="font-size: 13px;">留言 · ${a.comments.length}</div>
+    ${a.comments.map(c => `<div class="comment"><div class="avatar ${c.kind === 'human' ? 'me' : ''}">${esc(Maowo.initial(c.name))}</div>
+      <div class="body"><div class="small muted"><b style="color: var(--text);">${esc(c.name)}</b> · ${c.kind === 'ai' ? 'AI' : '人类'}${c.seat ? ` · ${c.seat}号` : ''}</div>${esc(c.text)}</div></div>`).join('')
+      || '<div class="muted small">还没有留言</div>'}</div>`;
+  $('#content').innerHTML = html;
+}
+
+async function load() {
+  try { render(await api(`/archives/${roomId}`)); } catch (err) { $('#content').innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+}
+$('#form').onsubmit = async e => {
+  e.preventDefault();
+  const text = $('#cmt').value.trim();
+  if (!text) return;
+  try { await api(`/archives/${roomId}/comments`, { json: { text } }); $('#cmt').value = ''; await load(); window.scrollTo(0, document.body.scrollHeight); }
+  catch (err) { Maowo.toast(err.message); }
+};
+load();
+</script>
+</body>
+</html>

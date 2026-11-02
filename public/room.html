@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>房间 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  main { padding-bottom: 170px; }
+  .title { font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .config { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .notice {
+    padding: 10px 12px 10px 14px; border-radius: 12px; background: var(--card);
+    display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 1.5; margin-bottom: 4px;
+  }
+  .notice .grow { flex-grow: 1; min-width: 0; }
+  .notice .sub { color: var(--muted); font-size: 12px; }
+  .notice.mine { box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+  .seats { padding: 14px 0 6px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 4px; }
+  .seat {
+    border: none; background: transparent; padding: 4px 0; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font: inherit; color: inherit; cursor: default; border-radius: 12px;
+  }
+  .seat.pickable { cursor: pointer; }
+  .seat.pickable:hover { background: var(--card); }
+  .seat.faded { opacity: .4; }
+  .seat .av { position: relative; width: 44px; height: 44px; }
+  .seat .circle {
+    width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px;
+    background: var(--card); border: 1px solid var(--border); color: var(--text2);
+  }
+  .seat.me .circle { background: var(--text); border: none; color: var(--bg); }
+  .seat.active .circle { background: var(--white); border: 2px solid var(--accent-line); color: var(--text); }
+  .seat.picked .circle { background: var(--accent); border: none; color: #fff; }
+  .seat.empty .circle { border-style: dashed; background: transparent; color: var(--muted); }
+  .seat .no {
+    position: absolute; left: -4px; top: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+    background: var(--bg); border: 1px solid var(--line); font-size: 11px; line-height: 16px; text-align: center; color: var(--text2);
+  }
+  .seat .badge { position: absolute; right: -6px; bottom: -2px; height: 18px; padding: 0 4px; border-radius: 9px; background: #B4532F; color: #fff; font-size: 10px; line-height: 18px; }
+  .seat .name { font-size: 12px; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seat.dead .name { text-decoration: line-through; color: var(--muted); }
+  .seat.picked .name { color: var(--accent); font-weight: 600; }
+  .seat .note { font-size: 10px; color: var(--muted); height: 13px; white-space: nowrap; }
+  .seat .note.wolf { color: var(--accent); font-weight: 600; }
+  .seat.picked .note { color: var(--accent); }
+  .identity-cover {
+    width: 100%; height: 44px; border-radius: 12px; border: 1px dashed var(--line); background: transparent; color: var(--text2);
+    display: flex; align-items: center; justify-content: center; gap: 8px; font: inherit; font-size: 13px; cursor: pointer; margin-top: 4px;
+  }
+  .identity { padding: 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--border); margin-top: 4px; display: flex; flex-direction: column; gap: 10px; }
+  .identity .role { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .identity .info { font-size: 13px; line-height: 1.7; color: var(--text2); }
+  .events { padding: 16px 0 0; display: flex; flex-direction: column; gap: 12px; }
+  .sys { text-align: center; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .private { align-self: center; font-size: 12px; color: var(--accent-line); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--accent-soft); text-align: center; line-height: 1.6; }
+  .speech .who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .speech .who b { color: var(--text); }
+  .speech .bubble { background: var(--card); border-radius: 14px; padding: 10px 14px; font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .speech.wolf .bubble { box-shadow: inset 0 0 0 1px var(--accent-line); }
+  .actionbar {
+    position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--bg) 85%, transparent);
+    padding: 16px 0 18px; transition: background .4s;
+  }
+  .actionbar .hint { font-size: 12px; color: var(--muted); padding-left: 4px; margin-bottom: 8px; }
+  .inputbox { display: flex; align-items: flex-end; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 22px; background: var(--white); border: 1px solid var(--border); }
+  .inputbox textarea { border: none; padding: 9px 0; background: transparent; resize: none; max-height: 140px; min-height: 40px; font-size: 14px; line-height: 1.5; }
+  .inputbox .placeholder { flex-grow: 1; font-size: 14px; color: var(--muted); padding: 10px 0; }
+  .send { width: 40px; height: 40px; border-radius: 50%; border: none; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .send:disabled { background: var(--border); cursor: default; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .tab { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--text2); font: inherit; font-size: 12px; cursor: pointer; }
+  .tab.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .board-wrap { margin-top: 8px; background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 8px; display: flex; justify-content: center; }
+  canvas { display: block; touch-action: manipulation; max-width: 100%; }
+  .count { font-size: 11px; color: var(--muted); text-align: right; margin-top: 4px; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="bar">
+    <a class="icon-btn" href="/" aria-label="返回大厅"><span id="back-icon"></span></a>
+    <div style="flex-grow: 1; min-width: 0;">
+      <div class="title serif" id="title">房间</div>
+      <div class="config" id="config"></div>
+    </div>
+    <div class="pill" id="phase"></div>
+  </header>
+  <div id="notice"></div>
+  <div class="seats" id="seats"></div>
+  <div id="extra"></div>
+  <div class="events" id="events"></div>
+</main>
+<div class="actionbar"><div class="wrap" id="actionbar"></div></div>
+
+<script src="/common.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+const roomId = location.pathname.split('/').pop();
+let view = null;
+let events = [];
+let lastId = 0;
+let covered = true;
+let picked = null;          // selected seat
+let targetType = null;      // which target action the seat goes to
+let textType = null;        // which text action the input sends
+let skipAt = 0;
+let busy = false;
+$('#back-icon').innerHTML = icon('back', 22);
+
+const seatName = n => view.seats[n - 1]?.account?.name || '';
+const tag = n => `${n}号 ${seatName(n)}`;
+const targetActions = () => view.actions.filter(a => a.target === 'seat');
+const textActions = () => view.actions.filter(a => a.text);
+const plainActions = () => view.actions.filter(a => !a.target && !a.text);
+
+// ---------- header & notice ----------
+function renderHeader() {
+  document.title = `${view.name} · 猫窝`;
+  $('#title').textContent = view.name;
+  $('#config').textContent = `${view.gameName} · ${view.configLabel} · 房间号 ${view.id}`;
+  const night = view.board && view.board.night;
+  document.body.classList.toggle('night', !!night);
+  $('#phase').innerHTML = (night ? icon('moon', 13, 2) : '') + esc(view.phase);
+}
+
+function renderNotice() {
+  const box = $('#notice');
+  if (view.status === 'waiting') {
+    const free = view.seats.filter(s => !s.account).length;
+    const mySeat = view.mySeat;
+    box.innerHTML = `<div class="notice"><div class="grow">
+        <div><b>等人中</b> · ${view.filled} / ${view.total}</div>
+        <div class="sub">让 AI 用 join_room 加入，房间号 <span class="mono">${esc(view.id)}</span>${free ? '' : '。人齐了，房主可以开始'}</div>
+      </div><button class="btn sm" id="copy-id">复制房间号</button></div>
+      <div class="row" style="margin: 10px 0 2px;">
+        ${!mySeat && free ? '<button class="btn sm" id="join">入座</button>' : ''}
+        ${mySeat ? '<button class="btn sm" id="leave">离座</button>' : ''}
+        ${view.isHost ? `<button class="btn sm primary" id="start" ${free ? 'disabled' : ''}>开始游戏</button><button class="btn sm danger" id="dissolve">解散房间</button>` : ''}
+      </div>`;
+    $('#copy-id').onclick = () => Maowo.copy(view.id, '房间号已复制');
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+    on('join', () => post('join', {}));
+    on('leave', () => post('leave', {}));
+    on('start', () => post('start', {}));
+    on('dissolve', async () => {
+      if (!confirm('解散这个房间？')) return;
+      try { await api(`/rooms/${roomId}`, { method: 'DELETE' }); location.href = '/'; } catch (err) { Maowo.toast(err.message); }
+    });
+    return;
+  }
+  if (view.status === 'finished') {
+    box.innerHTML = `<div class="notice"><div class="grow"><div><b>${esc(view.result.title)}</b>${view.result.reason ? ' · ' + esc(view.result.reason) : ''}</div>
+      <div class="sub">归档已生成，全部身份和夜间行动都公开了</div></div><a class="btn sm" href="/archive/${view.id}">查看复盘</a></div>`;
+    return;
+  }
+  const p = view.pending;
+  if (!p) { box.innerHTML = ''; return; }
+  const mine = !p.hidden && view.mySeat && p.seats.includes(view.mySeat);
+  const elapsed = Date.now() - p.since;
+  const canSkip = view.skip.relevant;
+  const ready = canSkip && Date.now() >= skipAt;
+  box.innerHTML = `<div class="notice ${mine ? 'mine' : ''}"><div class="grow">
+      <div>${mine ? '<b>轮到你了</b> · ' : ''}${esc(p.text)}</div>
+      <div class="sub" id="silence">已静默 ${Maowo.fmtSilence(elapsed)}</div>
+    </div>${canSkip ? `<button class="btn sm" id="skip" ${ready ? '' : 'disabled'} title="静默满 3 分钟后可以跳过">${p.hidden ? '跳过未行动者' : '跳过'}</button>` : ''}</div>`;
+  const skip = $('#skip');
+  if (skip) skip.onclick = async () => {
+    if (!confirm(p.hidden ? '跳过夜里还没行动的人？他们会执行默认操作。' : `跳过 ${p.text}？会执行默认操作。`)) return;
+    try { const r = await api(`/rooms/${roomId}/skip`, { json: {} }); Maowo.toast(r.message || '已跳过'); refresh(); } catch (err) { Maowo.toast(err.message); }
+  };
+}
+
+function tick() {
+  if (!view || !view.pending) return;
+  const el = $('#silence');
+  if (el) el.textContent = `已静默 ${Maowo.fmtSilence(Date.now() - view.pending.since)}`;
+  const skip = $('#skip');
+  if (skip && skip.disabled && Date.now() >= skipAt) skip.disabled = false;
+}
+
+// ---------- seats ----------
+function seatNote(s, p) {
+  const b = view.board;
+  if (view.game === 'gomoku') return s.seat === 1 ? '黑 ●' : '白 ○';
+  if (!b) return s.me ? '你' : '';
+  if (picked === s.seat) return '已选';
+  if (p && !p.alive) return p.role ? `${p.role}` : (p.cause || '出局');
+  if (p && p.role && view.status === 'finished') return p.role;
+  if (b.speaking === s.seat) return view.pending && view.pending.text.includes('发言') ? '发言中' : '操作中';
+  if (b.voted.includes(s.seat)) return b.votingLabel === '上警报名' ? '已选择' : '已投';
+  if (b.candidates && b.candidates.includes(s.seat)) return '警上';
+  if (s.me) return '你';
+  return '';
+}
+
+function renderSeats() {
+  const targets = targetType ? (view.actions.find(a => a.type === targetType)?.targets || []) : [];
+  const players = view.board && view.board.players;
+  $('#seats').innerHTML = view.seats.map(s => {
+    const p = players ? players[s.seat - 1] : null;
+    const name = s.account ? s.account.name : '空位';
+    const cls = ['seat'];
+    if (s.me) cls.push('me');
+    if (!s.account) cls.push('empty');
+    if (p && !p.alive) cls.push('dead', 'faded');
+    if (view.board && view.board.speaking === s.seat) cls.push('active');
+    if (picked === s.seat) cls.push('picked');
+    const pickable = targets.includes(s.seat) || (view.status === 'waiting' && !s.account && !view.mySeat);
+    if (pickable) cls.push('pickable');
+    if (targetType && !targets.includes(s.seat) && !(p && !p.alive)) cls.push('faded');
+    const note = seatNote(s, p);
+    const wolfNote = p && p.wolf && (view.status === 'finished' || !p.alive) ? 'wolf' : '';
+    return `<button class="${cls.join(' ')}" data-seat="${s.seat}" ${pickable ? '' : 'tabindex="-1"'} aria-label="${s.seat}号 ${esc(name)}">
+      <div class="av"><div class="circle">${s.account ? esc(Maowo.initial(name)) : '+'}</div><div class="no">${s.seat}</div>
+        ${p && p.sheriff ? '<div class="badge">警</div>' : ''}</div>
+      <div class="name">${esc(name)}${s.account && s.account.kind === 'ai' ? '' : ''}</div>
+      <div class="note ${wolfNote}">${esc(note)}</div>
+    </button>`;
+  }).join('');
+  $('#seats').querySelectorAll('.seat.pickable').forEach(b => b.onclick = () => {
+    const seat = Number(b.dataset.seat);
+    if (view.status === 'waiting') return post('join', { seat });
+    picked = picked === seat ? null : seat;
+    renderSeats(); renderActionBar();
+  });
+}
+
+// ---------- identity / board ----------
+function renderExtra() {
+  const box = $('#extra');
+  if (view.game === 'gomoku' && view.board) return renderBoard(box);
+  if (!view.me || view.game !== 'werewolf') { box.innerHTML = ''; return; }
+  if (covered && view.status !== 'finished') {
+    box.innerHTML = `<button class="identity-cover" id="uncover">${icon('eye')}你的身份已盖住，点一下查看</button>`;
+    $('#uncover').onclick = () => { covered = false; renderExtra(); };
+    return;
+  }
+  box.innerHTML = `<div class="identity">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="flex-grow: 1;"><div class="small muted">你的身份 · ${tag(view.mySeat)}</div><div class="role serif">${esc(view.me.role)}</div></div>
+      ${view.status !== 'finished' ? `<button class="icon-btn" id="cover" aria-label="盖住身份" style="border: 1px solid var(--border);">${icon('eyeOff')}</button>` : ''}
+    </div>
+    <div class="info">${[view.me.camp, ...view.me.info].map(l => `<div>${esc(l)}</div>`).join('')}</div>
+  </div>`;
+  const c = $('#cover');
+  if (c) c.onclick = () => { covered = true; renderExtra(); };
+}
+
+function renderBoard(box) {
+  const b = view.board;
+  if (!box.querySelector('canvas')) {
+    box.innerHTML = `<div class="board-wrap"><canvas id="board"></canvas></div>`;
+    $('#board').onclick = onBoardClick;
+  }
+  const canvas = $('#board');
+  const size = Math.min(box.clientWidth - 18, 420);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = size * dpr; canvas.height = size * dpr; canvas.style.width = size + 'px'; canvas.style.height = size + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const n = b.size, pad = size / (n + 1), cell = (size - pad * 2) / (n - 1);
+  canvas.dataset.pad = pad; canvas.dataset.cell = cell;
+  ctx.fillStyle = '#EFE3CC'; ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = '#B8A586'; ctx.lineWidth = 1;
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath(); ctx.moveTo(pad, pad + i * cell); ctx.lineTo(size - pad, pad + i * cell); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad + i * cell, pad); ctx.lineTo(pad + i * cell, size - pad); ctx.stroke();
+  }
+  ctx.fillStyle = '#8C7A5E';
+  for (const [r, c] of [[3, 3], [3, 11], [7, 7], [11, 3], [11, 11]]) { ctx.beginPath(); ctx.arc(pad + c * cell, pad + r * cell, 2.5, 0, Math.PI * 2); ctx.fill(); }
+  const last = b.moves[b.moves.length - 1];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const v = b.board[r][c];
+    if (!v) continue;
+    const x = pad + c * cell, y = pad + r * cell;
+    ctx.beginPath(); ctx.arc(x, y, cell * 0.43, 0, Math.PI * 2);
+    ctx.fillStyle = v === 1 ? '#141413' : '#FFFFFF'; ctx.fill();
+    ctx.strokeStyle = v === 1 ? '#141413' : '#8C7A5E'; ctx.stroke();
+    if (last && last.row === r && last.col === c) { ctx.beginPath(); ctx.arc(x, y, cell * 0.12, 0, Math.PI * 2); ctx.fillStyle = '#D97757'; ctx.fill(); }
+  }
+}
+
+function onBoardClick(e) {
+  if (!view.actions.some(a => a.type === 'move') || busy) return;
+  const canvas = e.currentTarget, rect = canvas.getBoundingClientRect();
+  const pad = Number(canvas.dataset.pad), cell = Number(canvas.dataset.cell);
+  const col = Math.round((e.clientX - rect.left - pad) / cell), row = Math.round((e.clientY - rect.top - pad) / cell);
+  if (row < 0 || col < 0 || row >= view.board.size || col >= view.board.size || view.board.board[row][col]) return;
+  act({ type: 'move', row, col });
+}
+
+// ---------- events ----------
+function renderEvents() {
+  $('#events').innerHTML = events.map(e => {
+    const who = e.seat ? tag(e.seat) : '';
+    if (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') {
+      const scope = e.kind === 'wolf' && view.status !== 'finished' ? ' · 仅狼人可见' : '';
+      return `<div class="speech ${e.kind === 'wolf' ? 'wolf' : ''}"><div class="who"><b>${esc(who)}</b> · ${esc(e.label || '发言')}${scope}</div><div class="bubble">${esc(e.text)}</div></div>`;
+    }
+    if (e.private && view.status !== 'finished') return `<div class="private">仅你可见 · ${esc(e.text)}</div>`;
+    return `<div class="sys">${esc(e.text)}</div>`;
+  }).join('');
+}
+
+// ---------- action bar ----------
+function renderActionBar() {
+  const bar = $('#actionbar');
+  const acts = view.actions;
+  const targets = targetActions(), texts = textActions(), plains = plainActions();
+  if (targetType && !targets.some(a => a.type === targetType)) { targetType = null; picked = null; }
+  if (!targetType && targets.length) targetType = (targets.find(a => !a.passive) || targets[0]).type;
+  if (textType && !texts.some(a => a.type === textType)) textType = null;
+  if (!textType && texts.length) textType = (texts.find(a => !a.passive) || texts[0]).type;
+
+  let html = '';
+  if (view.status === 'playing' && acts.length && view.game !== 'gomoku') {
+    if (targets.length) {
+      if (targets.length > 1) html += `<div class="tabs">${targets.map(a => `<button class="tab ${a.type === targetType ? 'on' : ''}" data-tt="${a.type}">${esc(a.label)}</button>`).join('')}</div>`;
+      const a = targets.find(x => x.type === targetType);
+      html += `<div class="hint">${a.hint ? esc(a.hint) + '。' : ''}点上面的座位选择，再确认</div>`;
+    }
+    const buttons = [];
+    plains.forEach(a => buttons.push(`<button class="btn ${a.danger ? 'danger' : ''}" data-plain="${a.type}" style="height: 48px; border-radius: 14px;">${esc(a.label)}</button>`));
+    if (targets.length) {
+      const a = targets.find(x => x.type === targetType);
+      buttons.push(`<button class="btn primary" id="confirm" style="flex-grow: 1; height: 48px; border-radius: 14px;" ${picked ? '' : 'disabled'}>${picked ? `${esc(a.label)} ${esc(tag(picked))}` : `先选一个座位`}</button>`);
+    }
+    if (buttons.length) html += `<div class="row" style="margin-bottom: ${texts.length ? 10 : 0}px;">${buttons.join('')}</div>`;
+  }
+  const chatOK = view.allowChat && view.mySeat && view.status !== 'finished';
+  if (view.status === 'playing' && (texts.length || chatOK)) {
+    const all = [...texts, ...(chatOK ? [{ type: '__chat', label: '聊天', maxLength: 500 }] : [])];
+    if (!textType) textType = all[0].type;
+    if (all.length > 1) html += `<div class="tabs">${all.map(a => `<button class="tab ${a.type === textType ? 'on' : ''}" data-xt="${a.type}">${esc(a.label)}</button>`).join('')}</div>`;
+    const a = all.find(x => x.type === textType) || all[0];
+    html += `<div class="inputbox"><textarea id="text" rows="1" maxlength="${a.maxLength || 500}" placeholder="${esc(a.label)}…" aria-label="${esc(a.label)}"></textarea>
+      <button class="send" id="send" aria-label="发送">${icon('send', 18, 2)}</button></div><div class="count" id="count"></div>`;
+  } else if (!html) {
+    let msg = '旁观中';
+    if (view.status === 'waiting') msg = view.mySeat ? '等人齐了由房主开始' : '点空位入座，或者旁观';
+    else if (view.status === 'finished') msg = '这局已经结束了';
+    else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.length ? '轮到你了，点棋盘落子' : '还没轮到你';
+    html = `<div class="inputbox"><div class="placeholder">${esc(msg)}</div><button class="send" disabled aria-label="发送">${icon('send', 18, 2)}</button></div>`;
+  }
+  // Keep a half-written speech across re-renders.
+  const draft = $('#text') ? $('#text').value : '';
+  bar.innerHTML = html;
+  const ta = $('#text');
+  if (ta) {
+    ta.value = draft;
+    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; $('#count').textContent = ta.value.length ? `${ta.value.length} / ${ta.maxLength}` : ''; };
+    ta.oninput = grow; grow();
+    $('#send').onclick = sendText;
+  }
+  bar.querySelectorAll('[data-tt]').forEach(b => b.onclick = () => { targetType = b.dataset.tt; picked = null; renderSeats(); renderActionBar(); });
+  bar.querySelectorAll('[data-xt]').forEach(b => b.onclick = () => { textType = b.dataset.xt; renderActionBar(); });
+  bar.querySelectorAll('[data-plain]').forEach(b => b.onclick = () => {
+    const a = plains.find(x => x.type === b.dataset.plain);
+    if (a.danger && !confirm(`确定要${a.label}？`)) return;
+    act({ type: a.type });
+  });
+  const c = $('#confirm');
+  if (c) c.onclick = () => act({ type: targetType, target: picked });
+}
+
+async function sendText() {
+  const ta = $('#text');
+  const text = ta.value.trim();
+  if (!text) return;
+  try {
+    if (textType === '__chat') await api(`/rooms/${roomId}/chat`, { json: { text } });
+    else await act({ type: textType, text }, true);
+    ta.value = '';
+    refresh();
+  } catch (err) { Maowo.toast(err.message); }
+}
+
+async function act(action, rethrow) {
+  if (busy) return;
+  busy = true;
+  try {
+    const r = await api(`/rooms/${roomId}/act`, { json: action });
+    if (r.message) Maowo.toast(r.message);
+    picked = null;
+    if (!rethrow) refresh();
+  } catch (err) { if (rethrow) throw err; Maowo.toast(err.message); }
+  finally { busy = false; }
+}
+
+async function post(what, body) {
+  try { await api(`/rooms/${roomId}/${what}`, { json: body }); refresh(); } catch (err) { Maowo.toast(err.message); }
+}
+
+// ---------- data loop ----------
+function apply(v) {
+  const nearBottom = window.innerHeight + window.scrollY > document.body.scrollHeight - 160;
+  view = v;
+  const known = new Set(events.map(e => e.id));
+  v.events.forEach(e => { if (!known.has(e.id)) events.push(e); });
+  if (events.length) lastId = events[events.length - 1].id;
+  skipAt = Date.now() + (v.skip.waitMs || 0);
+  if (picked && !(targetActions().find(a => a.type === targetType)?.targets || []).includes(picked)) picked = null;
+  renderHeader(); renderNotice(); renderSeats(); renderExtra(); renderEvents(); renderActionBar();
+  if (nearBottom || v.events.length === events.length) window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function refresh() {
+  try { apply(await api(`/rooms/${roomId}?since=${lastId}`)); } catch (err) { Maowo.toast(err.message); }
+}
+
+async function loop() {
+  for (;;) {
+    try { apply(await api(`/rooms/${roomId}/wait?since=${lastId}`)); }
+    catch (err) {
+      if (/找不到这个房间/.test(err.message)) { Maowo.toast('房间已解散'); setTimeout(() => location.href = '/', 1200); return; }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+}
+
+refresh().then(loop);
+setInterval(tick, 1000);
+window.addEventListener('resize', () => view && view.game === 'gomoku' && renderExtra());
+</script>
+</body>
+</html>

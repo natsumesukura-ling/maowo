@@ -1,129 +1,119 @@
-const BOARD_SIZE = 15;
+// 五子棋：15×15，黑先，先连成五子者胜。
+const SIZE = 15;
 
-class GomokuGame {
-  constructor(gameId, players, fromDb = null) {
-    if (fromDb) {
-      // Restore from database
-      this.gameId = fromDb.game_id;
-      this.gameType = fromDb.game_type;
-      this.players = fromDb.players;
-      this.board = fromDb.board;
-      this.currentPlayerIndex = fromDb.current_player_index;
-      this.currentPlayer = fromDb.current_player;
-      this.status = fromDb.status;
-      this.winner = fromDb.winner;
-      this.moves = fromDb.moves;
-      this.createdAt = fromDb.created_at;
-      this.finishedAt = fromDb.finished_at;
-    } else {
-      this.gameId = gameId;
-      this.gameType = 'gomoku';
-      this.players = players.slice(0, 2);
-      this.board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
-      this.currentPlayerIndex = 0;
-      this.currentPlayer = this.players[0];
-      this.status = 'playing';
-      this.winner = null;
-      this.moves = [];
-      this.createdAt = new Date().toISOString();
-      this.finishedAt = null;
-    }
-    this.symbols = { [this.players[0]]: '●', [this.players[1]]: '○' };
-  }
+const rulesFull = `五子棋规则
+- 棋盘 15×15，坐标从 0 开始：row 是行（0-14，从上到下），col 是列（0-14，从左到右）。中心是 row=7, col=7。
+- 1号执黑（●）先手，2号执白（○），轮流在空位落子。
+- 横、竖、斜任意方向先连成五子（或更多）者获胜；棋盘下满无人连五则平局。
+- 没有禁手。
+- 有聊天频道，可以随时聊天，不影响轮次。`;
 
-  makeMove(player, { row, col }) {
-    if (this.status !== 'playing') return { error: '游戏已结束' };
-    if (player !== this.currentPlayer) return { error: `现在轮到 ${this.currentPlayer} 落子，不是 ${player}` };
-    if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return { error: `坐标超出范围 (0-${BOARD_SIZE - 1})` };
-    if (this.board[row][col] !== null) return { error: `位置 (${row}, ${col}) 已有棋子` };
+function inside(r, c) { return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }
 
-    this.board[row][col] = player;
-    this.moves.push({ player, row, col, symbol: this.symbols[player], timestamp: new Date().toISOString() });
-
-    if (this.checkWin(row, col, player)) {
-      this.status = 'finished';
-      this.winner = player;
-      this.finishedAt = new Date().toISOString();
-      return { message: `${player} (${this.symbols[player]}) 在 (${row}, ${col}) 落子，五子连珠！${player} 获胜！🎉`, board: this.getPublicState() };
-    }
-
-    if (this.moves.length >= BOARD_SIZE * BOARD_SIZE) {
-      this.status = 'finished';
-      this.winner = null;
-      this.finishedAt = new Date().toISOString();
-      return { message: '棋盘已满，平局！', board: this.getPublicState() };
-    }
-
-    this.currentPlayerIndex = 1 - this.currentPlayerIndex;
-    this.currentPlayer = this.players[this.currentPlayerIndex];
-    return { message: `${player} (${this.symbols[player]}) 在 (${row}, ${col}) 落子`, board: this.getPublicState() };
-  }
-
-  checkWin(row, col, player) {
-    const directions = [[0,1],[1,0],[1,1],[1,-1]];
-    for (const [dr, dc] of directions) {
-      let count = 1;
+function fiveFrom(board, row, col, seat) {
+  for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+    let count = 1;
+    for (const sign of [1, -1]) {
       for (let i = 1; i < 5; i++) {
-        const r = row + dr*i, c = col + dc*i;
-        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && this.board[r][c] === player) count++;
-        else break;
+        const r = row + dr * i * sign, c = col + dc * i * sign;
+        if (inside(r, c) && board[r][c] === seat) count++; else break;
       }
-      for (let i = 1; i < 5; i++) {
-        const r = row - dr*i, c = col - dc*i;
-        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && this.board[r][c] === player) count++;
-        else break;
-      }
-      if (count >= 5) return true;
     }
-    return false;
+    if (count >= 5) return true;
   }
-
-  getPublicState() {
-    return {
-      gameId: this.gameId, gameType: this.gameType, players: this.players, symbols: this.symbols,
-      board: this.board, currentPlayer: this.currentPlayer, status: this.status, winner: this.winner,
-      moveCount: this.moves.length, lastMove: this.moves.length > 0 ? this.moves[this.moves.length - 1] : null,
-    };
-  }
-
-  getStateForPlayer(player) {
-    let text = this.getBoardString();
-    text += `\n\n游戏状态: ${this.status}`;
-    text += `\n玩家: ${this.players.map(p => `${p}(${this.symbols[p]})`).join(' vs ')}`;
-    if (this.status === 'playing') {
-      text += `\n轮到: ${this.currentPlayer} (${this.symbols[this.currentPlayer]})`;
-    } else {
-      text += this.winner ? `\n胜者: ${this.winner}` : '\n结果: 平局';
-    }
-    if (this.moves.length > 0) {
-      const last = this.moves[this.moves.length - 1];
-      text += `\n上一步: ${last.player} 在 (${last.row}, ${last.col})`;
-    }
-    return text;
-  }
-
-  getBoardString() {
-    let s = '   ';
-    for (let c = 0; c < BOARD_SIZE; c++) s += (c < 10 ? ' ' + c : c) + ' ';
-    s += '\n';
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      s += (r < 10 ? ' ' + r : r) + ' ';
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        const cell = this.board[r][c];
-        s += cell ? ' ' + this.symbols[cell] + ' ' : ' · ';
-      }
-      s += '\n';
-    }
-    return s;
-  }
-
-  getFullHistory() {
-    return {
-      gameId: this.gameId, gameType: this.gameType, players: this.players,
-      winner: this.winner, status: this.status, moves: this.moves,
-      createdAt: this.createdAt, finishedAt: this.finishedAt,
-    };
-  }
+  return false;
 }
 
-module.exports = { GomokuGame, BOARD_SIZE };
+const stone = seat => seat === 1 ? '●' : '○';
+
+module.exports = {
+  id: 'gomoku',
+  name: '五子棋',
+  summary: '两人对弈，先连成五子者胜',
+  allowChat: true,
+  normalizeOptions: () => ({}),
+  seatCount: () => 2,
+  configLabel: () => '双人 · 15×15',
+  rulesSummary: () => '五子棋：15×15 棋盘，1号执黑先手，轮流落子，先连成五子者胜。落子用 act，action="move"，带上 row 和 col（0-14）。',
+  rulesFull,
+
+  setup(players, options, ctx) {
+    const state = {
+      players, board: Array.from({ length: SIZE }, () => Array(SIZE).fill(0)),
+      turn: 1, moves: [], since: ctx.now(), winner: null, draw: false,
+    };
+    ctx.log({ text: `对局开始：1号 ${players[0].name}（黑 ●）对 2号 ${players[1].name}（白 ○），黑先` });
+    return state;
+  },
+
+  phase: s => ({ label: s.winner || s.draw ? '已结束' : `第 ${s.moves.length + 1} 手 · ${s.turn}号落子`, night: false, day: 0, part: '' }),
+
+  pending: s => (s.winner || s.draw ? null : { mode: 'turn', seats: [s.turn], since: s.since, label: '落子' }),
+  publicPending(s) {
+    const p = this.pending(s);
+    return p && { ...p, text: `${p.seats[0]}号 ${s.players[p.seats[0] - 1].name} 思考中` };
+  },
+
+  actions: (s, seat) => (!s.winner && !s.draw && s.turn === seat
+    ? [{ type: 'move', label: '落子', target: 'cell', hint: '带上 row 和 col，0-14' }]
+    : []),
+
+  act(s, seat, action, ctx) {
+    if (action.type !== 'move') return { error: `五子棋只有 move 这个操作` };
+    if (s.winner || s.draw) return { error: '对局已经结束了' };
+    if (s.turn !== seat) return { error: `现在轮到 ${s.turn}号 落子` };
+    const row = Number(action.row), col = Number(action.col);
+    if (!Number.isInteger(row) || !Number.isInteger(col) || !inside(row, col)) return { error: 'row 和 col 要是 0-14 的整数' };
+    if (s.board[row][col]) return { error: `(${row}, ${col}) 已经有棋子了` };
+    s.board[row][col] = seat;
+    s.moves.push({ seat, row, col });
+    const name = s.players[seat - 1].name;
+    ctx.log({ kind: 'move', seat, text: `${seat}号 ${name} ${stone(seat)} 落在 (${row}, ${col})` });
+    if (fiveFrom(s.board, row, col, seat)) {
+      s.winner = seat;
+      ctx.log({ text: `五子连珠！${seat}号 ${name} 获胜` });
+    } else if (s.moves.length === SIZE * SIZE) {
+      s.draw = true;
+      ctx.log({ text: '棋盘下满了，平局' });
+    } else {
+      s.turn = 3 - seat;
+      s.since = ctx.now();
+    }
+    return { message: `已落子 (${row}, ${col})` };
+  },
+
+  // Skipped: play next to an existing stone (or the centre), so the game can go on.
+  defaultAction(s) {
+    const empties = [];
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+      if (s.board[r][c]) continue;
+      const near = [-1, 0, 1].some(dr => [-1, 0, 1].some(dc => inside(r + dr, c + dc) && s.board[r + dr][c + dc]));
+      if (near) empties.push([r, c]);
+    }
+    const [row, col] = empties.length ? empties[Math.floor(Math.random() * empties.length)] : [7, 7];
+    return { type: 'move', row, col };
+  },
+
+  publicView: s => ({ size: SIZE, board: s.board, moves: s.moves, turn: s.turn, winner: s.winner, draw: s.draw }),
+  seatView: (s, seat) => ({ stone: stone(seat), color: seat === 1 ? '黑' : '白' }),
+  seatNote: (board, seat) => (seat === 1 ? '黑 ●' : '白 ○'),
+
+  textBoard(s) {
+    let out = '棋盘（● 1号黑，○ 2号白）：\n    ' + Array.from({ length: SIZE }, (_, c) => String(c).padStart(2)).join(' ') + '\n';
+    s.board.forEach((row, r) => {
+      out += String(r).padStart(2) + '  ' + row.map(v => (v ? ' ' + stone(v) : ' ·')).join(' ') + '\n';
+    });
+    const last = s.moves[s.moves.length - 1];
+    if (last) out += `上一手：${last.seat}号 (${last.row}, ${last.col})`;
+    return out.trimEnd();
+  },
+  textPrivate: (s, seat) => `你执${seat === 1 ? '黑 ●' : '白 ○'}。`,
+
+  result(s) {
+    if (s.winner) return { title: `${s.players[s.winner - 1].name} 胜`, winner: s.winner, summary: `${s.moves.length} 手` };
+    if (s.draw) return { title: '平局', winner: null, summary: `${s.moves.length} 手` };
+    return null;
+  },
+
+  archive: s => ({ kind: 'gomoku', size: SIZE, board: s.board, moves: s.moves, players: s.players }),
+};

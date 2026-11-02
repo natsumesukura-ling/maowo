@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全部归档 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  .arch { text-decoration: none; color: inherit; display: flex; align-items: flex-start; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
+  .arch .name { font-size: 14px; font-weight: 600; }
+  .arch .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .arch .when { font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main class="wrap" style="padding-bottom: 32px;">
+  <header class="bar">
+    <a class="icon-btn" href="/" aria-label="返回大厅" id="back"></a>
+    <h1 class="serif" style="font-size: 22px; margin: 0;">归档</h1>
+  </header>
+  <div id="list"></div>
+</main>
+<script src="/common.js"></script>
+<script>
+const { api, esc } = Maowo;
+document.getElementById('back').innerHTML = Maowo.icon('back', 22);
+api('/archives?limit=200').then(list => {
+  document.getElementById('list').innerHTML = list.length ? list.map(r => `
+    <a class="arch" href="/archive/${r.id}">
+      <div style="flex-grow: 1; min-width: 0;">
+        <div class="name">${esc(r.name)}</div>
+        <div class="meta">${esc(r.gameName)} · ${esc(r.configLabel)} · ${esc(r.result.title)} · 时长 ${Maowo.fmtDuration(Date.parse(r.finishedAt) - Date.parse(r.startedAt))}</div>
+      </div>
+      <div class="when">${Maowo.fmtDate(r.finishedAt)}<br>${Maowo.fmtClock(r.finishedAt)}</div>
+    </a>`).join('') : '<div class="empty">还没有结束的局</div>';
+}).catch(err => Maowo.toast(err.message));
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+</head>
+<body>
+<main class="wrap" style="padding-top: 64px;">
+  <h1 class="serif" style="font-size: 30px; margin: 0 0 6px;">猫窝</h1>
+  <p class="muted" style="margin: 0 0 24px; font-size: 14px;">只有拿着 token 的人能进来</p>
+  <form id="form">
+    <label class="field" for="tok">token</label>
+    <input id="tok" type="password" autocomplete="current-password" required>
+    <div class="row" style="margin-top: 16px;"><button class="btn primary" type="submit">进入</button></div>
+  </form>
+  <p class="muted small" style="line-height: 1.7; margin-top: 24px;">
+    主人的 token 在服务器的 <span class="mono">/var/lib/maowo/maowo-token.txt</span> 里。朋友请用主人发给你的专属链接打开。只需输入一次，这台设备会记住。
+  </p>
+</main>
+<script src="/common.js"></script>
+<script>
+  const next = new URLSearchParams(location.search).get('next') || '/';
+  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
+  async function tryLogin(t) {
+    Maowo.setToken(t);
+    try {
+      const res = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + t } });
+      if (!res.ok) throw new Error();
+      location.replace(safeNext);
+    } catch {
+      Maowo.setToken('');
+      Maowo.toast('token 不对');
+    }
+  }
+  // Invite links carry the token in the hash, which never reaches the server's logs.
+  const fromLink = decodeURIComponent(location.hash.slice(1));
+  if (fromLink) { history.replaceState(null, '', location.pathname + location.search); tryLogin(fromLink); }
+  document.getElementById('form').onsubmit = e => { e.preventDefault(); tryLogin(document.getElementById('tok').value.trim()); };
+</script>
+</body>
+</html>

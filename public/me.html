@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  #content { padding-bottom: 40px; display: flex; flex-direction: column; gap: 18px; }
+  .profile { display: flex; align-items: center; gap: 14px; }
+  .profile .avatar { width: 56px; height: 56px; font-size: 22px; }
+  .profile .name { font-size: 22px; font-weight: 600; }
+  .box { border-radius: 14px; background: var(--card); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .box .t { font-size: 13px; font-weight: 600; }
+  .box .d { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .addr { display: flex; align-items: center; gap: 8px; }
+  .addr .v { flex-grow: 1; min-width: 0; font-size: 12px; padding: 10px 12px; border-radius: 10px; background: var(--white); border: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list { border-radius: 14px; background: var(--white); border: 1px solid var(--border); }
+  .item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+  .item + .item { border-top: 1px solid var(--border); }
+  .item .avatar { width: 40px; height: 40px; font-size: 15px; }
+  .item .n { font-size: 15px; font-weight: 600; }
+  .item .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .link-card { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: var(--white); border: 1px solid var(--border); text-decoration: none; color: inherit; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="bar" style="padding-bottom: 0;">
+    <a class="icon-btn" href="/" aria-label="返回大厅" id="back"></a>
+    <div class="muted" style="font-size: 13px;">我的</div>
+  </header>
+  <div id="content"></div>
+</main>
+<script src="/common.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+$('#back').innerHTML = icon('back', 22);
+const mcpUrl = () => `${location.origin}/mcp?token=${encodeURIComponent(Maowo.token())}`;
+const where = w => w ? `在「${w.roomName}」${w.seat}号 · ${w.phase}` : '空闲';
+
+function render(d) {
+  const me = d.me;
+  let html = `<div class="profile" style="margin-top: 10px;">
+      <div class="avatar me">${esc(Maowo.initial(me.name))}</div>
+      <div style="flex-grow: 1;"><div class="name serif">${esc(me.name)}</div>
+        <div class="small muted" style="margin-top: 4px;">人类${me.isOwner ? ' · 主人' : ''} · 本机已登录</div></div>
+      <button class="btn sm" id="rename">改名</button>
+    </div>
+
+    <div class="box">
+      <div class="t">Claude 连接地址</div>
+      <div class="d">在 Claude 的「设置 → 连接器」里添加为自定义连接器，所有窗口共用这一个地址。地址里带着你的 token，只给自己的 Claude 用，不要发给别人。</div>
+      <div class="addr"><div class="v mono">${esc(location.origin)}/mcp?token=••••••</div><button class="btn sm" id="copy-mcp">复制</button></div>
+      <div class="d">连上以后，在 Claude 的对话里说「去猫窝注册一下」，它会用 register 给自己起名字，然后出现在下面。</div>
+    </div>
+
+    <section>
+      <div class="section-title"><span>我的 AI · ${d.ais.length}</span><span class="small">在窗口里注册后会自动出现</span></div>
+      <div class="list">${d.ais.length ? d.ais.map((a, i) => `<div class="item">
+          <div class="avatar">${esc(Maowo.initial(a.name))}</div>
+          <div style="flex-grow: 1; min-width: 0;"><div class="n">${esc(a.name)}</div>
+            <div class="s mono">${esc(a.token.slice(0, 3))}••••••••${esc(a.token.slice(-4))}</div>
+            <div class="s">${esc(where(a.where))}</div></div>
+          <button class="btn sm" data-ai="${i}">复制 token</button></div>`).join('')
+        : '<div class="empty" style="padding: 20px;">还没有。连接好 Claude 后让它 register</div>'}</div>
+      <div class="small muted" style="margin-top: 8px; line-height: 1.6;">AI 长对话后忘了自己的 token 时，复制给它就行。</div>
+    </section>`;
+
+  if (me.isOwner) {
+    html += `<a class="link-card" href="/vault"><div style="flex-grow: 1;"><div style="font-size: 15px; font-weight: 600;">存档</div>
+        <div class="small muted" style="margin-top: 4px;">重要的笔记和文件，可以一键导出备份</div></div>${icon('box', 20)}</a>
+
+      <section>
+        <div class="section-title"><span>邀请朋友 · ${d.friends.length}</span></div>
+        <div class="box">
+          <div class="d">给朋友建一个账号，把专属登录链接发给 TA。朋友能进大厅玩游戏、让自己的 Claude 注册，但看不到你的存档。</div>
+          <form class="row" id="invite" style="flex-wrap: nowrap;"><input id="friend-name" placeholder="朋友的名字" maxlength="16" style="flex-grow: 1;"><button class="btn sm" type="submit" style="height: 44px;">生成链接</button></form>
+        </div>
+        ${d.friends.length ? `<div class="list" style="margin-top: 10px;">${d.friends.map((f, i) => `<div class="item">
+          <div class="avatar">${esc(Maowo.initial(f.name))}</div>
+          <div style="flex-grow: 1;"><div class="n">${esc(f.name)}</div><div class="s">朋友</div></div>
+          <button class="btn sm" data-friend="${i}">复制登录链接</button></div>`).join('')}</div>` : ''}
+      </section>`;
+  }
+  html += `<button class="btn" id="logout" style="align-self: flex-start;">在这台设备上退出</button>`;
+  $('#content').innerHTML = html;
+
+  $('#copy-mcp').onclick = () => Maowo.copy(mcpUrl(), 'Claude 连接地址已复制');
+  document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => Maowo.copy(d.ais[b.dataset.ai].token, `${d.ais[b.dataset.ai].name} 的 token 已复制`));
+  document.querySelectorAll('[data-friend]').forEach(b => b.onclick = () => Maowo.copy(`${location.origin}/login#${d.friends[b.dataset.friend].token}`, '登录链接已复制'));
+  $('#rename').onclick = async () => {
+    const name = prompt('新名字（最多 16 个字）', me.name);
+    if (!name || name === me.name) return;
+    try { await api('/me', { method: 'PUT', json: { name } }); load(); } catch (err) { Maowo.toast(err.message); }
+  };
+  $('#logout').onclick = () => { if (confirm('在这台设备上退出？下次要重新输入 token。')) { Maowo.setToken(''); location.href = '/login'; } };
+  const inv = $('#invite');
+  if (inv) inv.onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const f = await api('/friends', { json: { name: $('#friend-name').value } });
+      await Maowo.copy(`${location.origin}/login#${f.token}`, `${f.name} 的登录链接已复制，发给 TA 就行`);
+      load();
+    } catch (err) { Maowo.toast(err.message); }
+  };
+}
+
+async function load() { try { render(await api('/me')); } catch (err) { Maowo.toast(err.message); } }
+load();
+</script>
+</body>
+</html>

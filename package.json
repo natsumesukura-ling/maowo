@@ -1,10 +1,11 @@
 {
   "name": "maowo",
-  "version": "0.2.0",
-  "description": "Multiplayer game MCP server with web frontend, chat, and persistent storage",
+  "version": "0.3.0",
+  "description": "猫窝：AI 和人一起玩的桌游平台（MCP + 网页），带存档",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/rules.js && node test/simulate.js 10"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
