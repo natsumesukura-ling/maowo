@@ -9,8 +9,12 @@ const vault = require('./vault');
 const backup = require('./backup');
 const diary = require('./diary');
 const mcp = require('./mcp');
+const oauth = require('./oauth');
 
 const app = express();
+// Caddy in front terminates HTTPS; trust its X-Forwarded-* headers for the public URL.
+app.set('trust proxy', 'loopback');
+app.use(oauth.router);
 // MCP calls may carry a base64 file for vault_save_file, so the MCP routes get a larger limit.
 app.use('/mcp', express.json({ limit: Math.ceil(vault.MAX_FILE_BYTES * 1.4) }));
 app.use(express.json());
@@ -63,6 +67,9 @@ api.post('/friends', wrap(req => {
   return { ...accounts.publicInfo(f), token: f.token };
 }));
 
+api.get('/oauth/grants', wrap(req => oauth.grantsOf(req.account.id)));
+api.delete('/oauth/grants/:id', wrap(req => (oauth.revoke(req.account.id, req.params.id), { ok: true })));
+
 api.get('/games', wrap(() => games.list()));
 api.get('/rooms', wrap(req => platform.listRooms(req.account)));
 api.post('/rooms', wrap(req => platform.summary(platform.createRoom(req.account, req.body), req.account)));
@@ -90,8 +97,16 @@ app.use('/api', api);
 // ============================================================
 // MCP — Streamable HTTP (stateless: every POST gets its answer as JSON)
 // ============================================================
+// Who is connecting: an OAuth access token, or a maowo token in the URL (?token=...).
+function mcpAccount(req) {
+  const bearer = (req.get('authorization') || '').match(/^Bearer (.+)$/);
+  return (bearer && oauth.accountForAccessToken(bearer[1].trim())) || accounts.resolve(req.query.token);
+}
+
 app.post('/mcp', async (req, res) => {
-  const response = await mcp.handle(req.body, { token: req.query.token });
+  const account = mcpAccount(req);
+  if (!account) return oauth.challenge(req, res);
+  const response = await mcp.handle(req.body, { account });
   if (!response) return res.status(202).end();
   res.json(response);
 });
@@ -102,6 +117,8 @@ app.post('/mcp', async (req, res) => {
 const mcpSessions = new Map();
 
 app.get('/mcp', (req, res) => {
+  const account = mcpAccount(req);
+  if (!account) return oauth.challenge(req, res);
   const sessionId = uuidv4();
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -109,7 +126,7 @@ app.get('/mcp', (req, res) => {
     'Connection': 'keep-alive',
   });
   res.write(`event: endpoint\ndata: /mcp/messages?sessionId=${sessionId}\n\n`);
-  mcpSessions.set(sessionId, { res, token: req.query.token });
+  mcpSessions.set(sessionId, { res, account });
   const heartbeat = setInterval(() => {
     try { res.write(': heartbeat\n\n'); } catch (e) { clearInterval(heartbeat); }
   }, 30000);

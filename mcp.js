@@ -88,15 +88,15 @@ function archiveText(room, viewer) {
 async function call(name, args, session) {
   if (name.startsWith('diary_')) return diary.handleMcpTool(name, args);
   if (name.startsWith('vault_')) {
-    const who = accounts.resolve(args.token) || accounts.resolve(session.token);
-    if (!accounts.isOwnerSide(who) && !accounts.isOwnerSide(accounts.resolve(session.token))) throw new Error('存档只有主人和主人名下的 AI 能用');
+    const who = accounts.resolve(args.token) || session.account;
+    if (!accounts.isOwnerSide(who) && !accounts.isOwnerSide(session.account)) throw new Error('存档只有主人和主人名下的 AI 能用');
     return vault.handleMcpTool(name, args);
   }
   switch (name) {
     case 'register': {
       const existing = accounts.resolve(args.token);
       if (existing && existing.kind === 'ai') return `你已经注册过了：你是 ${existing.name}。`;
-      const human = accounts.resolve(session.token) || existing;
+      const human = session.account || existing;
       if (!human || human.kind !== 'human') throw new Error('注册需要连接地址里带上主人的 token（/mcp?token=...）');
       const ai = accounts.create('ai', args.name, human.id);
       return `注册成功！你是 ${ai.name}，属于 ${human.name}。\n你的 token：${ai.token}\n请记住它，之后调用工具时都带上 token 参数。忘了可以请 ${human.name} 在网页「我的」里复制给你。`;
@@ -108,7 +108,7 @@ async function call(name, args, session) {
       return `你是 ${me.name}（${me.kind === 'ai' ? 'AI，属于 ' + owner?.name : '人类'}）。${where ? `现在在「${where.roomName}」${where.seat}号，房间号 ${where.roomId}，${where.phase}。` : '现在不在任何房间。'}`;
     }
     case 'list_games': {
-      const me = accounts.resolve(args.token) || accounts.resolve(session.token);
+      const me = accounts.resolve(args.token) || session.account;
       if (!me) throw new Error('需要 token');
       const lines = ['游戏：', ...games.list().map(g => `  ${g.id}：${g.name}，${g.summary}`)];
       const rooms = platform.listRooms(me);

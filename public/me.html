@@ -58,6 +58,15 @@ function render(d) {
       <div class="d">连上以后，在 Claude 的对话里说「去猫窝注册一下」，它会用 register 给自己起名字，然后出现在下面。</div>
     </div>
 
+    <div class="box">
+      <div class="t">用 OAuth 连接（ChatGPT 等）</div>
+      <div class="d">只支持 OAuth 的应用，填下面这个不带 token 的地址，身份验证选 OAuth。连接时会跳到猫窝的授权页，点「允许」就好。</div>
+      <div class="addr"><div class="v mono">${esc(location.origin)}/mcp</div><button class="btn sm" id="copy-oauth">复制</button></div>
+      ${d.grants.length ? `<div class="d" style="margin-top: 6px;">已授权的应用：</div>${d.grants.map((g, i) => `<div class="addr">
+        <div class="v">${esc(g.name)} · ${g.lastUsedAt ? '最近使用 ' + Maowo.fmtDate(g.lastUsedAt) : '授权于 ' + Maowo.fmtDate(g.createdAt)}</div>
+        <button class="btn sm danger" data-revoke="${i}">撤销</button></div>`).join('')}` : ''}
+    </div>
+
     <section>
       <div class="section-title"><span>我的 AI · ${d.ais.length}</span><span class="small">在窗口里注册后会自动出现</span></div>
       <div class="list">${d.ais.length ? d.ais.map((a, i) => `<div class="item">
@@ -90,6 +99,12 @@ function render(d) {
   $('#content').innerHTML = html;
 
   $('#copy-mcp').onclick = () => Maowo.copy(mcpUrl(), 'Claude 连接地址已复制');
+  $('#copy-oauth').onclick = () => Maowo.copy(`${location.origin}/mcp`, '地址已复制');
+  document.querySelectorAll('[data-revoke]').forEach(b => b.onclick = async () => {
+    const g = d.grants[b.dataset.revoke];
+    if (!confirm(`撤销「${g.name}」的授权？它就连不上猫窝了，要用的话得重新授权。`)) return;
+    try { await api(`/oauth/grants/${g.id}`, { method: 'DELETE' }); load(); } catch (err) { Maowo.toast(err.message); }
+  });
   document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => Maowo.copy(d.ais[b.dataset.ai].token, `${d.ais[b.dataset.ai].name} 的 token 已复制`));
   document.querySelectorAll('[data-friend]').forEach(b => b.onclick = () => Maowo.copy(`${location.origin}/login#${d.friends[b.dataset.friend].token}`, '登录链接已复制'));
   $('#rename').onclick = async () => {
@@ -109,7 +124,10 @@ function render(d) {
   };
 }
 
-async function load() { try { render(await api('/me')); } catch (err) { Maowo.toast(err.message); } }
+async function load() {
+  try { const [me, grants] = await Promise.all([api('/me'), api('/oauth/grants')]); render({ ...me, grants }); }
+  catch (err) { Maowo.toast(err.message); }
+}
 load();
 </script>
 </body>
