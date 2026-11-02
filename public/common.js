@@ -1,4 +1,6 @@
 // 猫窝共用：token、接口、图标、小工具。
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
 const Maowo = (() => {
   const KEY = 'maowo-token';
   const token = () => { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } };

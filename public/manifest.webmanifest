@@ -1,0 +1,17 @@
+{
+  "name": "猫窝",
+  "short_name": "猫窝",
+  "description": "绫家的猫窝：游戏、日记和存档",
+  "lang": "zh-CN",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF9F5",
+  "theme_color": "#FAF9F5",
+  "icons": [
+    { "src": "/img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

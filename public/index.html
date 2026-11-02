@@ -2,7 +2,15 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#FAF9F5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="猫窝">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
 <title>大厅 · 猫窝</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
@@ -51,6 +59,28 @@
   .sheet { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 10px; }
   .opt { display: flex; gap: 8px; flex-wrap: wrap; }
   .footer { display: flex; justify-content: center; gap: 18px; font-size: 13px; }
+  /* 开屏：从主屏幕打开时出现，滑动解锁进入大厅 */
+  .splash {
+    position: fixed; inset: 0; z-index: 100; background: #FAF9F5; color: #141413;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px;
+    transition: opacity .45s ease, transform .45s ease;
+  }
+  .splash.leaving { opacity: 0; transform: scale(1.03); pointer-events: none; }
+  .splash .clock { font-size: 76px; font-weight: 600; letter-spacing: 1px; font-variant-numeric: tabular-nums; line-height: 1; }
+  .splash .date { font-size: 15px; color: #5E5D59; margin-top: 22px; letter-spacing: 1px; }
+  .splash img { width: min(72vw, 300px); image-rendering: pixelated; margin-top: 56px; }
+  .splash .home { font-size: 24px; font-weight: 700; margin-top: 48px; }
+  .slider {
+    position: relative; width: min(84vw, 340px); height: 64px; border-radius: 32px; background: #EEEDE8;
+    margin-top: 64px; touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  .slider .label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-left: 56px; font-size: 14px; color: #8A8984; letter-spacing: 1px; transition: opacity .2s; }
+  .slider .knob {
+    position: absolute; left: 4px; top: 4px; width: 56px; height: 56px; border-radius: 50%; border: none;
+    background: #2F2E2C; color: #FAF9F5; display: flex; align-items: center; justify-content: center; cursor: grab;
+  }
+  .slider .knob.back { transition: transform .3s ease; }
+  @media (prefers-reduced-motion: reduce) { .splash { transition: none; } }
 </style>
 </head>
 <body>
@@ -209,6 +239,63 @@ async function load() {
   state = { rooms, archives };
   renderTop(me); renderChips(); renderRooms(); renderDiary(diary); renderArchives();
 }
+// ---------- splash ----------
+// Shown when the app is opened from the home screen (or with ?splash=1), once per launch.
+function showSplash() {
+  const q = new URLSearchParams(location.search);
+  const standalone = q.has('app') || matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let seen = false;
+  try { seen = sessionStorage.getItem('maowo-splash') === '1'; } catch {}
+  if (!(q.has('splash') || (standalone && !seen))) return;
+  try { sessionStorage.setItem('maowo-splash', '1'); } catch {}
+  if (q.has('app') || q.has('splash')) history.replaceState(null, '', '/');
+
+  const el = document.createElement('div');
+  el.className = 'splash';
+  el.innerHTML = `<div class="clock" id="sp-clock"></div><div class="date" id="sp-date"></div>
+    <img src="/img/home.png" alt="">
+    <div class="home">You're home</div>
+    <div class="slider" id="sp-slider"><div class="label">slide to unlock</div>
+      <button class="knob" id="sp-knob" aria-label="滑动解锁，进入猫窝">${icon('back', 22, 2.4).replace('<path d="M15 18l-6-6 6-6"/>', '<path d="M9 18l6-6-6-6"/>')}</button></div>`;
+  document.body.appendChild(el);
+
+  const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const tick = () => {
+    const d = new Date();
+    el.querySelector('#sp-clock').textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    el.querySelector('#sp-date').textContent = `${d.getMonth() + 1}月${d.getDate()}日　${WEEK[d.getDay()]}`;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+
+  const slider = el.querySelector('#sp-slider'), knob = el.querySelector('#sp-knob'), label = slider.querySelector('.label');
+  let startX = null, x = 0;
+  const max = () => slider.clientWidth - knob.clientWidth - 8;
+  const unlock = () => {
+    clearInterval(timer);
+    knob.style.transform = `translateX(${max()}px)`;
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 460);
+  };
+  knob.addEventListener('pointerdown', e => { startX = e.clientX - x; knob.classList.remove('back'); knob.setPointerCapture(e.pointerId); });
+  knob.addEventListener('pointermove', e => {
+    if (startX === null) return;
+    x = Math.max(0, Math.min(max(), e.clientX - startX));
+    knob.style.transform = `translateX(${x}px)`;
+    label.style.opacity = String(1 - x / max());
+  });
+  const release = () => {
+    if (startX === null) return;
+    startX = null;
+    if (x > max() * 0.8) return unlock();
+    x = 0; knob.classList.add('back'); knob.style.transform = ''; label.style.opacity = '1';
+  };
+  knob.addEventListener('pointerup', release);
+  knob.addEventListener('pointercancel', release);
+  knob.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); unlock(); } });
+}
+showSplash();
+
 load().catch(err => Maowo.toast(err.message));
 setInterval(() => load().catch(() => {}), 8000);
 </script>
