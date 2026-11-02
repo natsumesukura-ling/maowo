@@ -51,6 +51,13 @@ function safeFilename(name) {
   return (cleaned || 'file').slice(0, 120);
 }
 
+// filename= is an ASCII fallback for browsers that ignore the UTF-8 filename*.
+function contentDisposition(type, name, id) {
+  const ext = (path.extname(name).match(/^\.[A-Za-z0-9]{1,10}$/) || [''])[0];
+  const ascii = /^[\x20-\x7e]+$/.test(name) ? name.replace(/["\\]/g, '_') : `maowo-${id}${ext}`;
+  return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
+
 function rowToItem(row) {
   return { ...row, tags: JSON.parse(row.tags), stored_name: undefined };
 }
@@ -189,14 +196,14 @@ router.get('/:id/download', (req, res) => {
     const item = getItem(req.params.id);
     if (!item) return res.status(404).json({ error: '找不到这份存档' });
     res.set('Content-Type', 'text/plain; charset=utf-8');
-    res.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeFilename(item.title) + '.txt')}`);
+    res.set('Content-Disposition', contentDisposition('attachment', safeFilename(item.title) + '.txt', item.id));
     return res.send(item.content);
   }
   const inline = req.query.inline === '1' && INLINE_MIMES.has(found.row.mime);
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Content-Security-Policy', 'sandbox');
   res.set('Content-Type', inline ? found.row.mime : 'application/octet-stream');
-  res.set('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(found.row.filename)}`);
+  res.set('Content-Disposition', contentDisposition(inline ? 'inline' : 'attachment', found.row.filename, found.row.id));
   res.sendFile(found.full);
 });
 
@@ -328,4 +335,4 @@ function handleMcpTool(name, args) {
   }
 }
 
-module.exports = { router, mcpTools, handleMcpTool, MAX_FILE_BYTES };
+module.exports = { router, mcpTools, handleMcpTool, MAX_FILE_BYTES, FILES_DIR, safeFilename };

@@ -5,6 +5,7 @@ const { GomokuGame } = require('./games/gomoku');
 const db = require('./db');
 const auth = require('./auth');
 const vault = require('./vault');
+const backup = require('./backup');
 
 const app = express();
 // MCP calls may carry a base64 file for vault_save_file, so that one route gets a larger limit.
@@ -33,6 +34,7 @@ app.get('/vault', (req, res) => res.sendFile(path.join(__dirname, 'public', 'vau
 // ============================================================
 // REST API — Vault (存档)
 // ============================================================
+app.use('/api/vault/backup', backup.router);
 app.use('/api/vault', vault.router);
 
 // ============================================================
