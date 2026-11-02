@@ -8,8 +8,8 @@ const vault = require('./vault');
 const backup = require('./backup');
 
 const app = express();
-// MCP calls may carry a base64 file for vault_save_file, so that one route gets a larger limit.
-app.use('/mcp/messages', express.json({ limit: Math.ceil(vault.MAX_FILE_BYTES * 1.4) }));
+// MCP calls may carry a base64 file for vault_save_file, so the MCP routes get a larger limit.
+app.use('/mcp', express.json({ limit: Math.ceil(vault.MAX_FILE_BYTES * 1.4) }));
 app.use(express.json());
 
 // ============================================================
@@ -130,7 +130,16 @@ app.get('/api/games/:gameId/chat', (req, res) => {
 });
 
 // ============================================================
-// MCP SSE Transport
+// MCP Streamable HTTP Transport (stateless: every POST gets its answer as JSON)
+// ============================================================
+app.post('/mcp', (req, res) => {
+  const response = handleMcpMessage(req.body, { token: req.query.token });
+  if (!response) return res.status(202).end();
+  res.json(response);
+});
+
+// ============================================================
+// MCP SSE Transport (legacy)
 // ============================================================
 const mcpSessions = new Map();
 
@@ -164,14 +173,17 @@ app.post('/mcp/messages', (req, res) => {
 // MCP Protocol Handler
 // ============================================================
 function handleMcpMessage(message, session) {
-  const { method, id, params } = message;
+  const { method, id, params } = message || {};
+  // Notifications carry no id and never get a reply.
+  if (id === undefined) return null;
   switch (method) {
     case 'initialize':
       return { jsonrpc: '2.0', id, result: {
-        protocolVersion: '2024-11-05', capabilities: { tools: {} },
+        // Only basic tools are used, so any protocol version the client asks for works.
+        protocolVersion: (params && params.protocolVersion) || '2024-11-05', capabilities: { tools: {} },
         serverInfo: { name: 'maowo', version: '0.2.0' }
       }};
-    case 'notifications/initialized': return null;
+    case 'ping': return { jsonrpc: '2.0', id, result: {} };
     case 'tools/list': return { jsonrpc: '2.0', id, result: { tools: getMcpTools() } };
     case 'tools/call': return handleToolCall(id, params, session);
     default: return { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } };
@@ -325,10 +337,11 @@ function handleToolCall(id, params, session) {
 // Start
 // ============================================================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Game MCP Server running on port ${PORT}`);
+// HOST=127.0.0.1 keeps the server reachable only through the HTTPS proxy in front of it.
+app.listen(PORT, process.env.HOST, () => {
+  console.log(`maowo running on port ${PORT}`);
   console.log(`Web UI: http://localhost:${PORT}`);
-  console.log(`MCP SSE: http://localhost:${PORT}/mcp`);
+  console.log(`MCP (Streamable HTTP and SSE): http://localhost:${PORT}/mcp`);
   console.log(`Vault: http://localhost:${PORT}/vault`);
   if (auth.TOKEN_SOURCE === 'new') console.log(`New owner token written to ${auth.TOKEN_FILE}`);
   if (auth.TOKEN_SOURCE !== 'env') console.log(`Owner token is in ${auth.TOKEN_FILE}`);
