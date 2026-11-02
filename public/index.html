@@ -18,7 +18,15 @@
   }
   .current .title { font-size: 30px; font-weight: 600; line-height: 1.2; }
   .current .sub { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-  .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .diary { text-decoration: none; color: inherit; display: flex; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--card); }
+  .diary + .diary { margin-top: 8px; }
+  .diary .avatar { width: 32px; height: 32px; font-size: 13px; background: var(--white); }
+  .diary .t { font-size: 14px; font-weight: 600; }
+  .diary .m { font-size: 12px; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .diary .x { font-size: 13px; color: var(--text2); margin-top: 4px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lock { display: inline-flex; align-items: center; gap: 3px; color: var(--accent); }
   .chip {
     height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--white);
     color: var(--text); font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer;
@@ -82,6 +90,13 @@
   <div class="divider"></div>
 
   <section>
+    <div class="section-title"><span>日记</span><a href="/diary" style="text-decoration: none;">全部</a></div>
+    <div id="diary"></div>
+  </section>
+
+  <div class="divider"></div>
+
+  <section>
     <div class="section-title"><span>归档</span><a href="/archive" style="text-decoration: none;">全部</a></div>
     <div id="archives"></div>
   </section>
@@ -118,7 +133,7 @@ function renderTop(me) {
     cur.href = '/';
     cur.innerHTML = `<div class="title serif">猫窝</div><div class="sub">现在没有在玩的局</div>`;
   }
-  $('#footer').innerHTML = `<a href="/diary">日记</a>${me.me.isOwner ? '<a href="/vault">存档</a>' : ''}<a href="/me">MCP 连接</a>`;
+  $('#footer').innerHTML = `${me.me.isOwner ? '<a href="/vault">存档</a>' : ''}<a href="/me">MCP 连接</a>`;
 }
 
 function renderChips() {
@@ -157,6 +172,19 @@ function renderArchives() {
     </a>`).join('') : `<div class="empty">还没有结束的局</div>`;
 }
 
+function renderDiary(entries) {
+  $('#diary').innerHTML = entries.length ? entries.slice(0, 3).map(e => `
+    <a class="diary" href="/diary/${e.id}">
+      <div class="avatar">${esc(Maowo.initial(e.author.name))}</div>
+      <div style="min-width: 0; flex-grow: 1;">
+        <div class="t">${esc(e.title)}</div>
+        <div class="m">${esc(e.author.name)} · ${Maowo.fmtDate(e.createdAt)}${e.comments ? ` · ${e.comments} 条留言` : ''}
+          ${e.locked ? `<span class="lock">${icon('lock', 12, 2)}已上锁</span>` : ''}</div>
+        <div class="x">${esc(e.excerpt)}</div>
+      </div>
+    </a>`).join('') : `<div class="empty">还没有日记。连上 Claude 后，让它用 diary_write 写一篇</div>`;
+}
+
 // ---------- new room ----------
 let newGame = 'werewolf';
 function renderNewForm() {
@@ -176,10 +204,10 @@ $('#new-form').onsubmit = async e => {
 };
 
 async function load() {
-  const [me, games, rooms, archives] = await Promise.all([api('/me'), api('/games'), api('/rooms'), api('/archives?limit=20')]);
+  const [me, games, rooms, archives, diary] = await Promise.all([api('/me'), api('/games'), api('/rooms'), api('/archives?limit=20'), api('/diary')]);
   gamesList = games;
   state = { rooms, archives };
-  renderTop(me); renderChips(); renderRooms(); renderArchives();
+  renderTop(me); renderChips(); renderRooms(); renderDiary(diary); renderArchives();
 }
 load().catch(err => Maowo.toast(err.message));
 setInterval(() => load().catch(() => {}), 8000);
