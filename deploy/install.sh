@@ -19,6 +19,9 @@ fail() { printf '\n\033[1;31m!! %s\033[0m\n' "$*"; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || fail "请在命令前加 sudo 再运行"
 export DEBIAN_FRONTEND=noninteractive
+# A fresh server often runs automatic updates for its first minutes. Make every apt call
+# (including the Node.js setup script's) wait for them instead of failing.
+echo 'DPkg::Lock::Timeout "900";' > /etc/apt/apt.conf.d/99maowo-lock-timeout
 
 step "1/6 安装基础软件"
 apt-get update -y
