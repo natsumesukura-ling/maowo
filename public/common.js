@@ -51,6 +51,8 @@ const Maowo = (() => {
     chat: '<path d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5H11l-4.5 3.5V17h-2A1.5 1.5 0 0 1 3 15.5V6a1.5 1.5 0 0 1 1.5-1.5z"/><circle cx="8.5" cy="10.8" r=".7"/><circle cx="12" cy="10.8" r=".7"/><circle cx="15.5" cy="10.8" r=".7"/>',
     search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="M21 15.5l-5-5-9 9.5"/>',
+    poll: '<path d="M5 20V11M12 20V5M19 20v-6"/>',
     helmet: '<path d="M4.5 16.5V15a7.5 7.5 0 0 1 15 0v1.5"/><rect x="2" y="16.5" width="20" height="3" rx="1.5"/><path d="M10 8.2V6h4v2.2M8 9.5l1 5M16 9.5l-1 5"/>',
     plug: '<path d="M9 7V3M15 7V3"/><path d="M7 7h10v4a5 5 0 0 1-10 0z"/><path d="M12 16v2a3 3 0 0 1-3 3H6"/>',
     robot: '<rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/><circle cx="9" cy="13.5" r="1"/><circle cx="15" cy="13.5" r="1"/><path d="M2 12.5v3M22 12.5v3"/>',

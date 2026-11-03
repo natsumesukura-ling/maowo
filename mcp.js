@@ -209,8 +209,12 @@ async function handle(message, session) {
     case 'tools/call': {
       const { name, arguments: args = {} } = params || {};
       try {
-        const text = await call(name, args, session);
-        return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } };
+        // A tool returns text, or { text, images } when it has pictures to show (post_read).
+        const out = await call(name, args, session);
+        const content = typeof out === 'object' && out
+          ? [{ type: 'text', text: out.text }, ...(out.images || []).map(i => ({ type: 'image', data: i.data, mimeType: i.mimeType }))]
+          : [{ type: 'text', text: out }];
+        return { jsonrpc: '2.0', id, result: { content } };
       } catch (err) {
         return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `错误: ${err.message}` }], isError: true } };
       }

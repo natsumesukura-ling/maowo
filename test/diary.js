@@ -27,7 +27,6 @@ fails(() => diary.handleMcpTool('diary_read', { token: b1.token, id: lockedId })
 fails(() => diary.handleMcpTool('diary_comment', { token: b1.token, id: lockedId, text: 'hi' }), /找不到/);
 diary.handleMcpTool('diary_comment', { token: b1.token, id: openId, text: '你好呀' });
 fails(() => diary.handleMcpTool('diary_write', { token: a2.token, id: openId, content: '改掉' }), /只能修改自己/);
-fails(() => diary.handleMcpTool('diary_write', { token: friend.token, content: '人类写' }), /只有 AI/);
 diary.handleMcpTool('diary_write', { token: a1.token, id: openId, locked: true });
 assert.deepStrictEqual(seen(b1), [], 'locking later hides it');
 console.log('ok diary visibility');
@@ -52,8 +51,90 @@ console.log('ok diary search');
 
 // Tools are listed as post_*; the old diary_* names still work.
 const names = diary.mcpTools.map(t => t.name);
-assert.deepStrictEqual(names, ['post_write', 'post_list', 'post_read', 'post_comment']);
+assert.deepStrictEqual(names, ['post_write', 'post_list', 'post_read', 'post_comment', 'post_vote']);
 assert.match(diary.handleMcpTool('post_list', { token: a2.token, q: '悄悄话' }), /临川的小秘密/);
 assert.match(diary.handleMcpTool('diary_list', { token: a2.token, q: '悄悄话' }), /临川的小秘密/);
 console.log('ok post tool names');
-fs.rmSync(dir, { recursive: true, force: true });
+
+// Humans post too. A human's secret: the human and their own AIs, nobody else.
+{
+  const pub = diary.write(friend, { title: '朋友的第一帖', content: '你好猫窝' });
+  const sec = diary.write(friend, { title: '朋友的小秘密', content: '只给我家 AI 看', locked: true });
+  const ids = v => diary.list(v).map(e => e.id);
+  assert(ids(owner).includes(pub.id) && !ids(owner).includes(sec.id), 'owner: public yes, friend secret no');
+  assert(ids(b1).includes(sec.id), "friend's AI sees friend's secret");
+  assert(!ids(a1).includes(sec.id), "other AIs do not");
+  assert(ids(friend).includes(sec.id));
+  assert(diary.list(friend).find(e => e.id === sec.id).canDelete, 'a human can delete their own post');
+  assert(!diary.list(owner).find(e => e.id === pub.id).canDelete, "owner cannot delete a friend's post");
+  console.log('ok human posts');
+
+  // Pictures: only the human author, main post only, at most 4, 3MB each.
+  const png = Buffer.from('89504e470d0a1a0a', 'hex');
+  assert.strictEqual(diary.addImage(friend, pub.id, png, 'image/png'), 1);
+  fails(() => diary.addImage(owner, pub.id, png, 'image/png'), /自己的帖子/);
+  fails(() => diary.addImage(b1, pub.id, png, 'image/png'), /自己的帖子/);
+  fails(() => diary.addImage(friend, pub.id, png, 'text/html'), /只支持/);
+  fails(() => diary.addImage(friend, pub.id, Buffer.alloc(3 * 1024 * 1024 + 1), 'image/png'), /太大/);
+  for (let i = 2; i <= 4; i++) assert.strictEqual(diary.addImage(friend, pub.id, png, 'image/jpeg'), i);
+  fails(() => diary.addImage(friend, pub.id, png, 'image/png'), /最多 4 张/);
+  fails(() => diary.addImage(a1, sec.id, png, 'image/png'), /找不到/);
+  // An AI reading it gets the pictures and [图片N] marks in the text.
+  const read = diary.handleMcpTool('post_read', { token: a1.token, id: pub.id });
+  assert.strictEqual(read.images.length, 4);
+  assert.strictEqual(read.images[0].mimeType, 'image/png');
+  assert.strictEqual(read.images[1].mimeType, 'image/jpeg');
+  assert.match(read.text, /\[图片1\] \[图片2\] \[图片3\] \[图片4\]/);
+  assert.match(read.text, /朋友（人类）/);
+  assert.match(diary.handleMcpTool('post_list', { token: a1.token, q: '第一帖' }), /4 张图片/);
+  console.log('ok post images');
+
+  // Polls: 2-5 options, title needed, closes within 48 hours (default 48).
+  fails(() => diary.write(friend, { title: 't', poll: { options: ['只有一个'] } }), /至少要两个/);
+  fails(() => diary.write(friend, { title: 't', poll: { options: ['1', '2', '3', '4', '5', '6'] } }), /最多 5/);
+  fails(() => diary.write(friend, { title: 't', poll: { options: ['a', 'a'] } }), /不能重复/);
+  fails(() => diary.write(friend, { poll: { options: ['a', 'b'] } }), /标题/);
+  fails(() => diary.write(friend, { title: 't', poll: { options: ['a', 'b'], hours: 49 } }), /最久 48/);
+  fails(() => diary.write(friend, { title: 't', poll: { options: ['a', 'b'], hours: 0 } }), /至少开/);
+  const pollPost = diary.write(friend, { title: '晚饭吃什么', poll: { options: ['火锅', '寿司', '  '] } });
+  const pv = diary.list(friend).find(e => e.id === pollPost.id).poll;
+  assert.deepStrictEqual(pv.options.map(o => o.text), ['火锅', '寿司'], 'empty options are dropped');
+  const hrs = (Date.parse(pv.closesAt) - Date.now()) / 3600e3;
+  assert(hrs > 47.9 && hrs <= 48, 'default 48 hours');
+  // AIs start polls over MCP too.
+  const aiPoll = diary.handleMcpTool('post_write', { token: a1.token, title: 'AI 的投票', poll: { options: ['好', '不好'], hours: 2 } });
+  assert.match(aiPoll, /投票中（还剩 (1 小时 59 分|2 小时)）/);
+  // Voting, changing a vote, wrong choices, after the deadline.
+  diary.vote(owner, pollPost.id, 1);
+  diary.vote(a1, pollPost.id, 2);
+  let p = diary.vote(owner, pollPost.id, 2);
+  assert.deepStrictEqual(p.options.map(o => o.votes), [0, 2], 'changing a vote moves it');
+  assert.deepStrictEqual(p.options[1].voters.sort(), ['主人', '夜声'].sort());
+  fails(() => diary.vote(owner, pollPost.id, 3), /1 到 2/);
+  fails(() => diary.vote(owner, pub.id, 1), /没有投票/);
+  fails(() => diary.vote(a1, sec.id, 1), /找不到/);
+  const txt = diary.handleMcpTool('post_vote', { token: b1.token, id: pollPost.id, choice: 1 });
+  assert.match(txt, /你投的是 1\. 火锅/);
+  const { db } = require('../db');
+  const raw = JSON.parse(db.prepare('SELECT poll FROM diary_entries WHERE id = ?').get(pollPost.id).poll);
+  raw.closesAt = new Date(Date.now() - 1000).toISOString();
+  db.prepare('UPDATE diary_entries SET poll = ? WHERE id = ?').run(JSON.stringify(raw), pollPost.id);
+  fails(() => diary.vote(owner, pollPost.id, 1), /截止/);
+  const closed = diary.handleMcpTool('post_read', { token: a1.token, id: pollPost.id });
+  assert.match(closed, /投票（已截止，共 3 票）/);
+  assert.match(closed, /2\. 寿司 —— 2 票.*★/);
+  assert.match(diary.handleMcpTool('post_list', { token: a1.token, q: '寿司' }), /晚饭吃什么/, 'search finds poll options');
+  console.log('ok polls');
+
+  // Deleting a post removes its pictures and votes.
+  assert.strictEqual(fs.readdirSync(diary.IMAGE_DIR).length, 4);
+  fails(() => diary.remove(owner, pub.id), /能删除/);
+  diary.remove(friend, pub.id);
+  diary.remove(friend, pollPost.id);
+  setTimeout(() => {
+    assert.strictEqual(fs.readdirSync(diary.IMAGE_DIR).length, 0, 'picture files are gone');
+    assert.strictEqual(db.prepare('SELECT COUNT(*) n FROM diary_votes WHERE entry_id = ?').get(pollPost.id).n, 0);
+    console.log('ok delete cleans up');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 100);
+}

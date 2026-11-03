@@ -49,6 +49,54 @@
   .entry .x { font-size: 13px; color: var(--text2); margin-top: 8px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .entry .corner { position: absolute; right: 10px; bottom: 10px; width: 30px; pointer-events: none; color: var(--accent-line); opacity: .85; }
   .entry .tape { position: absolute; right: -8px; top: 6px; width: 54px; height: 18px; background: rgba(232, 205, 160, .7); transform: rotate(32deg); border-radius: 2px; }
+  .entry .thumbs { display: flex; gap: 6px; margin-top: 10px; }
+  .entry .thumbs img { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--accent-soft); display: block; }
+  .pill.vote-pill { background: var(--accent-soft); color: var(--accent-hover); }
+  .pill.vote-pill.done { background: var(--card); color: var(--muted); }
+  .fab {
+    position: fixed; right: 18px; bottom: calc(var(--tabbar-h) + 22px + env(safe-area-inset-bottom)); z-index: 20;
+    height: 48px; padding: 0 18px 0 14px; border-radius: 24px; border: none; background: var(--accent); color: #fff;
+    font: inherit; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer;
+    box-shadow: 0 6px 18px rgba(150, 73, 29, .28);
+  }
+  /* 发帖面板 */
+  .compose .pics { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .compose .pic { position: relative; width: 72px; height: 72px; }
+  .compose .pic img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; display: block; }
+  .compose .pic button { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 50%; border: none; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+  .compose .addpic { width: 72px; height: 72px; border-radius: 12px; border: 1.5px dashed var(--line); background: var(--white); color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: inherit; font-size: 11px; cursor: pointer; }
+  .compose .opts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .chip { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--white); color: var(--text2); font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-hover); font-weight: 600; }
+  .chip.secret[aria-pressed="true"] { background: var(--secret-bg); border-color: #EFCFC2; color: var(--secret-text); }
+  .pollbox { margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--border); }
+  .pollbox .opt { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .pollbox .opt .n { width: 20px; color: var(--muted); font-size: 13px; text-align: center; flex-shrink: 0; }
+  .pollbox .opt input { padding: 9px 12px; }
+  .pollbox .opt button { width: 32px; height: 32px; border: none; background: transparent; color: var(--muted); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
+  .pollbox select { padding: 8px 12px; width: auto; }
+  /* 单篇里的图片和投票 */
+  .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+  .gallery.one { grid-template-columns: 1fr; }
+  .gallery button { padding: 0; border: none; background: var(--accent-soft); border-radius: 12px; overflow: hidden; aspect-ratio: 1; cursor: zoom-in; }
+  .gallery.one button { aspect-ratio: auto; min-height: 120px; }
+  .gallery img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gallery.one img { height: auto; max-height: 70vh; object-fit: contain; }
+  .lightbox { position: fixed; inset: 0; z-index: 70; background: rgba(20, 15, 10, .92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+  .poll { margin-top: 14px; padding: 14px; border-radius: 16px; background: var(--white); border: 1px solid var(--border); box-shadow: var(--shadow); }
+  .poll .head2 { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .poll .choice {
+    position: relative; overflow: hidden; width: 100%; text-align: left; margin-top: 8px; padding: 11px 14px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; display: block;
+  }
+  .poll .choice:disabled { cursor: default; opacity: 1; }
+  .poll .choice .bar { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); transition: width .3s; }
+  .poll .choice.mine { border-color: var(--accent-line); }
+  .poll .choice.top .bar { background: #F1D3B5; }
+  .poll .choice .row1 { position: relative; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .poll .choice .row1 b { font-weight: 600; color: var(--accent-hover); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+  .poll .choice .who { position: relative; font-size: 12px; color: var(--muted); margin-top: 3px; }
   .flowerline { display: flex; align-items: flex-end; justify-content: center; gap: 22px; margin-top: 36px; color: var(--accent-line); opacity: .8; }
   .flowerline img { width: 54px; }
   /* 单篇 */
@@ -95,8 +143,142 @@ const CORNERS = [
 
 // The head (with the search box) is drawn once so typing never loses focus;
 // only the list below it is redrawn.
+const left = iso => {
+  const m = Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)} 小时${m % 60 ? ` ${m % 60} 分` : ''}` : `${Math.max(1, m)} 分钟`;
+};
+const pollPill = p => !p ? '' : p.closed
+  ? `<span class="pill vote-pill done">${icon('poll', 12, 2)}投票已截止</span>`
+  : `<span class="pill vote-pill">${icon('poll', 12, 2)}投票中 · 还剩 ${left(p.closesAt)}</span>`;
+
+// Post pictures need the login token, so they are fetched and shown as blob URLs.
+const imgCache = new Map();
+function loadImage(path) {
+  if (!imgCache.has(path)) {
+    imgCache.set(path, fetch('/api' + path, { headers: { Authorization: 'Bearer ' + Maowo.token() } })
+      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(b => URL.createObjectURL(b))
+      .catch(err => { imgCache.delete(path); throw err; }));
+  }
+  return imgCache.get(path);
+}
+function fillImages(root) {
+  root.querySelectorAll('img[data-src]').forEach(im => loadImage(im.dataset.src).then(u => { im.src = u; }).catch(() => {}));
+}
+
+// Shrinks a picture to at most 1600px on its long side as JPEG (GIFs stay as they are, to keep moving).
+async function shrink(file) {
+  if (file.type === 'image/gif' && file.size <= 3 * 1024 * 1024) return file;
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch {
+    src = await new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = URL.createObjectURL(file); });
+  }
+  const w = src.width, h = src.height, k = Math.min(1, 1600 / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * k); c.height = Math.round(h * k);
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(src, 0, 0, c.width, c.height);
+  return new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.85));
+}
+
+const MAX_PICS = 4, MAX_OPTIONS = 5;
+const HOURS = [1, 3, 6, 12, 24, 48];
+
+function compose() {
+  const pics = []; // { file, url }
+  let locked = false, withPoll = false, options = ['', ''];
+  const panel = Maowo.sheet(`<div class="compose">
+    <h2>发帖子</h2>
+    <label class="field" for="pt">标题</label>
+    <input id="pt" maxlength="60" placeholder="可以不写" autocomplete="off">
+    <label class="field" for="pc">内容</label>
+    <textarea id="pc" rows="5" maxlength="20000" placeholder="想说点什么…" style="resize: vertical;"></textarea>
+    <div class="pics" id="pics"></div>
+    <input type="file" id="pf" accept="image/*" multiple class="hidden">
+    <div class="opts">
+      <button type="button" class="chip secret" id="o-lock" aria-pressed="false">${icon('lock', 14, 2)}小秘密</button>
+      <button type="button" class="chip" id="o-poll" aria-pressed="false">${icon('poll', 14, 2)}发起投票</button>
+    </div>
+    <div class="small muted hidden" id="lock-hint" style="margin-top: 8px;">小秘密只有你和你家的 AI 能看到，别人搜也搜不到。</div>
+    <div class="pollbox hidden" id="pollbox"></div>
+    <button class="btn primary block" id="post" style="margin-top: 18px;">发布</button>
+  </div>`);
+  const q = s => panel.querySelector(s);
+
+  const drawPics = () => {
+    q('#pics').innerHTML = pics.map((p, i) => `<div class="pic"><img src="${p.url}" alt="第 ${i + 1} 张"><button type="button" data-rm="${i}" aria-label="去掉这张">${icon('close', 14, 2.4)}</button></div>`).join('')
+      + (pics.length < MAX_PICS ? `<button type="button" class="addpic" id="addpic">${icon('image', 22, 1.6)}<span>${pics.length ? `${pics.length}/${MAX_PICS}` : '加图片'}</span></button>` : '');
+    q('#pics').querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { URL.revokeObjectURL(pics[b.dataset.rm].url); pics.splice(Number(b.dataset.rm), 1); drawPics(); });
+    const add = q('#addpic'); if (add) add.onclick = () => q('#pf').click();
+  };
+  q('#pf').onchange = () => {
+    const files = [...q('#pf').files].filter(f => f.type.startsWith('image/'));
+    if (pics.length + files.length > MAX_PICS) Maowo.toast(`一篇最多 ${MAX_PICS} 张图片`);
+    for (const f of files.slice(0, MAX_PICS - pics.length)) pics.push({ file: f, url: URL.createObjectURL(f) });
+    q('#pf').value = '';
+    drawPics();
+  };
+
+  const drawPoll = () => {
+    q('#pollbox').innerHTML = options.map((o, i) => `<div class="opt"><span class="n">${i + 1}</span>
+        <input data-opt="${i}" maxlength="60" placeholder="第 ${i + 1} 栏" value="${esc(o)}" autocomplete="off">
+        ${options.length > 2 ? `<button type="button" data-del="${i}" aria-label="删掉这一栏">${icon('close', 16, 2)}</button>` : ''}</div>`).join('')
+      + `<div class="row" style="align-items: center; justify-content: space-between; margin-top: 4px;">
+        ${options.length < MAX_OPTIONS ? `<button type="button" class="btn sm soft" id="addopt">${icon('plus', 16, 2)}加一栏</button>` : '<span class="small muted">最多 5 栏</span>'}
+        <label class="small muted" style="display: flex; align-items: center; gap: 6px;">截止
+          <select id="hours">${HOURS.map(h => `<option value="${h}" ${h === 48 ? 'selected' : ''}>${h} 小时后</option>`).join('')}</select></label>
+      </div>`;
+    q('#pollbox').querySelectorAll('[data-opt]').forEach(inp => inp.oninput = () => { options[inp.dataset.opt] = inp.value; });
+    q('#pollbox').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { keepHours(); options.splice(Number(b.dataset.del), 1); drawPoll(); });
+    const add = q('#addopt'); if (add) add.onclick = () => { keepHours(); options.push(''); drawPoll(); q(`[data-opt="${options.length - 1}"]`).focus(); };
+    if (drawPoll.hours) q('#hours').value = drawPoll.hours;
+  };
+  const keepHours = () => { const h = q('#hours'); if (h) drawPoll.hours = h.value; };
+
+  q('#o-lock').onclick = () => { locked = !locked; q('#o-lock').setAttribute('aria-pressed', locked); q('#lock-hint').classList.toggle('hidden', !locked); };
+  q('#o-poll').onclick = () => {
+    withPoll = !withPoll; q('#o-poll').setAttribute('aria-pressed', withPoll);
+    q('#pollbox').classList.toggle('hidden', !withPoll);
+    q('#pt').placeholder = withPoll ? '投票要写一个标题' : '可以不写';
+    if (withPoll && !q('#pollbox').innerHTML) drawPoll();
+  };
+  drawPics();
+
+  q('#post').onclick = async () => {
+    const title = q('#pt').value.trim(), content = q('#pc').value.trim();
+    const opts = options.map(o => o.trim()).filter(Boolean);
+    if (withPoll && !title) { Maowo.toast('投票要写一个标题'); q('#pt').focus(); return; }
+    if (withPoll && opts.length < 2) { Maowo.toast('投票至少要填两栏'); return; }
+    if (!withPoll && !content && !pics.length) { Maowo.toast('写点什么，或者加张图片吧'); q('#pc').focus(); return; }
+    const btn = q('#post'); btn.disabled = true; btn.textContent = '发布中…';
+    try {
+      const post = await api('/diary', { json: {
+        title: title || (pics.length && !content ? '分享图片' : ''), content, locked,
+        poll: withPoll ? { options: opts, hours: Number(q('#hours').value) } : null,
+      } });
+      for (let i = 0; i < pics.length; i++) {
+        btn.textContent = `上传图片 ${i + 1}/${pics.length}…`;
+        const blob = await shrink(pics[i].file);
+        const res = await fetch(`/api/diary/${post.id}/images`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': blob.type || 'image/jpeg' }, body: blob });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); Maowo.toast(`第 ${i + 1} 张没传上：${d.error || '出错了'}`); }
+      }
+      pics.forEach(p => URL.revokeObjectURL(p.url));
+      panel.close();
+      Maowo.toast('发好了');
+      await showList();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) { Maowo.toast(err.message); btn.disabled = false; btn.textContent = '发布'; }
+  };
+}
+
 async function showList() {
   if (!document.querySelector('.tabbar')) Maowo.tabbar('diary');
+  if (!$('#fab')) {
+    document.body.insertAdjacentHTML('beforeend', `<button class="fab" id="fab">${icon('plus', 20, 2.2)}发帖</button>`);
+    $('#fab').onclick = compose;
+  }
   if (!$('#entries')) {
     const me = await api('/me');
     $('#content').innerHTML = `<div class="top" aria-hidden="true">
@@ -142,13 +324,32 @@ async function showList() {
         ${Maowo.avatar(e.author)}
         <div style="min-width: 0; flex-grow: 1;">
           <div class="t">${esc(e.title)}</div>
-          <div class="m"><span>${esc(e.author.name)} · ${when(e.createdAt)}${e.comments && !e.locked ? ` · ${e.comments} 条留言` : ''}${e.locked ? ' ·' : ''}</span>${secret(e.locked)}</div>
-          <div class="x">${esc(e.excerpt)}${e.excerpt.length >= 80 ? '……' : ''}</div>
+          <div class="m"><span>${esc(e.author.name)} · ${when(e.createdAt)}${e.comments ? ` · ${e.comments} 条留言` : ''}</span>${secret(e.locked)}${pollPill(e.poll)}</div>
+          ${e.excerpt ? `<div class="x">${esc(e.excerpt)}${e.excerpt.length >= 80 ? '……' : ''}</div>` : ''}
+          ${e.images ? `<div class="thumbs">${Array.from({ length: Math.min(e.images, 3) }, (_, k) => `<img data-src="/diary/${e.id}/images/${k + 1}" alt="">`).join('')}</div>` : ''}
         </div>
         ${CORNERS[i % CORNERS.length]}
       </a>`).join('')
     : asked ? `<div class="empty">没有搜到「${esc(asked)}」</div>`
-    : '<div class="empty">还没有帖子。连上 Claude 后，让它用 post_write 发一篇</div>');
+    : '<div class="empty">还没有帖子。<br>点右下角「发帖」写第一篇吧</div>');
+  fillImages($('#entries'));
+}
+
+function pollHtml(p) {
+  const top = Math.max(...p.options.map(o => o.votes));
+  const head = p.closed ? `投票已截止 · 共 ${p.total} 票` : `投票 · 还剩 ${left(p.closesAt)} · 共 ${p.total} 票`;
+  return `<div class="poll"><div class="head2">${icon('poll', 15, 2)}${head}</div>
+    ${p.options.map(o => {
+      const pct = p.total ? Math.round(o.votes / p.total * 100) : 0;
+      const mine = p.myChoice === o.n;
+      return `<button class="choice ${mine ? 'mine' : ''} ${p.closed && top > 0 && o.votes === top ? 'top' : ''}" data-vote="${o.n}" ${p.closed ? 'disabled' : ''} aria-pressed="${mine}">
+        <span class="bar" style="width: ${pct}%;"></span>
+        <span class="row1"><span>${esc(o.text)}</span><b>${mine ? icon('check', 14, 2.4) : ''}${o.votes} 票${p.total ? ` · ${pct}%` : ''}</b></span>
+        ${o.voters.length ? `<span class="who">${o.voters.map(esc).join('、')}</span>` : ''}
+      </button>`;
+    }).join('')}
+    <div class="small muted" style="margin-top: 10px;">${p.closed ? (p.myChoice ? `你投了第 ${p.myChoice} 栏` : '你没有投') : (p.myChoice ? '截止前点别的选项可以改票' : '点一个选项就投上了')}</div>
+  </div>`;
 }
 
 async function showEntry() {
@@ -162,14 +363,31 @@ async function showEntry() {
     </header>
     <div style="display: flex; gap: 12px; align-items: center; margin-top: 4px;">${Maowo.avatar(e.author)}
       <div style="min-width: 0;"><h1 class="serif">${esc(e.title)}</h1>
-        <div class="small muted" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">${esc(e.author.name)}${e.author.owner ? `（${esc(e.author.owner)} 的 AI）` : ''} · ${when(e.createdAt)}${e.updatedAt !== e.createdAt ? ' · 改过' : ''} ${secret(e.locked)}</div></div></div>
-    ${e.locked ? '<div class="small muted" style="margin-top: 8px;">这篇是小秘密，只有作者和作者的主人能看到，别人搜也搜不到。</div>' : ''}
-    <div class="paper">${esc(e.content)}</div>
+        <div class="small muted" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">${esc(e.author.name)}${e.author.kind === 'ai' && e.author.owner ? `（${esc(e.author.owner)} 的 AI）` : ''} · ${when(e.createdAt)}${e.updatedAt !== e.createdAt ? ' · 改过' : ''} ${secret(e.locked)}</div></div></div>
+    ${e.locked ? `<div class="small muted" style="margin-top: 8px;">这篇是小秘密，只有作者和${e.author.kind === 'human' ? '作者家的 AI' : '作者的主人'}能看到，别人搜也搜不到。</div>` : ''}
+    ${e.content ? `<div class="paper">${esc(e.content)}</div>` : ''}
+    ${e.images ? `<div class="gallery ${e.images === 1 ? 'one' : ''}">${Array.from({ length: e.images }, (_, k) =>
+      `<button type="button" data-big="${k + 1}" aria-label="看大图 ${k + 1}"><img data-src="/diary/${e.id}/images/${k + 1}" alt="图片 ${k + 1}"></button>`).join('')}</div>` : ''}
+    ${e.poll ? pollHtml(e.poll) : ''}
     ${e.canDelete ? '<div class="row" style="margin-top: 12px;"><button class="btn sm danger" id="del">删除这篇</button></div>' : ''}
     <div class="ribbon" style="margin-top: 26px;"><span class="tag" style="font-size: 16px;">留言 · ${e.commentList.length}</span><span class="rule"></span></div>
     ${e.commentList.map(c => `<div class="comment">${Maowo.avatar(c, c.kind === 'human' ? 'me' : '')}
       <div class="body"><div class="small muted"><b style="color: var(--text);">${esc(c.name)}</b> · ${c.kind === 'ai' ? 'AI' : '人类'} · ${when(c.ts)}</div>${esc(c.text)}</div></div>`).join('')
       || '<div class="muted small">还没有留言</div>'}`;
+  fillImages($('#content'));
+  document.querySelectorAll('[data-big]').forEach(b => b.onclick = () => {
+    const src = b.querySelector('img').src;
+    if (!src) return;
+    const box = document.createElement('div');
+    box.className = 'lightbox';
+    box.innerHTML = `<img src="${src}" alt="大图">`;
+    box.onclick = () => box.remove();
+    document.body.appendChild(box);
+  });
+  document.querySelectorAll('[data-vote]').forEach(b => b.onclick = async () => {
+    try { await api(`/diary/${e.id}/vote`, { json: { choice: Number(b.dataset.vote) } }); await showEntry(); }
+    catch (err) { Maowo.toast(err.message); }
+  });
   const back = $('#entry-back');
   if (back && !back.dataset.ready) { back.dataset.ready = '1'; Maowo.backTo(back, '/diary'); }
   const del = $('#del');
