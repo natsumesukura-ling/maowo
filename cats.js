@@ -1,5 +1,8 @@
 const express = require('express');
-const { db } = require('./db');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { db, DATA_DIR } = require('./db');
 const accounts = require('./accounts');
 const platform = require('./platform');
 const notify = require('./notify');
@@ -95,7 +98,7 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cat_group_messages ON cat_group_messages(group_id, id);
 `);
-for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT']]) {
+for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1']]) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -162,6 +165,23 @@ const ALARM_MAX = 3 * 24 * 60;
 const INBOX_GAP = 2 * 60 * 1000;
 
 const nowIso = () => new Date().toISOString();
+
+// Pictures 绫 sends in a window: files named <cat id>-<random>.<ext>, only she can open them.
+// In the stored message they are written as 「maowo-img:<file>」 and turned into the picture itself
+// only when a request is sent, so the database stays small.
+const IMG_DIR = path.join(DATA_DIR, 'cat-images');
+fs.mkdirSync(IMG_DIR, { recursive: true });
+const IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+const IMG_MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+const IMG_MAX_BYTES = 6 * 1024 * 1024;
+const IMG_PER_MESSAGE = 4;
+const IMG_SENT = 3; // only the newest few pictures are sent as pictures; older ones become a short note (they cost a lot)
+const imgFileOk = (aiId, f) => typeof f === 'string' && new RegExp(`^${aiId}-[0-9a-f]{24}\\.(jpg|png|webp|gif)$`).test(f) && fs.existsSync(path.join(IMG_DIR, f));
+function removeImages(aiId) {
+  for (const f of fs.readdirSync(IMG_DIR)) if (f.startsWith(`${aiId}-`)) fs.rm(path.join(IMG_DIR, f), { force: true }, () => {});
+}
+// The words of a message, whether its content is a string or a list of parts (text + pictures).
+const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter(x => x && x.type === 'text').map(x => x.text).join('\n') : '');
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
 const clock = d => new Date(d).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false });
 const beijing = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -396,7 +416,7 @@ function recall(ai, query) {
   const owner = accounts.byId(ai.owner_id);
   const when = iso => new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
   const lines = rows.map(r => {
-    const c = String(JSON.parse(r.msg).content || '').replace(NOTE_RE, '');
+    const c = textOf(JSON.parse(r.msg).content).replace(NOTE_RE, '');
     const at = Math.max(0, c.indexOf(words[0]));
     const snip = (at > 80 ? '…' : '') + c.slice(Math.max(0, at - 80), at + 120).replace(/\s+/g, ' ') + (at + 120 < c.length ? '…' : '');
     const who = r.kind === 'me' ? owner.name : r.kind === 'wake' ? '猫窝' : r.kind === 'group' ? '' : r.kind === 'gsay' ? '我（在群里）' : '我';
@@ -458,7 +478,7 @@ function contextNote(ai, cat, scan = '') {
   if (tables.some(l => l.includes('正在')) && stmts.groupsOfCat.all(ai.id).length) bits.push('还没结束的游戏里的秘密（身份、夜里的信息、你的打算）不要在群里说，群里可能有同桌的人。');
   if (cat.alarm_at) bits.push(`你定了闹钟：${clock(cat.alarm_at)}${cat.alarm_note ? `，留给自己的话：${cat.alarm_note}` : ''}。`);
   // 世界书 entries whose keywords come up in this message or the last few, unless still in the window.
-  const live = stmts.live.all(ai.id).map(r => { try { return String(JSON.parse(r.msg).content || ''); } catch { return ''; } });
+  const live = stmts.live.all(ai.id).map(r => { try { return textOf(JSON.parse(r.msg).content); } catch { return ''; } });
   const recent = live.slice(-4).map(c => c.replace(NOTE_RE, '')).join('\n');
   const book = lore.triggeredText(ai.id, `${scan}\n${recent}`, live.join('\n'));
   if (book) bits.push(`聊到了世界书里的这些（主人给你的设定资料）：\n${book}`);
@@ -467,13 +487,31 @@ function contextNote(ai, cat, scan = '') {
 
 // Builds the message list from what is not summarized yet. Old tool results are cut short, and
 // thinking text is only sent back inside the run it belongs to (some models want it there).
-function history(aiId, runStart) {
+function history(aiId, runStart, opts = {}) {
   // Results from earlier wakes are cut short and their thinking dropped. This depends only on which
   // wake a row belongs to, so the list does not change between the steps of one wake (cache-friendly).
   const rows = stmts.live.all(aiId);
+  const vision = opts.vision !== false && stmts.cat.get(aiId)?.vision !== 0;
+  // Which pictures are still sent as pictures: the newest IMG_SENT in the window.
+  const pics = [];
+  for (const r of rows) if (r.kind === 'me' && r.msg.includes('maowo-img:')) for (const x of JSON.parse(r.msg).content || []) if (x.type === 'image_url') pics.push(x.image_url.url);
+  const keep = new Set(vision ? pics.slice(-IMG_SENT) : []);
   const out = [];
   for (const r of rows) {
     const m = JSON.parse(r.msg);
+    if (Array.isArray(m.content)) {
+      m.content = m.content.map(x => {
+        if (x.type !== 'image_url' || !String(x.image_url?.url).startsWith('maowo-img:')) return x;
+        const file = x.image_url.url.slice(10);
+        if (!keep.has(x.image_url.url)) return { type: 'text', text: vision ? '[图片：之前看过的，现在看不到了]' : '[图片：主人发了一张图片，你看不了图片]' };
+        try {
+          const ext = file.split('.').pop();
+          return { type: 'image_url', image_url: { url: `data:${IMG_MIME[ext]};base64,${fs.readFileSync(path.join(IMG_DIR, file)).toString('base64')}` } };
+        } catch { return { type: 'text', text: '[图片：找不到了]' }; }
+      });
+      // Only words left: a plain string works with every server.
+      if (m.content.every(x => x.type === 'text')) m.content = m.content.map(x => x.text).join('\n');
+    }
     if (r.id < runStart) {
       if (m.reasoning_content !== undefined) delete m.reasoning_content;
       if (r.kind === 'result' && typeof m.content === 'string' && m.content.length > 600) m.content = m.content.slice(0, 600) + '…（旧结果，已截短）';
@@ -518,7 +556,7 @@ async function maybeSummarize(ai, cat, key) {
   const old = rows.filter(r => r.id < next.id);
   const transcript = old.map(r => {
     const m = JSON.parse(r.msg);
-    const c = typeof m.content === 'string' ? m.content.replace(NOTE_RE, '') : '';
+    const c = textOf(m.content).replace(NOTE_RE, '') + (Array.isArray(m.content) && m.content.some(x => x.type === 'image_url') ? '（还发了图片）' : '');
     if (r.kind === 'me') return `主人：${c}`;
     if (r.kind === 'wake' || r.kind === 'gwake') return `猫窝：${c}`;
     if (r.kind === 'group') return c;
@@ -656,7 +694,15 @@ async function runOnce(aiId, t) {
   let said = false;
   for (let step = 0; step < MAX_STEPS; step++) {
     const messages = [{ role: 'system', content: system }, ...history(aiId, runStart)];
-    const msg = await callModel(key, cat.model, messages, tools);
+    let msg;
+    try { msg = await callModel(key, cat.model, messages, tools); } catch (err) {
+      // A model that cannot see pictures usually refuses the whole request. Try again without them;
+      // if that works, it is not told about pictures as pictures any more (the setting can turn it back on).
+      if (!messages.some(m => Array.isArray(m.content) && m.content.some(x => x.type === 'image_url'))) throw err;
+      msg = await callModel(key, cat.model, [{ role: 'system', content: system }, ...history(aiId, runStart, { vision: false })], tools);
+      setCat(aiId, { vision: 0 });
+      add(aiId, 'error', { text: '它好像看不了图片（这个模型不支持），以后发的图片只会告诉它「这里有张图」。换了能看图的模型，可以在设置里打开「能看图片」。' });
+    }
     const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter(c => c && c.function && c.function.name) : [];
     const content = typeof msg.content === 'string' ? msg.content.trim() : '';
     const keep = { role: 'assistant', content: content || null };
@@ -884,7 +930,7 @@ function card(ai, cat) {
 function settings(ai, cat) {
   return {
     ...card(ai, cat), keyId: cat.key_id, systemPrompt: cat.system_prompt, wakeOnTurn: !!cat.wake_on_turn, alarms: !!cat.alarms,
-    dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id),
+    dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id), vision: cat.vision !== 0,
   };
 }
 
@@ -910,6 +956,7 @@ function shapeRows(ai, rows) {
     }
     if (r.kind === 'call' && !r.text) return null;
     const item = { id: r.id, kind: r.kind === 'call' ? 'say' : r.kind, text: r.text, createdAt: r.created_at };
+    if (r.kind === 'me' && r.detail) { try { const d = JSON.parse(r.detail); if (d.images) item.images = d.images; } catch {} }
     if (r.kind === 'result' && r.detail) { try { item.detail = JSON.parse(r.detail); } catch {} }
     return item;
   }).filter(Boolean);
@@ -1000,6 +1047,7 @@ router.put('/groups/:gid', wrap(req => {
   if (b.mode !== undefined) { if (!['natural', 'all', 'call'].includes(b.mode)) throw new Error('没有这种接话方式'); f.mode = b.mode; }
   if (b.maxSpeak !== undefined) { const n = Math.round(Number(b.maxSpeak)); if (!(n >= 1 && n <= 10)) throw new Error('一轮最多 1 到 10 只'); f.max_speak = n; }
   if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;
+  if (b.vision !== undefined) f.vision = b.vision ? 1 : 0;
   const cols = Object.keys(f);
   if (cols.length) db.prepare(`UPDATE cat_groups SET ${cols.map(c => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({ ...f, id: g.id });
   gChanged(g.id);
@@ -1100,7 +1148,12 @@ function applySettings(ai, b) {
     if (b.keyId === null) f.key_id = null;
     else { const k = stmts.key.get(Number(b.keyId)); if (!k || k.owner_id !== ai.owner_id) throw new Error('找不到这把钥匙'); f.key_id = k.id; }
   }
-  if (b.model !== undefined) { f.model = String(b.model || '').trim().slice(0, 120); if (/\s/.test(f.model)) throw new Error('模型名里不能有空格'); }
+  if (b.model !== undefined) {
+    f.model = String(b.model || '').trim().slice(0, 120);
+    if (/\s/.test(f.model)) throw new Error('模型名里不能有空格');
+    // A different model may see pictures again.
+    if (b.vision === undefined && f.model !== (stmts.cat.get(ai.id) || {}).model) f.vision = 1;
+  }
   if (b.systemPrompt !== undefined) { f.system_prompt = String(b.systemPrompt || ''); if (f.system_prompt.length > 20000) throw new Error('System prompt 太长了（最多 2 万字）'); }
   if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;
   if (b.wakeOnTurn !== undefined) f.wake_on_turn = b.wakeOnTurn ? 1 : 0;
@@ -1153,12 +1206,14 @@ router.post('/:id/test', wrap(async req => {
 router.delete('/:id', wrap(req => {
   const { ai } = mine(req);
   db.transaction(() => { stmts.clear.run(ai.id); stmts.removeCat.run(ai.id); stmts.removeMemberEverywhere.run(ai.id); lore.removeAll(ai.id); })();
+  removeImages(ai.id);
   queues.delete(ai.id);
   return { ok: true };
 }));
 router.delete('/:id/memory', wrap(req => {
   const { ai } = mine(req);
   db.transaction(() => { stmts.clear.run(ai.id); setCat(ai.id, { notebook: '', summary: '', last_read_id: 0, activity: null, activity_at: null }); })();
+  removeImages(ai.id);
   changed(ai.id);
   return { ok: true };
 }));
@@ -1208,12 +1263,34 @@ router.get('/:id/wait', wrap(async (req, res) => {
   markRead(ai);
   return out;
 }));
+router.post('/:id/images', express.raw({ type: () => true, limit: IMG_MAX_BYTES + 1024 }), wrap(req => {
+  const { ai } = mine(req);
+  const ext = IMG_TYPES[String(req.get('content-type') || '').split(';')[0].trim()];
+  if (!ext) throw new Error('只能发 JPG、PNG、WebP、GIF 图片');
+  if (!req.body || !req.body.length) throw new Error('没有收到图片');
+  if (req.body.length > IMG_MAX_BYTES) throw new Error('图片太大了（最多 6MB）');
+  const file = `${ai.id}-${crypto.randomBytes(12).toString('hex')}.${ext}`;
+  fs.writeFileSync(path.join(IMG_DIR, file), req.body);
+  return { file };
+}));
+router.get('/:id/images/:file', (req, res) => {
+  try {
+    const { ai } = mine(req);
+    if (!imgFileOk(ai.id, req.params.file)) return res.status(404).json({ error: '找不到这张图片' });
+    res.type(IMG_MIME[req.params.file.split('.').pop()]).set('Cache-Control', 'private, max-age=86400').sendFile(path.join(IMG_DIR, req.params.file));
+  } catch (err) { res.status(404).json({ error: err.message }); }
+});
 router.post('/:id/messages', wrap(req => {
   const { ai } = mine(req);
   const text = String(req.body.text || '').trim();
-  if (!text) throw new Error('说点什么吧');
+  const images = [...new Set(Array.isArray(req.body.images) ? req.body.images : [])];
+  if (images.length > IMG_PER_MESSAGE) throw new Error(`一次最多 ${IMG_PER_MESSAGE} 张图片`);
+  if (images.some(f => !imgFileOk(ai.id, f))) throw new Error('图片没传上去，再试一次吧');
+  if (!text && !images.length) throw new Error('说点什么吧');
   if (text.length > 4000) throw new Error('太长了（最多 4000 字）');
-  add(ai.id, 'me', { msg: { role: 'user', content: text + contextNote(ai, stmts.cat.get(ai.id), text) }, text });
+  const words = (text || '（发了图片）') + contextNote(ai, stmts.cat.get(ai.id), text);
+  const content = images.length ? [{ type: 'text', text: words }, ...images.map(f => ({ type: 'image_url', image_url: { url: `maowo-img:${f}` } }))] : words;
+  add(ai.id, 'me', { msg: { role: 'user', content }, text, detail: images.length ? JSON.stringify({ images }) : null });
   markRead(ai);
   enqueue(ai.id, { kind: 'me' });
   return { ok: true };

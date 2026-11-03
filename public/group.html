@@ -55,7 +55,8 @@
   .chip.talking { border-color: var(--accent-line); background: var(--accent-soft); }
   .chip .z { display: flex; color: var(--muted); }
   .bottom form { display: flex; gap: 8px; align-items: flex-end; }
-  .bottom textarea { resize: none; height: 44px; max-height: 132px; line-height: 1.45; }
+  .bottom textarea { resize: none; height: 44px; max-height: 132px; line-height: 20px; overflow-y: hidden; scrollbar-width: none; }
+  .bottom textarea::-webkit-scrollbar { display: none; }
   .bottom .btn { width: 44px; padding: 0; flex-shrink: 0; }
   .older { align-self: center; }
   .newchip { position: fixed; right: 16px; bottom: 132px; z-index: 5; display: none; }
@@ -260,7 +261,7 @@ $('#mute').onclick = async () => {
   catch (err) { Maowo.toast(err.message); }
 };
 const ta = $('#text');
-const grow = () => { ta.style.height = '44px'; ta.style.height = Math.min(ta.scrollHeight + 2, 132) + 'px'; };
+const grow = () => { ta.style.height = '44px'; ta.style.height = Math.min(ta.scrollHeight + 2, 132) + 'px'; ta.style.overflowY = ta.scrollHeight + 2 > 132 ? 'auto' : 'hidden'; };
 ta.addEventListener('input', grow);
 try { ta.value = sessionStorage.getItem(`maowo-group-draft-${gid}`) || ''; grow(); } catch {}
 ta.addEventListener('input', () => { try { sessionStorage.setItem(`maowo-group-draft-${gid}`, ta.value); } catch {} });

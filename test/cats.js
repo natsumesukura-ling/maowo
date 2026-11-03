@@ -18,6 +18,7 @@ function reply(body) {
   const last = msgs[msgs.length - 1];
   const sys = msgs[0].content;
   const call = (name, args) => ({ role: 'assistant', content: null, tool_calls: [{ id: 'c' + Math.random().toString(36).slice(2, 8), type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
+  if (body.model === 'fake-blind' && JSON.stringify(msgs).includes('"image_url"')) return { error: 400 };
   if (!body.tools) return { role: 'assistant', content: sys.includes('压成简短的摘要') ? '摘要：主人和我聊了很多次天。' : '嗯' };
   if (mode === 'broken') return { role: 'assistant', content: '我不会用工具' };
   if (last.role === 'user' && last.content === '请调用 ping 工具。') {
@@ -25,11 +26,15 @@ function reply(body) {
     if (body.tool_choice && body.tool_choice !== 'auto') return { error: 400 };
     return { role: 'assistant', content: null, function_call: { name: 'ping', arguments: { word: '喵' } } };
   }
-  if (last.role === 'user' && last.content.startsWith('【猫窝】现在在群聊')) {
+  if (last.role === 'user' && typeof last.content === 'string' && last.content.startsWith('【猫窝】现在在群聊')) {
     const me = (sys.match(/你是「(.+?)」/) || [])[1];
-    const lastLine = [...msgs].reverse().find(m => m.role === 'user' && m.content.startsWith('【群聊'));
+    const lastLine = [...msgs].reverse().find(m => m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('【群聊'));
     if (lastLine && lastLine.content.includes('安静') && me === '阿栗') return { role: 'assistant', content: '（不说话）' };
     return { role: 'assistant', content: `${me}来啦` };
+  }
+  if (last.role === 'user' && Array.isArray(last.content)) {
+    const pics = last.content.filter(x => x.type === 'image_url').length;
+    return { role: 'assistant', content: `我看到了 ${pics} 张图片` };
   }
   if (last.role === 'user') {
     const c = last.content.replace(/\n\n（猫窝备注：[\s\S]*）$/, '');
@@ -71,6 +76,7 @@ const fake = http.createServer((req, res) => {
 });
 
 let server;
+process.on('exit', () => { try { server && server.kill(); } catch {} }); // never leave a server behind, even after a crash
 const api = async (token, p, opts = {}) => {
   const res = await fetch(URL_ + '/api' + p, {
     method: opts.method || (opts.json ? 'POST' : 'GET'),
@@ -205,6 +211,59 @@ const ok = name => console.log('ok', name);
     ok('世界书 entries can be changed, turned off, deleted; only the owner sees them');
   }
 
+  // Pictures in the window.
+  {
+    const idle = async () => until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
+    const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const upload = async (token = OWNER, type = 'image/png', body = PNG) => {
+      const res = await fetch(`${URL_}/api/cats/${cat.id}/images`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': type }, body });
+      const out = await res.json(); if (!res.ok) throw new Error(out.error); return out.file;
+    };
+    await assert.rejects(upload(OWNER, 'text/plain', Buffer.from('x')), /只能发/);
+    const f1 = await upload();
+    assert(new RegExp(`^${cat.id}-[0-9a-f]{24}\\.png$`).test(f1), f1);
+    await assert.rejects(api(OWNER, `/cats/${cat.id}/messages`, { json: { text: 'x', images: ['../../etc/passwd'] } }), /没传上去/);
+    await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '看看这张', images: [f1] } });
+    await idle();
+    let b = seen.at(-1);
+    const sent = b.messages.at(-1);
+    assert(Array.isArray(sent.content) && sent.content[0].text.startsWith('看看这张') && sent.content[1].image_url.url.startsWith('data:image/png;base64,'), 'picture sent as a picture');
+    let w = await api(OWNER, `/cats/${cat.id}/messages`);
+    assert.deepStrictEqual(w.items.filter(i => i.kind === 'me').at(-1).images, [f1]);
+    assert.strictEqual(w.items.at(-1).text, '我看到了 1 张图片');
+    const r = await fetch(`${URL_}/api/cats/${cat.id}/images/${f1}`, { headers: { Authorization: 'Bearer ' + OWNER } });
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.headers.get('content-type'), 'image/png');
+    const friendX = await api(OWNER, '/friends', { json: { name: '看图的' } });
+    assert.strictEqual((await fetch(`${URL_}/api/cats/${cat.id}/images/${f1}`, { headers: { Authorization: 'Bearer ' + friendX.token } })).status, 404);
+    ok('pictures: sent to the model as pictures, shown in the window, only the owner can open them');
+
+    // Only the newest 3 pictures are sent as pictures; the older one becomes a note.
+    for (let i = 0; i < 3; i++) { await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '', images: [await upload()] } }); await idle(); }
+    b = seen.at(-1);
+    const parts = b.messages.flatMap(m => (Array.isArray(m.content) ? m.content : []));
+    assert.strictEqual(parts.filter(x => x.type === 'image_url').length, 3);
+    assert(JSON.stringify(b.messages).includes('[图片：之前看过的，现在看不到了]'));
+    ok('only the newest 3 pictures are sent as pictures');
+
+    // A model that cannot see: the request is retried without pictures, and it is remembered.
+    await api(OWNER, `/cats/${cat.id}`, { method: 'PUT', json: { model: 'fake-blind' } });
+    await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '这张呢', images: [await upload()] } });
+    await idle();
+    w = await api(OWNER, `/cats/${cat.id}/messages`);
+    assert(w.items.some(i => i.kind === 'error' && i.text.includes('看不了图片')));
+    assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).vision, false);
+    b = seen.at(-1);
+    assert(!JSON.stringify(b.messages).includes('"image_url"') && JSON.stringify(b.messages).includes('[图片：主人发了一张图片，你看不了图片]'));
+    assert(typeof b.messages.at(-1).content === 'string', 'only words left: a plain string');
+    await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '还在吗' } });
+    await idle();
+    assert.strictEqual((await api(OWNER, `/cats/${cat.id}/messages`)).items.filter(i => i.kind === 'error' && i.text.includes('看不了图片')).length, 1, 'not repeated');
+    await api(OWNER, `/cats/${cat.id}`, { method: 'PUT', json: { model: 'fake-1' } });
+    assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).vision, true, 'a new model may see again');
+    ok('a model that cannot see pictures gets words instead, once noticed');
+  }
+
   // Notebook through the remember tool; the notebook is in the next prompt.
   await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '记住绫喜欢草莓' } });
   await until(async () => (await api(OWNER, `/cats/${cat.id}/notebook`)).notebook.includes('绫喜欢草莓'), 'notebook');
@@ -237,7 +296,7 @@ const ok = name => console.log('ok', name);
   await api(OWNER, `/rooms/${room.id}/act`, { json: { type: 'move', row: 0, col: 0 } });
   await until(async () => (await api(OWNER, `/rooms/${room.id}`)).board?.moves?.length === 2 || (await api(OWNER, `/rooms/${room.id}`)).events.some(e => /2号 阿栗 .* 落在/.test(e.text)), 'cat moved', 10000);
   assert(seen.length > before);
-  assert(seen.slice(before).some(b => b.messages.some(m => m.role === 'user' && m.content.startsWith('【猫窝】到你啦'))), 'woken with 到你啦');
+  assert(seen.slice(before).some(b => b.messages.some(m => m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('【猫窝】到你啦'))), 'woken with 到你啦');
   await until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
   w = await api(OWNER, `/cats/${cat.id}/messages`);
   const tail = w.items.slice(-4);
@@ -393,6 +452,8 @@ const ok = name => console.log('ok', name);
   await api(OWNER, `/cats/${cat.id}/memory`, { method: 'DELETE' });
   w = await api(OWNER, `/cats/${cat.id}/messages`);
   assert.strictEqual(w.items.length, 0);
+  await sleep(200);
+  assert(!fs.readdirSync(path.join(dir, 'cat-images')).some(f => f.startsWith(`${cat.id}-`)), 'pictures removed with the memory');
   assert.strictEqual((await api(OWNER, `/cats/${cat.id}/notebook`)).notebook, '');
   await api(OWNER, `/cats/${cat.id}`, { method: 'DELETE' });
   assert(!(await api(OWNER, '/cats')).cats.some(c => c.id === cat.id));

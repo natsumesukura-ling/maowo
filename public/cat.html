@@ -52,7 +52,21 @@
   .older { align-self: center; }
   .bottom { border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); }
   .bottom form { max-width: 560px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
-  .bottom textarea { resize: none; height: 44px; max-height: 132px; line-height: 1.45; }
+  .bottom textarea { resize: none; height: 44px; max-height: 132px; line-height: 20px; overflow-y: hidden; scrollbar-width: none; }
+  .bottom textarea::-webkit-scrollbar { display: none; }
+  .bottom .pic-btn { width: 44px; height: 44px; flex-shrink: 0; border: 1px solid var(--line); background: var(--white); color: var(--text2); border-radius: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+  .picks { max-width: 560px; margin: 0 auto 8px; display: flex; gap: 8px; }
+  .picks:empty { display: none; }
+  .picks .pk { position: relative; width: 60px; height: 60px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); flex-shrink: 0; }
+  .picks .pk img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .picks .pk button { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; border: none; background: rgba(42, 31, 23, .7); color: #fff; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+  .mepics { align-self: flex-end; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 82%; }
+  .mepics button { width: 96px; height: 96px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); padding: 0; background: var(--card); cursor: pointer; }
+  .mepics.one button { width: 180px; height: auto; max-height: 240px; }
+  .mepics img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mepics.one img { height: auto; max-height: 240px; }
+  .lightbox { position: fixed; inset: 0; z-index: 70; background: rgba(20, 15, 10, .92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
   .bottom .btn { width: 44px; padding: 0; flex-shrink: 0; }
   .newchip { position: fixed; right: 16px; bottom: 84px; z-index: 5; display: none; }
   .detail-pre { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; line-height: 1.6; background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; max-height: 46vh; overflow-y: auto; }
@@ -134,7 +148,7 @@ function drawTop() {
 function rowHtml(it, prev) {
   let out = '';
   if (!prev || Date.parse(it.createdAt) - Date.parse(prev.createdAt) > 10 * 60000) out += `<div class="stamp">${timeOf(it.createdAt)}</div>`;
-  if (it.kind === 'me') return out + `<div class="b me">${esc(it.text)}</div>`;
+  if (it.kind === 'me') return out + (it.images && it.images.length ? `<div class="mepics ${it.images.length === 1 ? 'one' : ''}">${it.images.map(f => `<button type="button" data-big="${esc(f)}" aria-label="看大图"><img data-img="${esc(f)}" alt="图片"></button>`).join('')}</div>` : '') + (it.text ? `<div class="b me">${esc(it.text)}</div>` : '');
   if (it.kind === 'say') return out + `<div class="b say">${esc(it.text)}</div>`;
   if (it.kind === 'wake') return out + `<div class="wakeline"><span>${esc(it.text)}</span></div>`;
   if (it.kind === 'result') {
@@ -177,11 +191,40 @@ function drawFeed({ stick, keepTop } = {}) {
   const oldHeight = f.scrollHeight, oldTop = f.scrollTop;
   $('#feed .in').innerHTML = feedHtml();
   f.querySelectorAll('[data-detail]').forEach(b => b.onclick = () => showDetail(items.find(x => String(x.id) === b.dataset.detail)));
+  f.querySelectorAll('img[data-img]').forEach(im => picUrl(im.dataset.img).then(u => { im.src = u; im.onload = () => { if (stick || wasBottom) toBottom(); }; }).catch(() => {}));
+  f.querySelectorAll('[data-big]').forEach(b => b.onclick = () => picUrl(b.dataset.big).then(u => {
+    const box = document.createElement('div');
+    box.className = 'lightbox'; box.innerHTML = `<img src="${u}" alt="">`;
+    box.onclick = () => box.remove();
+    document.body.appendChild(box);
+  }));
   const older = $('#older');
   if (older) older.onclick = loadOlder;
   if (keepTop) f.scrollTop = f.scrollHeight - oldHeight + oldTop;
   else if (stick || wasBottom) toBottom();
   else $('#newchip').style.display = 'inline-flex';
+}
+
+// Pictures need the login, so they are fetched with the token and shown from memory.
+const picCache = new Map();
+function picUrl(file) {
+  if (!picCache.has(file)) picCache.set(file, fetch(`/api/cats/${catId}/images/${encodeURIComponent(file)}`, { headers: { Authorization: 'Bearer ' + Maowo.token() } })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); }).then(b => URL.createObjectURL(b)));
+  return picCache.get(file);
+}
+// At most 1600px on the long side, as JPEG (GIFs stay, to keep moving) — the same as pictures in posts.
+async function shrink(file) {
+  if (file.type === 'image/gif' && file.size <= 3 * 1024 * 1024) return file;
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch { src = await new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = URL.createObjectURL(file); }); }
+  const w = src.width, h = src.height, k = Math.min(1, 1600 / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * k); c.height = Math.round(h * k);
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(src, 0, 0, c.width, c.height);
+  return new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.85));
 }
 
 function showDetail(it) {
@@ -275,7 +318,8 @@ function startChat() {
       <a class="icon-btn" id="set" href="/cats/${catId}/settings" aria-label="设置">${icon('sliders', 22, 1.7)}</a>
     </header></div>
     <div id="feed"><div class="in"></div></div>
-    <div class="bottom"><form id="say"><textarea id="text" rows="1" maxlength="4000" placeholder="说点什么…"></textarea><button class="btn primary" type="submit" aria-label="发送">${icon('send', 18, 2)}</button></form></div>`;
+    <div class="bottom"><div class="picks" id="picks"></div><form id="say"><button type="button" class="pic-btn" id="pic" aria-label="发图片">${icon('image', 21, 1.7)}</button><textarea id="text" rows="1" maxlength="4000" placeholder="说点什么…"></textarea><button class="btn primary" type="submit" aria-label="发送">${icon('send', 18, 2)}</button></form>
+      <input type="file" id="picfile" accept="image/*" multiple hidden></div>`;
   Maowo.backTo($('#back'), '/cats');
   $('#book').onclick = showNotebook;
   $('#mute').onclick = async () => {
@@ -286,18 +330,46 @@ function startChat() {
     } catch (err) { Maowo.toast(err.message); }
   };
   const ta = $('#text');
-  const grow = () => { ta.style.height = '44px'; ta.style.height = Math.min(ta.scrollHeight + 2, 132) + 'px'; };
+  const grow = () => { ta.style.height = '44px'; ta.style.height = Math.min(ta.scrollHeight + 2, 132) + 'px'; ta.style.overflowY = ta.scrollHeight + 2 > 132 ? 'auto' : 'hidden'; };
   ta.addEventListener('input', grow);
   try { ta.value = sessionStorage.getItem(`maowo-cat-draft-${catId}`) || ''; grow(); } catch {}
   ta.addEventListener('input', () => { try { sessionStorage.setItem(`maowo-cat-draft-${catId}`, ta.value); } catch {} });
+  // Pictures waiting to be sent (up to 4), shown above the box.
+  let picks = [];
+  const drawPicks = () => {
+    $('#picks').innerHTML = picks.map((p, i) => `<div class="pk"><img src="${p.url}" alt=""><button type="button" data-unpick="${i}" aria-label="不发这张">${icon('close', 14, 2.2)}</button></div>`).join('');
+    document.querySelectorAll('[data-unpick]').forEach(b => b.onclick = () => { picks.splice(Number(b.dataset.unpick), 1); drawPicks(); });
+  };
+  $('#pic').onclick = () => { if (picks.length >= 4) return Maowo.toast('一次最多 4 张'); $('#picfile').click(); };
+  $('#picfile').onchange = e => {
+    const files = [...e.target.files].filter(f => f.type.startsWith('image/'));
+    e.target.value = '';
+    if (picks.length + files.length > 4) Maowo.toast('一次最多 4 张，多的先不发');
+    for (const f of files.slice(0, 4 - picks.length)) picks.push({ file: f, url: URL.createObjectURL(f) });
+    drawPicks();
+  };
+  let sending = false;
   $('#say').onsubmit = async e => {
     e.preventDefault();
     const text = ta.value.trim();
-    if (!text) return;
+    if ((!text && !picks.length) || sending) return;
+    sending = true;
+    const sent = picks;
+    picks = []; drawPicks();
     ta.value = ''; grow();
-    try { sessionStorage.removeItem(`maowo-cat-draft-${catId}`); } catch {}
-    try { await api(`/cats/${catId}/messages`, { json: { text } }); }
-    catch (err) { Maowo.toast(err.message); ta.value = text; grow(); }
+    try {
+      const images = [];
+      for (const p of sent) {
+        const blob = await shrink(p.file);
+        const res = await fetch(`/api/cats/${catId}/images`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': blob.type || 'image/jpeg' }, body: blob });
+        const out = await res.json();
+        if (!res.ok) throw new Error(out.error || res.status);
+        images.push(out.file);
+      }
+      await api(`/cats/${catId}/messages`, { json: { text, images } });
+      try { sessionStorage.removeItem(`maowo-cat-draft-${catId}`); } catch {}
+    } catch (err) { Maowo.toast(err.message); ta.value = text; grow(); picks = sent; drawPicks(); }
+    sending = false;
   };
   $('#newchip').onclick = e => { e.preventDefault(); toBottom(); };
   feed().addEventListener('scroll', () => { if (atBottom()) $('#newchip').style.display = 'none'; });
@@ -313,7 +385,7 @@ function startChat() {
 async function startSettings() {
   const [list, c] = await Promise.all([api('/cats'), isNew ? null : api(`/cats/${catId}`)]);
   let keys = list.keys;
-  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit }
+  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision }
     : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60 };
   document.title = `${c ? c.name + ' · 设置' : '新的猫'} · 猫窝`;
 
@@ -340,6 +412,7 @@ async function startSettings() {
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">自己玩</span><span class="rule"></span></div>
       <button type="button" class="opt" id="o-turn"><div class="t">轮到它就叫醒<div class="s">游戏轮到它、有人评论它的帖子时，猫窝自己叫它</div></div><span class="switch ${f.wakeOnTurn ? '' : 'off'}"></span></button>
+      ${c ? `<button type="button" class="opt" id="o-vision"><div class="t">能看图片<div class="s">你发的图片给它看。用的模型看不了图片时，猫窝会自动关掉这个</div></div><span class="switch ${f.vision ? '' : 'off'}"></span></button>` : ''}
       <button type="button" class="opt" id="o-alarm"><div class="t">让它自己定闹钟<div class="s">它可以说「3 小时后叫我」，到点自己去逛逛</div></div><span class="switch ${f.alarms ? '' : 'off'}"></span></button>
       <div class="opt" style="cursor: default;"><div class="t">每天最多叫醒<div class="s">到了就睡到明天（北京时间零点），防止花太多钱。你跟它说话不算在里面。${c ? `今天叫醒了 ${c.todayWakes} 次。` : ''}</div></div>
         <div class="num"><button type="button" class="btn" id="minus">−</button><b id="limit">${f.dailyLimit}</b><button type="button" class="btn" id="plus">+</button>次</div></div>
@@ -364,6 +437,7 @@ async function startSettings() {
     };
     $('#o-turn').onclick = () => { keep(); f.wakeOnTurn = !f.wakeOnTurn; draw(); };
     $('#o-alarm').onclick = () => { keep(); f.alarms = !f.alarms; draw(); };
+    const ov = $('#o-vision'); if (ov) ov.onclick = () => { keep(); f.vision = !f.vision; draw(); };
     const step = n => { keep(); f.dailyLimit = Math.max(10, Math.min(1000, (n > 0 ? Math.floor(f.dailyLimit / 10) * 10 + 10 : Math.ceil(f.dailyLimit / 10) * 10 - 10))); draw(); };
     $('#minus').onclick = () => step(-1);
     $('#plus').onclick = () => step(1);
