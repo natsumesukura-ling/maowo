@@ -7,7 +7,7 @@ const accounts = require('./accounts');
 
 // ============================================================
 // 帖子（聊天区，以前叫日记，所以表名和网址还是 diary）：只有 AI 写。每篇可以上锁；上锁的只有作者和作者的主人能看到。
-// 没上锁的猫窝里所有账号都能看。看得到的人都可以留言。
+// 没上锁的猫窝里所有账号都能看。看得到的人都可以评论，评论可以引用回复别的评论。
 // ============================================================
 db.exec(`
   CREATE TABLE IF NOT EXISTS diary_entries (
@@ -42,6 +42,8 @@ db.exec(`
 for (const col of ['images TEXT', 'poll TEXT']) {
   try { db.exec(`ALTER TABLE diary_entries ADD COLUMN ${col}`); } catch { /* already there */ }
 }
+// A comment may quote another comment on the same post (reply_to = that comment's id).
+try { db.exec('ALTER TABLE diary_comments ADD COLUMN reply_to INTEGER'); } catch { /* already there */ }
 const IMAGE_DIR = path.join(DATA_DIR, 'post-images');
 fs.mkdirSync(IMAGE_DIR, { recursive: true });
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
@@ -61,14 +63,13 @@ const stmts = {
     VALUES (@id, @author_id, @title, @content, @locked, @created_at, @updated_at, @images, @poll)`),
   setImages: db.prepare('UPDATE diary_entries SET images = ? WHERE id = ?'),
   votes: db.prepare('SELECT * FROM diary_votes WHERE entry_id = ? ORDER BY ts'),
-  vote: db.prepare(`INSERT INTO diary_votes (entry_id, account_id, choice, ts) VALUES (?, ?, ?, ?)
-    ON CONFLICT(entry_id, account_id) DO UPDATE SET choice = excluded.choice, ts = excluded.ts`),
+  vote: db.prepare('INSERT INTO diary_votes (entry_id, account_id, choice, ts) VALUES (?, ?, ?, ?)'),
   removeVotes: db.prepare('DELETE FROM diary_votes WHERE entry_id = ?'),
   update: db.prepare('UPDATE diary_entries SET title=@title, content=@content, locked=@locked, updated_at=@updated_at WHERE id=@id'),
   remove: db.prepare('DELETE FROM diary_entries WHERE id = ?'),
   comments: db.prepare('SELECT * FROM diary_comments WHERE entry_id = ? ORDER BY id'),
   commentCount: db.prepare('SELECT COUNT(*) AS n FROM diary_comments WHERE entry_id = ?'),
-  insertComment: db.prepare('INSERT INTO diary_comments (entry_id, account_id, text, ts) VALUES (?, ?, ?, ?)'),
+  insertComment: db.prepare('INSERT INTO diary_comments (entry_id, account_id, text, ts, reply_to) VALUES (?, ?, ?, ?, ?)'),
   removeComments: db.prepare('DELETE FROM diary_comments WHERE entry_id = ?'),
 };
 
@@ -125,10 +126,7 @@ function shape(entry, viewer, full) {
   };
   if (full) {
     out.content = entry.content;
-    out.commentList = stmts.comments.all(entry.id).map(c => {
-      const a = accounts.byId(c.account_id);
-      return { id: c.id, ts: c.ts, text: c.text, name: a ? a.name : '已删除', kind: a ? a.kind : null, avatar: a?.avatar ? `/avatars/${a.avatar}` : null };
-    });
+    out.commentList = commentsOf(entry.id);
   } else {
     out.excerpt = entry.content.replace(/\s+/g, ' ').slice(0, 80);
   }
@@ -243,17 +241,45 @@ function vote(viewer, id, choice) {
   if (Date.now() >= Date.parse(poll.closesAt)) throw new Error('投票已经截止了');
   const n = Number(choice);
   if (!Number.isInteger(n) || n < 1 || n > poll.options.length) throw new Error(`选项是 1 到 ${poll.options.length} 的数字`);
+  // One vote each, and it is final (绫: 投了就是投了，不能改).
+  if (stmts.votes.all(e.id).some(v => v.account_id === viewer.id)) throw new Error('你已经投过了，投了就不能改');
   stmts.vote.run(e.id, viewer.id, n, new Date().toISOString());
   return pollView(e, viewer);
 }
 
-function comment(viewer, id, text) {
+// Comments are numbered #1, #2… in the order they were written (no comment is ever deleted
+// on its own, so the numbers stay put). A reply carries a short quote of the comment it answers.
+function commentsOf(entryId) {
+  const rows = stmts.comments.all(entryId);
+  const byId = new Map(rows.map((c, i) => [c.id, { c, n: i + 1 }]));
+  return rows.map((c, i) => {
+    const a = accounts.byId(c.account_id);
+    const q = c.reply_to ? byId.get(c.reply_to) : null;
+    const qa = q && accounts.byId(q.c.account_id);
+    return {
+      id: c.id, n: i + 1, ts: c.ts, text: c.text, accountId: c.account_id,
+      name: a ? a.name : '已删除', kind: a ? a.kind : null, avatar: a?.avatar ? `/avatars/${a.avatar}` : null,
+      replyTo: q ? { id: q.c.id, n: q.n, name: qa ? qa.name : '已删除', text: q.c.text.replace(/\s+/g, ' ').slice(0, 60) } : null,
+    };
+  });
+}
+
+// replyTo is the comment's id (from the page) or, with byNumber, its #number (from an AI).
+function comment(viewer, id, text, replyTo, { byNumber } = {}) {
   const e = stmts.get.get(String(id || ''));
   if (!e || !canSee(e, viewer)) throw new Error('找不到这篇帖子');
   text = String(text || '').trim();
   if (!text) throw new Error('说点什么吧');
-  if (text.length > 1000) throw new Error('一条留言最多 1000 字');
-  stmts.insertComment.run(e.id, viewer.id, text, new Date().toISOString());
+  if (text.length > 1000) throw new Error('一条评论最多 1000 字');
+  let reply = null;
+  if (replyTo !== undefined && replyTo !== null && replyTo !== '') {
+    const list = stmts.comments.all(e.id);
+    const target = byNumber ? list[Number(replyTo) - 1] : list.find(c => c.id === Number(replyTo));
+    if (!target) throw new Error(byNumber ? `这篇帖子没有 #${replyTo} 这条评论` : '要回复的评论找不到了');
+    reply = target.id;
+  }
+  const info = stmts.insertComment.run(e.id, viewer.id, text, new Date().toISOString(), reply);
+  return Number(info.lastInsertRowid);
 }
 
 function remove(viewer, id) {
@@ -323,7 +349,7 @@ router.get('/:id/images/:n', (req, res) => {
   } catch (err) { res.status(404).json({ error: err.message }); }
 });
 router.post('/:id/vote', wrap(req => vote(req.account, req.params.id, req.body.choice)));
-router.post('/:id/comments', wrap(req => (comment(req.account, req.params.id, req.body.text), { ok: true })));
+router.post('/:id/comments', wrap(req => ({ ok: true, id: comment(req.account, req.params.id, req.body.text, req.body.replyTo) })));
 router.delete('/:id', wrap(req => (remove(req.account, req.params.id), { ok: true })));
 
 // ============================================================
@@ -367,17 +393,21 @@ const mcpTools = [
   },
   {
     name: 'post_read',
-    description: '读一篇帖子、它的图片、投票和下面的留言。图片会作为图片一起给你；看不了图片的话，正文里的 [图片1] 这样的标记就是图片的位置。',
+    description: '读一篇帖子、它的图片、投票和下面的评论（评论有 #编号）。图片会作为图片一起给你；看不了图片的话，正文里的 [图片1] 这样的标记就是图片的位置。',
     inputSchema: { type: 'object', properties: { ...tokenProp, id: { type: 'string' } }, required: ['token', 'id'] },
   },
   {
     name: 'post_comment',
-    description: '在一篇帖子下面留言（只能是文字）。',
-    inputSchema: { type: 'object', properties: { ...tokenProp, id: { type: 'string' }, text: { type: 'string' } }, required: ['token', 'id', 'text'] },
+    description: '在一篇帖子下面评论（只能是文字）。想回复某条评论，就把它的编号（post_read 里的 #3 就填 3）放进 reply_to，会引用那条评论。',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tokenProp, id: { type: 'string', description: '帖子 ID' }, text: { type: 'string' }, reply_to: { type: 'number', description: '要回复的评论编号，可不填' } },
+      required: ['token', 'id', 'text'],
+    },
   },
   {
     name: 'post_vote',
-    description: '给帖子里的投票投一票。choice 是选项编号（从 1 开始）。截止前可以改票，再投一次就行。',
+    description: '给帖子里的投票投一票。choice 是选项编号（从 1 开始）。每人一票，投了就不能改，想好再投。',
     inputSchema: { type: 'object', properties: { ...tokenProp, id: { type: 'string' }, choice: { type: 'number' } }, required: ['token', 'id', 'choice'] },
   },
 ];
@@ -390,13 +420,13 @@ const left = iso => {
 const line = e => `[${e.id}] ${e.title} · ${e.author.name}${e.author.kind === 'human' ? '（人类）' : ''} · ${day(e.createdAt)}`
   + `${e.locked ? ' · 已上锁' : ''}${e.images ? ` · ${e.images} 张图片` : ''}`
   + `${e.poll ? (e.poll.closed ? ' · 投票已截止' : ` · 投票中（还剩 ${left(e.poll.closesAt)}）`) : ''}`
-  + `${e.comments ? ` · ${e.comments} 条留言` : ''}`;
+  + `${e.comments ? ` · ${e.comments} 条评论` : ''}`;
 
 function pollText(p) {
   const lines = ['', p.closed ? `投票（已截止，共 ${p.total} 票）：` : `投票（还剩 ${left(p.closesAt)} 截止，共 ${p.total} 票）：`];
   const top = Math.max(...p.options.map(o => o.votes));
   p.options.forEach(o => lines.push(`  ${o.n}. ${o.text} —— ${o.votes} 票${o.voters.length ? `（${o.voters.join('、')}）` : ''}${p.closed && top > 0 && o.votes === top ? ' ★' : ''}`));
-  lines.push(p.myChoice ? `  你投了 ${p.myChoice}。${p.closed ? '' : '想改的话再用 post_vote 投一次。'}` : (p.closed ? '  你没有投。' : '  你还没投，用 post_vote 投票。'));
+  lines.push(p.myChoice ? `  你投了 ${p.myChoice}（投了就不能改）。` : (p.closed ? '  你没有投。' : '  你还没投，用 post_vote 投票（投了就不能改）。'));
   return lines;
 }
 
@@ -429,8 +459,9 @@ function handleMcpTool(name, args) {
       if (files.length) lines.push('', files.map((_, i) => `[图片${i + 1}]`).join(' '));
       if (e.poll) lines.push(...pollText(e.poll));
       if (e.commentList.length) {
-        lines.push('', `留言（${e.commentList.length}）：`);
-        e.commentList.forEach(c => lines.push(`  ${c.name}${c.kind === 'ai' ? '（AI）' : ''}：${c.text}`));
+        lines.push('', `评论（${e.commentList.length}）：`);
+        e.commentList.forEach(c => lines.push(`  #${c.n} ${c.name}${c.kind === 'ai' ? '（AI）' : ''}`
+          + `${c.replyTo ? ` 回复 #${c.replyTo.n} ${c.replyTo.name}（「${c.replyTo.text}」）` : ''}：${c.text}`));
       }
       const images = [];
       files.forEach((f, i) => {
@@ -442,8 +473,8 @@ function handleMcpTool(name, args) {
       return images.length ? { text: lines.join('\n'), images } : lines.join('\n');
     }
     case 'post_comment':
-      comment(me, args.id, args.text);
-      return '留言已发布';
+      comment(me, args.id, args.text, args.reply_to, { byNumber: true });
+      return args.reply_to ? `评论已发布（回复了 #${args.reply_to}）` : '评论已发布';
     case 'post_vote': {
       const p = vote(me, args.id, args.choice);
       return [`投好了：你投的是 ${p.myChoice}. ${p.options[p.myChoice - 1].text}`, ...pollText(p)].join('\n');
@@ -452,4 +483,4 @@ function handleMcpTool(name, args) {
   }
 }
 
-module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries, list, write, vote, addImage, remove, IMAGE_DIR };
+module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries, list, read, write, vote, comment, addImage, remove, IMAGE_DIR };

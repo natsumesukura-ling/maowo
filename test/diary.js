@@ -105,12 +105,13 @@ console.log('ok post tool names');
   const aiPoll = diary.handleMcpTool('post_write', { token: a1.token, title: 'AI 的投票', poll: { options: ['好', '不好'], hours: 2 } });
   assert.match(aiPoll, /投票中（还剩 (1 小时 59 分|2 小时)）/);
   // Voting, changing a vote, wrong choices, after the deadline.
-  diary.vote(owner, pollPost.id, 1);
-  diary.vote(a1, pollPost.id, 2);
-  let p = diary.vote(owner, pollPost.id, 2);
-  assert.deepStrictEqual(p.options.map(o => o.votes), [0, 2], 'changing a vote moves it');
+  diary.vote(owner, pollPost.id, 2);
+  const p = diary.vote(a1, pollPost.id, 2);
+  fails(() => diary.vote(owner, pollPost.id, 1), /不能改/);
+  fails(() => diary.vote(owner, pollPost.id, 2), /不能改/);
+  assert.deepStrictEqual(p.options.map(o => o.votes), [0, 2], 'a vote is final');
   assert.deepStrictEqual(p.options[1].voters.sort(), ['主人', '夜声'].sort());
-  fails(() => diary.vote(owner, pollPost.id, 3), /1 到 2/);
+  fails(() => diary.vote(friend, pollPost.id, 3), /1 到 2/);
   fails(() => diary.vote(owner, pub.id, 1), /没有投票/);
   fails(() => diary.vote(a1, sec.id, 1), /找不到/);
   const txt = diary.handleMcpTool('post_vote', { token: b1.token, id: pollPost.id, choice: 1 });
@@ -125,6 +126,19 @@ console.log('ok post tool names');
   assert.match(closed, /2\. 寿司 —— 2 票.*★/);
   assert.match(diary.handleMcpTool('post_list', { token: a1.token, q: '寿司' }), /晚饭吃什么/, 'search finds poll options');
   console.log('ok polls');
+
+  // Comments quote the comment they answer. AIs use #numbers, the page uses ids.
+  diary.handleMcpTool('post_comment', { token: a1.token, id: pollPost.id, text: '我投寿司' });
+  const cid = diary.comment(friend, pollPost.id, '为什么是寿司', diary.read(friend, pollPost.id).commentList[0].id);
+  assert.match(diary.handleMcpTool('post_comment', { token: a1.token, id: pollPost.id, text: '因为好吃', reply_to: 2 }), /回复了 #2/);
+  fails(() => diary.handleMcpTool('post_comment', { token: a1.token, id: pollPost.id, text: 'x', reply_to: 9 }), /没有 #9/);
+  fails(() => diary.comment(friend, pollPost.id, 'x', 999999), /找不到/);
+  const cl = diary.read(owner, pollPost.id).commentList;
+  assert.strictEqual(cl[1].id, cid);
+  assert.deepStrictEqual(cl.map(c => c.replyTo && c.replyTo.n), [null, 1, 2]);
+  assert.strictEqual(cl[2].replyTo.name, '朋友');
+  assert.match(diary.handleMcpTool('post_read', { token: a1.token, id: pollPost.id }), /#3 夜声（AI） 回复 #2 朋友（「为什么是寿司」）：因为好吃/);
+  console.log('ok comment replies');
 
   // Deleting a post removes its pictures and votes.
   assert.strictEqual(fs.readdirSync(diary.IMAGE_DIR).length, 4);
