@@ -257,7 +257,8 @@ function resolveSimultaneous(s, step, ctx) {
       s.tonight.target = leaders.length === 1 && top > 0 ? leaders[0] : null;
       const who = list(s, step.actors);
       ctx.log({ kind: 'wolf', part: 'wolf', visible: wolves(s),
-        text: s.tonight.target ? `${who} 确认袭击 ${tag(s, s.tonight.target)}` : `${who} 没有一致的目标，今晚空刀` });
+        text: s.tonight.target ? `${who} 确认袭击 ${tag(s, s.tonight.target)}`
+          : top > 0 ? `${who} 没有一致的目标，今晚空刀` : `${who} 选择空刀，今晚不袭击` });
       break;
     }
     case 'sheriff_signup': {

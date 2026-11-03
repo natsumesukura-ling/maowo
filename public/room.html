@@ -33,6 +33,11 @@
   }
   .seat.pickable { cursor: pointer; }
   .seat.pickable:hover { background: var(--card); }
+  /* 房间页底部是操作栏，提示改到上面出现，不挡按钮 */
+  .toast { top: 84px; bottom: auto; }
+  /* 没选人就点确认时，能选的头像闪两下 */
+  .seat.pickable.nudge .circle { animation: nudge .5s ease 2; }
+  @keyframes nudge { 50% { box-shadow: 0 0 0 5px var(--accent-line); transform: scale(1.08); } }
   .seat.faded { opacity: .4; }
   .seat .av { position: relative; width: 44px; height: 44px; }
   .seat .circle {
@@ -129,6 +134,13 @@ $('#back-icon').innerHTML = icon('back', 22);
 const seatName = n => view.seats[n - 1]?.account?.name || '';
 const tag = n => `${n}号 ${seatName(n)}`;
 const targetActions = () => view.actions.filter(a => a.target === 'seat');
+// Which target action the seats are for. Must be settled before the seats are drawn,
+// or the avatars cannot be tapped until the next update.
+function pickTargetType() {
+  const targets = targetActions();
+  if (targetType && !targets.some(a => a.type === targetType)) { targetType = null; picked = null; }
+  if (!targetType && targets.length) targetType = (targets.find(a => !a.passive) || targets[0]).type;
+}
 const textActions = () => view.actions.filter(a => a.text);
 const plainActions = () => view.actions.filter(a => !a.target && !a.text);
 
@@ -359,8 +371,7 @@ function renderActionBar() {
   const bar = $('#actionbar');
   const acts = view.actions;
   const targets = targetActions(), texts = textActions(), plains = plainActions();
-  if (targetType && !targets.some(a => a.type === targetType)) { targetType = null; picked = null; }
-  if (!targetType && targets.length) targetType = (targets.find(a => !a.passive) || targets[0]).type;
+  pickTargetType();
   if (textType && !texts.some(a => a.type === textType)) textType = null;
   if (!textType && texts.length) textType = (texts.find(a => !a.passive) || texts[0]).type;
 
@@ -375,7 +386,7 @@ function renderActionBar() {
     plains.forEach(a => buttons.push(`<button class="btn ${a.danger ? 'danger' : ''}" data-plain="${a.type}" style="height: 48px; border-radius: 14px;">${esc(a.label)}</button>`));
     if (targets.length) {
       const a = targets.find(x => x.type === targetType);
-      buttons.push(`<button class="btn primary" id="confirm" style="flex-grow: 1; height: 48px; border-radius: 14px;" ${picked ? '' : 'disabled'}>${picked ? `${esc(a.label)} ${esc(tag(picked))}` : `先选一个座位`}</button>`);
+      buttons.push(`<button class="btn primary" id="confirm" style="flex-grow: 1; height: 48px; border-radius: 14px;${picked ? '' : ' opacity: .6;'}">${picked ? `${esc(a.label)} ${esc(tag(picked))}` : `${esc(a.label)}：先点上面的头像`}</button>`);
     }
     if (buttons.length) html += `<div class="row" style="margin-bottom: ${texts.length ? 10 : 0}px;">${buttons.join('')}</div>`;
   }
@@ -412,7 +423,15 @@ function renderActionBar() {
     act({ type: a.type });
   });
   const c = $('#confirm');
-  if (c) c.onclick = () => act({ type: targetType, target: picked });
+  if (c) c.onclick = () => {
+    if (!picked) {
+      // Nothing picked yet: say so and make the seats that can be picked wiggle.
+      Maowo.toast('先点上面的头像选人，再点这里确认');
+      document.querySelectorAll('.seat.pickable').forEach(el => { el.classList.remove('nudge'); void el.offsetWidth; el.classList.add('nudge'); });
+      return;
+    }
+    act({ type: targetType, target: picked });
+  };
 }
 
 async function sendText() {
@@ -453,6 +472,7 @@ function apply(v) {
   if (events.length) lastId = events[events.length - 1].id;
   skipAt = Date.now() + (v.skip.waitMs || 0);
   if (picked && !(targetActions().find(a => a.type === targetType)?.targets || []).includes(picked)) picked = null;
+  pickTargetType();
   renderHeader(); renderNotice(); renderSeats(); renderExtra(); renderEvents(); renderActionBar();
   // Only the first load starts at the newest message; after that the page stays where you are.
   if (first) window.scrollTo(0, document.body.scrollHeight);
