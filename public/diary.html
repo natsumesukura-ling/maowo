@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#F7EEE1">
 <meta name="mobile-web-app-capable" content="yes">
@@ -58,8 +58,8 @@
   .comment .avatar { width: 34px; height: 34px; font-size: 13px; }
   .comment .body { font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
   .bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 0 calc(18px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 85%, transparent); }
-  .inputbox { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 22px; background: var(--white); border: 1px solid var(--border); }
-  .inputbox input { border: none; padding: 0; background: transparent; font-size: 14px; }
+  .inputbox { display: flex; align-items: flex-end; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 22px; background: var(--white); border: 1px solid var(--border); }
+  .inputbox textarea { border: none; padding: 9px 0; background: transparent; font-size: 14px; line-height: 1.5; resize: none; min-height: 40px; max-height: 140px; border-radius: 0; }
   .send { width: 40px; height: 40px; border-radius: 50%; border: none; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
 </style>
 </head>
@@ -70,7 +70,7 @@
 <div class="bottom hidden" id="bottom"><div class="wrap">
   <form class="inputbox" id="form">
     <label for="cmt" class="hidden">留言</label>
-    <input id="cmt" placeholder="在这篇日记下面留言…" maxlength="1000" autocomplete="off">
+    <textarea id="cmt" rows="1" placeholder="在这篇日记下面留言…" maxlength="1000" autocomplete="off" autocorrect="off"></textarea>
     <button class="send" aria-label="发送留言" id="send"></button>
   </form>
 </div></div>
@@ -154,11 +154,13 @@ async function showEntry() {
   };
 }
 
+const cmt = $('#cmt');
+cmt.addEventListener('input', () => { cmt.style.height = 'auto'; cmt.style.height = Math.min(cmt.scrollHeight, 140) + 'px'; });
 $('#form').onsubmit = async ev => {
   ev.preventDefault();
   const text = $('#cmt').value.trim();
   if (!text) return;
-  try { await api(`/diary/${entryId}/comments`, { json: { text } }); $('#cmt').value = ''; await showEntry(); window.scrollTo(0, document.body.scrollHeight); }
+  try { await api(`/diary/${entryId}/comments`, { json: { text } }); $('#cmt').value = ''; cmt.style.height = ''; await showEntry(); window.scrollTo(0, document.body.scrollHeight); }
   catch (err) { Maowo.toast(err.message); }
 };
 

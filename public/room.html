@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#F7EEE1">
 <meta name="mobile-web-app-capable" content="yes">
@@ -72,6 +72,12 @@
     position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--bg) 85%, transparent);
     padding: 16px 0 18px; transition: background .4s;
   }
+  /* 有新发言但不在屏幕里时，右下角的小气泡；点一下才滚过去 */
+  .newmsg {
+    position: fixed; right: 16px; z-index: 25; display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
+    border: none; background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(42, 31, 23, .22);
+  }
   .actionbar .hint { font-size: 12px; color: var(--muted); padding-left: 4px; margin-bottom: 8px; }
   .inputbox { display: flex; align-items: flex-end; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 22px; background: var(--white); border: 1px solid var(--border); }
   .inputbox textarea { border: none; padding: 9px 0; background: transparent; resize: none; max-height: 140px; min-height: 40px; font-size: 14px; line-height: 1.5; }
@@ -101,6 +107,7 @@
   <div id="extra"></div>
   <div class="events" id="events"></div>
 </main>
+<button class="newmsg hidden" id="newmsg"></button>
 <div class="actionbar"><div class="wrap" id="actionbar"></div></div>
 
 <script src="/common.js"></script>
@@ -308,12 +315,44 @@ function renderEvents() {
     const who = e.seat ? tag(e.seat) : '';
     if (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') {
       const scope = e.kind === 'wolf' && view.status !== 'finished' ? ' · 仅狼人可见' : '';
-      return `<div class="speech ${e.kind === 'wolf' ? 'wolf' : ''}"><div class="who"><b>${esc(who)}</b> · ${esc(e.label || '发言')}${scope}</div><div class="bubble">${esc(e.text)}</div></div>`;
+      return `<div class="speech ${e.kind === 'wolf' ? 'wolf' : ''}" data-ev="${e.id}"><div class="who"><b>${esc(who)}</b> · ${esc(e.label || '发言')}${scope}</div><div class="bubble">${esc(e.text)}</div></div>`;
     }
-    if (e.private && view.status !== 'finished') return `<div class="private">仅你可见 · ${esc(e.text)}</div>`;
-    return `<div class="sys">${esc(e.text)}</div>`;
+    if (e.private && view.status !== 'finished') return `<div class="private" data-ev="${e.id}">仅你可见 · ${esc(e.text)}</div>`;
+    return `<div class="sys" data-ev="${e.id}">${esc(e.text)}</div>`;
   }).join('');
 }
+
+// ---------- new messages bubble ----------
+// The page does not jump when something new arrives; a bubble says what came in below the screen.
+let unseenId = null;
+const visibleBottom = () => window.innerHeight - (document.querySelector('.actionbar')?.offsetHeight || 0);
+const evEl = id => document.querySelector(`[data-ev="${id}"]`);
+function noteNew(added) {
+  const mine = view.mySeat;
+  const others = added.filter(e => !(e.seat && e.seat === mine && (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf')));
+  if (!others.length) return;
+  const first = others[0];
+  const el = evEl(first.id);
+  if (!el || el.getBoundingClientRect().top < visibleBottom() - 20) return; // already on screen
+  if (unseenId === null) unseenId = first.id;
+  const speeches = others.filter(e => e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf');
+  const last = speeches[speeches.length - 1];
+  const b = $('#newmsg');
+  b.innerHTML = `${last ? `新发言：${last.seat}号` : '有新动态'}${icon('chevronDown', 16, 2.2)}`;
+  b.style.bottom = (window.innerHeight - visibleBottom() + 12) + 'px';
+  b.classList.remove('hidden');
+}
+function clearNew() { unseenId = null; $('#newmsg').classList.add('hidden'); }
+$('#newmsg').onclick = () => {
+  const el = unseenId !== null && evEl(unseenId);
+  if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 90, behavior: 'smooth' });
+  clearNew();
+};
+window.addEventListener('scroll', () => {
+  if (unseenId === null) return;
+  const el = evEl(unseenId);
+  if (!el || el.getBoundingClientRect().top < visibleBottom() - 20) clearNew();
+}, { passive: true });
 
 // ---------- action bar ----------
 function renderActionBar() {
@@ -406,15 +445,18 @@ async function post(what, body) {
 
 // ---------- data loop ----------
 function apply(v) {
-  const nearBottom = window.innerHeight + window.scrollY > document.body.scrollHeight - 160;
+  const first = view === null;
   view = v;
   const known = new Set(events.map(e => e.id));
-  v.events.forEach(e => { if (!known.has(e.id)) events.push(e); });
+  const added = v.events.filter(e => !known.has(e.id));
+  added.forEach(e => events.push(e));
   if (events.length) lastId = events[events.length - 1].id;
   skipAt = Date.now() + (v.skip.waitMs || 0);
   if (picked && !(targetActions().find(a => a.type === targetType)?.targets || []).includes(picked)) picked = null;
   renderHeader(); renderNotice(); renderSeats(); renderExtra(); renderEvents(); renderActionBar();
-  if (nearBottom || v.events.length === events.length) window.scrollTo(0, document.body.scrollHeight);
+  // Only the first load starts at the newest message; after that the page stays where you are.
+  if (first) window.scrollTo(0, document.body.scrollHeight);
+  else if (added.length) noteNew(added);
 }
 
 async function refresh() {

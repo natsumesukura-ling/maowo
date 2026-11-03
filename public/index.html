@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#F7EEE1">
 <meta name="mobile-web-app-capable" content="yes">
@@ -23,25 +23,35 @@
   .hero h1 { font-size: 30px; font-weight: 700; margin: 0; letter-spacing: 1px; position: relative; }
   .hero p { margin: 8px 0 0; color: var(--text2); font-size: 14px; position: relative; }
   .hero .shelfcat { width: 100%; margin-top: 4px; }
-  .games { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .games { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
   .game {
-    position: relative; text-align: center; padding: 12px 12px 14px; border-radius: 22px; background: var(--card);
+    position: relative; text-align: center; padding: 10px 12px 12px; border-radius: 20px; background: var(--card);
     border: 1px solid var(--border); box-shadow: var(--shadow); cursor: pointer; font: inherit; color: inherit;
     display: flex; flex-direction: column; align-items: stretch;
   }
   .game.mine { border: 1.5px solid var(--accent-line); }
   .game.todo { background: transparent; border: 1.5px dashed var(--line); box-shadow: none; cursor: default; }
-  .game .pic { height: 104px; display: flex; align-items: center; justify-content: center; }
-  .game .pic img { max-height: 100px; max-width: 86%; }
+  .game .pic { height: 66px; display: flex; align-items: center; justify-content: center; }
+  .game .pic img { max-height: 64px; max-width: 80%; }
   .game.todo .pic img { opacity: .75; }
-  .game .name { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 23px; margin-top: 6px; letter-spacing: 2px; }
-  .game .status { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--text2); text-align: left; }
+  .game .name { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 19px; margin-top: 4px; letter-spacing: 2px; }
+  .game .status { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12.5px; color: var(--text2); text-align: left; }
   .game .status .txt { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .game .status .chev { color: var(--accent); display: flex; }
   .game.todo .status, .game.todo .status .chev { color: var(--muted); }
   .dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--muted); flex-shrink: 0; }
   .dot.live { background: var(--accent); border-color: var(--accent); }
   .arch-wrap { margin-top: 26px; }
+  .live-room {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 10px; border-radius: 16px;
+    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); text-decoration: none; color: inherit;
+  }
+  .live-room.mine { border: 1.5px solid var(--accent-line); }
+  .live-room .thumb { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .live-room .thumb img { max-width: 40px; max-height: 40px; }
+  .live-room .name { font-size: 15px; font-weight: 600; }
+  .live-room .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .live-room .you { font-size: 12px; color: var(--accent); font-weight: 600; white-space: nowrap; }
   .arch {
     position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 40px 10px 12px; margin-bottom: 10px;
     border-radius: 16px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); text-decoration: none; color: inherit;
@@ -98,6 +108,11 @@
   </div>
 
   <div class="games" id="games"></div>
+
+  <section class="arch-wrap">
+    <div class="ribbon"><span class="tag">游戏中 <span class="dot live" style="margin-left: 2px;"></span></span><span class="rule"></span></div>
+    <div id="live"></div>
+  </section>
 
   <section class="arch-wrap">
     <div class="ribbon"><span class="tag">归档 <span style="color: var(--accent); display: flex;" id="arch-icon"></span></span><span class="rule"></span>
@@ -158,6 +173,19 @@ function renderGames() {
   document.querySelectorAll('[data-game]').forEach(b => b.onclick = () => showGame(b.dataset.game));
 }
 
+// Every table that is waiting or playing, yours first.
+function renderLive() {
+  const rooms = [...state.rooms].sort((a, b) => (b.mySeat ? 1 : 0) - (a.mySeat ? 1 : 0));
+  $('#live').innerHTML = rooms.length ? rooms.map(r => `
+    <a class="live-room ${r.mySeat ? 'mine' : ''}" href="/room/${r.id}">
+      <div class="thumb">${ART[r.game] ? `<img src="${ART[r.game]}" alt="">` : ''}</div>
+      <div style="flex-grow: 1; min-width: 0;"><div class="name">${esc(r.name)}</div>
+        <div class="meta">${esc(r.gameName)} · ${r.status === 'waiting' ? `等人中 ${r.filled} / ${r.total}` : `${esc(r.phase)}`}</div></div>
+      ${r.mySeat ? `<span class="you">你在 ${r.mySeat}号</span>` : ''}
+      <span style="color: var(--accent); display: flex;">${icon('chevronRight', 18, 2)}</span>
+    </a>`).join('') : '<div class="empty" style="padding: 12px 0;">现在没有在玩的桌。点上面的游戏开一桌吧</div>';
+}
+
 function archiveLabel(r) {
   const size = r.total === 2 ? '双人' : `${r.total}人局`;
   return `${Maowo.fmtDate(r.finishedAt)} ${Maowo.fmtClock(r.finishedAt)} · ${size}${esc(r.gameName)} · ${esc(r.result.title)}`;
@@ -212,7 +240,7 @@ async function load() {
   const [games, rooms, archives] = await Promise.all([api('/games'), api('/rooms'), api('/archives?limit=3')]);
   gamesList = games;
   state = { rooms, archives };
-  renderGames(); renderArchives();
+  renderGames(); renderLive(); renderArchives();
 }
 // ---------- splash ----------
 // Only shown with ?splash=1 now. Android already shows its own launch screen (the icon on the
