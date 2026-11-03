@@ -14,7 +14,9 @@
 <style>
   /* ---------- the window ---------- */
   body.chat { overflow: hidden; }
-  body.chat #app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  /* Pinned to the screen edges, not 100vh/100dvh: on some phones those come out taller than the screen
+     and push the input box off the bottom (绫 saw no input box). The room page pins its bar the same way. */
+  body.chat #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
   .top { padding: 0 12px 0 8px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
   .top header { display: flex; align-items: center; gap: 2px; padding: 8px 0; max-width: 560px; margin: 0 auto; }
   .top .who { display: flex; align-items: center; gap: 10px; min-width: 0; flex-grow: 1; padding-left: 2px; }
@@ -28,7 +30,7 @@
   .dot.sleep { background: var(--line); } .dot.play, .dot.busy { background: var(--accent-line); }
   .dot.busy { animation: blink 1.2s infinite; }
   @keyframes blink { 50% { opacity: .3; } }
-  #feed { flex-grow: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #feed .in { max-width: 560px; margin: 0 auto; padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 10px; }
   .stamp { align-self: center; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
   .b { max-width: 82%; padding: 10px 13px; border-radius: 18px; font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
