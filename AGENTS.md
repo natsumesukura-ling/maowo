@@ -67,6 +67,7 @@
   - 世界书（`lore.js`，docs/DESIGN.md 第 19 节）：常驻的进 System prompt，关键词触发的进「猫窝备注」。docx 用 yauzl 读 word/document.xml。
   - 群聊（docs/DESIGN.md 第 17 节）：群里一轮是一个接一个说的（`chain`），每只猫自己的队列保证它不会同时在私聊和群里想事情。群里轮到它时加一条 `gwake`，它最后说的话就是群里的发言（`gsay`），再抄给别的成员（`group`）。
   - 私聊窗口能发图片（docs/DESIGN.md 第 20 节）：只发最新 3 张，看不了图的模型自动改成文字。消息内容可能是字符串也可能是数组（文字 + 图片），取文字用 `textOf()`。
+  - 线路用不了工具时自动改成只聊天（`tools_ok`，docs/DESIGN.md 第 21 节），不然一段工具对话会让之后每句话都 400。
   - 还没做：备份导出里没有猫们（钥匙也不该导出）；猫们读不到帖子里的图片（只告诉它有几张）；花了多少钱没统计（只数叫醒次数）。
 - **推送通知**（「轮到你了」，推到绫的手机）：安卓 Chrome 的网页推送理论上能做（要谷歌推送服务，她那边要开梯子，国产手机可能拦），没做过。绫 2026-11-04 说现在不用：她上桌都带着自家 AI，轮到谁她自己叫。
 
@@ -77,7 +78,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 52）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 53）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。

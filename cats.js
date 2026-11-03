@@ -98,7 +98,7 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cat_group_messages ON cat_group_messages(group_id, id);
 `);
-for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1']]) {
+for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1'], ['cats', 'tools_ok INTEGER NOT NULL DEFAULT 1']]) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -321,6 +321,7 @@ function stripToken(schema) {
   return { type: 'object', properties: props, required: (schema.required || []).filter(r => r !== 'token') };
 }
 function toolsFor(cat) {
+  if (cat.tools_ok === 0) return [];
   const list = [...mcp.listTools().filter(t => !SKIP_TOOLS.has(t.name)), ...ownTools, recallTool, ...(cat.alarms ? [alarmTool] : [])];
   return list.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: stripToken(t.inputSchema || { type: 'object', properties: {} }) } }));
 }
@@ -454,6 +455,7 @@ function systemPrompt(ai, cat) {
     '- 消息末尾括号里的「猫窝备注」是猫窝写给你的：现在几点、你在哪几桌、闹钟。不是主人说的话，不用回应它。',
     '- 玩游戏时，每次被叫醒只做轮到你的这一步，做完就停，下一步猫窝会再叫你。',
     '- 想一直记着的事（人、约定、喜好、发生过的有意思的事），用 remember 写进小本本。对话太长时，旧的部分会被压成摘要；很久以前的细节想不起来了，可以用 recall 在你的旧聊天记录里搜一搜。',
+    cat.tools_ok === 0 ? `- 你现在用不了工具（这条线路不支持），只能聊天：玩不了游戏、发不了帖、记不了小本本。${owner.name}让你做这些时，告诉她要换一个能用工具的模型。` : '',
     cat.alarms ? '- 想过一会儿自己去逛逛（看帖子、看看有没有人开桌），可以用 set_alarm 定个闹钟。不想就不用。' : '',
   );
   const groups = stmts.groupsOfCat.all(ai.id);
@@ -536,7 +538,24 @@ function history(aiId, runStart, opts = {}) {
     }
     clean.push(m);
   }
-  return clean;
+  if (!opts.flat) return clean;
+  // Some relays refuse any tool messages (Gemini through a relay that drops tools): the same story in
+  // plain words, and messages of the same role joined, so it reads as an ordinary chat.
+  const flat = [];
+  const names = new Map();
+  for (const m of clean) {
+    let f;
+    if (m.role === 'assistant' && m.tool_calls) {
+      m.tool_calls.forEach(c => names.set(c.id, c.function.name));
+      f = { role: 'assistant', content: [m.content, ...m.tool_calls.map(c => `（我用了工具 ${c.function.name}）`)].filter(Boolean).join('\n') };
+    } else if (m.role === 'tool') {
+      f = { role: 'user', content: `【工具 ${names.get(m.tool_call_id) || ''} 的结果】${String(m.content).slice(0, 600)}` };
+    } else f = { role: m.role, content: m.content };
+    const last = flat[flat.length - 1];
+    if (last && last.role === f.role && typeof last.content === 'string' && typeof f.content === 'string') last.content += `\n\n${f.content}`;
+    else flat.push(f);
+  }
+  return flat;
 }
 
 // When the window gets too long, the oldest part becomes a few lines of summary.
@@ -689,21 +708,41 @@ async function runOnce(aiId, t) {
   activity(aiId, '正在想…');
   await maybeSummarize(ai, cat, key).catch(err => add(aiId, 'error', { text: `整理旧对话时出错了：${err.message}` }));
 
-  const tools = toolsFor(cat);
+  let tools = toolsFor(cat);
   const system = systemPrompt(ai, stmts.cat.get(aiId)); // once per wake, so every step starts the same
   let said = false;
+  const opts = { flat: cat.tools_ok === 0, vision: cat.vision !== 0 };
+  const ask = o => callModel(key, cat.model, [{ role: 'system', content: system }, ...history(aiId, runStart, o)], o.flat ? [] : tools);
+  // 「The request is wrong」 answers, as opposed to a wrong key, no money or a busy server.
+  const refused = err => /对方回了 (400|415|422)/.test(err.message);
   for (let step = 0; step < MAX_STEPS; step++) {
-    const messages = [{ role: 'system', content: system }, ...history(aiId, runStart)];
     let msg;
-    try { msg = await callModel(key, cat.model, messages, tools); } catch (err) {
-      // A model that cannot see pictures usually refuses the whole request. Try again without them;
-      // if that works, it is not told about pictures as pictures any more (the setting can turn it back on).
-      if (!messages.some(m => Array.isArray(m.content) && m.content.some(x => x.type === 'image_url'))) throw err;
-      msg = await callModel(key, cat.model, [{ role: 'system', content: system }, ...history(aiId, runStart, { vision: false })], tools);
-      setCat(aiId, { vision: 0 });
-      add(aiId, 'error', { text: '它好像看不了图片（这个模型不支持），以后发的图片只会告诉它「这里有张图」。换了能看图的模型，可以在设置里打开「能看图片」。' });
+    try { msg = await ask(opts); } catch (err) {
+      if (!refused(err)) throw err;
+      let last = err;
+      // 1. A model that cannot see pictures usually refuses the whole request: try without them.
+      const hasPics = opts.vision && stmts.live.all(aiId).some(r => r.kind === 'me' && r.msg.includes('maowo-img:'));
+      if (hasPics) {
+        try {
+          msg = await ask({ ...opts, vision: false });
+          opts.vision = false;
+          setCat(aiId, { vision: 0 });
+          add(aiId, 'error', { text: '它好像看不了图片（这个模型不支持），以后发的图片只会告诉它「这里有张图」。换了能看图的模型，可以在设置里打开「能看图片」。' });
+        } catch (e) { last = e; }
+      }
+      // 2. A line that cannot carry tools refuses tools and tool messages: plain chat from now on.
+      if (!msg && !opts.flat) {
+        try {
+          msg = await ask({ ...opts, vision: hasPics ? false : opts.vision, flat: true });
+          opts.flat = true; tools = [];
+          setCat(aiId, { tools_ok: 0 });
+          add(aiId, 'error', { text: '它这条线路用不了工具（模型或中转站不支持），先改成只聊天：玩不了游戏、发不了帖。换了能用工具的模型会自动恢复，设置里也能重新打开「能用工具」。' });
+        } catch (e) { last = e; }
+      }
+      if (!msg) throw last;
     }
-    const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter(c => c && c.function && c.function.name) : [];
+    // Without tools, a made-up tool call is just ignored.
+    const calls = !opts.flat && Array.isArray(msg.tool_calls) ? msg.tool_calls.filter(c => c && c.function && c.function.name) : [];
     const content = typeof msg.content === 'string' ? msg.content.trim() : '';
     const keep = { role: 'assistant', content: content || null };
     if (msg.reasoning_content) keep.reasoning_content = msg.reasoning_content;
@@ -930,7 +969,7 @@ function card(ai, cat) {
 function settings(ai, cat) {
   return {
     ...card(ai, cat), keyId: cat.key_id, systemPrompt: cat.system_prompt, wakeOnTurn: !!cat.wake_on_turn, alarms: !!cat.alarms,
-    dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id), vision: cat.vision !== 0,
+    dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id), vision: cat.vision !== 0, toolsOk: cat.tools_ok !== 0,
   };
 }
 
@@ -1048,6 +1087,7 @@ router.put('/groups/:gid', wrap(req => {
   if (b.maxSpeak !== undefined) { const n = Math.round(Number(b.maxSpeak)); if (!(n >= 1 && n <= 10)) throw new Error('一轮最多 1 到 10 只'); f.max_speak = n; }
   if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;
   if (b.vision !== undefined) f.vision = b.vision ? 1 : 0;
+  if (b.toolsOk !== undefined) f.tools_ok = b.toolsOk ? 1 : 0;
   const cols = Object.keys(f);
   if (cols.length) db.prepare(`UPDATE cat_groups SET ${cols.map(c => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({ ...f, id: g.id });
   gChanged(g.id);
@@ -1152,7 +1192,10 @@ function applySettings(ai, b) {
     f.model = String(b.model || '').trim().slice(0, 120);
     if (/\s/.test(f.model)) throw new Error('模型名里不能有空格');
     // A different model may see pictures again.
-    if (b.vision === undefined && f.model !== (stmts.cat.get(ai.id) || {}).model) f.vision = 1;
+    if (f.model !== (stmts.cat.get(ai.id) || {}).model) {
+      if (b.vision === undefined) f.vision = 1;
+      if (b.toolsOk === undefined) f.tools_ok = 1;
+    }
   }
   if (b.systemPrompt !== undefined) { f.system_prompt = String(b.systemPrompt || ''); if (f.system_prompt.length > 20000) throw new Error('System prompt 太长了（最多 2 万字）'); }
   if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;

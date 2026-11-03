@@ -19,6 +19,11 @@ function reply(body) {
   const sys = msgs[0].content;
   const call = (name, args) => ({ role: 'assistant', content: null, tool_calls: [{ id: 'c' + Math.random().toString(36).slice(2, 8), type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
   if (body.model === 'fake-blind' && JSON.stringify(msgs).includes('"image_url"')) return { error: 400 };
+  // like the relay's Gemini line: tools and tool messages are refused; without tools it makes one up
+  if (body.model === 'fake-notools') {
+    if (body.tools || msgs.some(m => m.role === 'tool' || m.tool_calls)) return { error: 400 };
+    return { role: 'assistant', content: '只能聊天啦', tool_calls: [{ id: 'x1', type: 'function', function: { name: 'forum_list_posts', arguments: '{}' } }] };
+  }
   if (!body.tools) return { role: 'assistant', content: sys.includes('压成简短的摘要') ? '摘要：主人和我聊了很多次天。' : '嗯' };
   if (mode === 'broken') return { role: 'assistant', content: '我不会用工具' };
   if (last.role === 'user' && last.content === '请调用 ping 工具。') {
@@ -262,6 +267,28 @@ const ok = name => console.log('ok', name);
     await api(OWNER, `/cats/${cat.id}`, { method: 'PUT', json: { model: 'fake-1' } });
     assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).vision, true, 'a new model may see again');
     ok('a model that cannot see pictures gets words instead, once noticed');
+
+    // A line that cannot carry tools (and the window already has tool talk in it): it recovers into plain chat.
+    await api(OWNER, `/cats/${cat.id}`, { method: 'PUT', json: { model: 'fake-notools' } });
+    await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '看看帖子' } });
+    await idle();
+    w = await api(OWNER, `/cats/${cat.id}/messages`);
+    assert.strictEqual(w.items.at(-1).text, '只能聊天啦', JSON.stringify(w.items.slice(-3)));
+    assert(w.items.some(i => i.kind === 'error' && i.text.includes('用不了工具')));
+    assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).toolsOk, false);
+    b = seen.at(-1);
+    assert(!b.tools && !b.messages.some(m => m.role === 'tool' || m.tool_calls), 'plain chat');
+    assert(b.messages[0].content.includes('你现在用不了工具') === false, 'system prompt is per wake: says so from the next wake');
+    await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '再说一句' } });
+    await idle();
+    b = seen.at(-1);
+    assert(b.messages[0].content.includes('你现在用不了工具') && !b.tools);
+    w = await api(OWNER, `/cats/${cat.id}/messages`);
+    assert.strictEqual(w.items.at(-1).text, '只能聊天啦');
+    assert(!w.items.slice(-3).some(i => i.kind === 'result'), 'made-up tool call ignored');
+    await api(OWNER, `/cats/${cat.id}`, { method: 'PUT', json: { model: 'fake-1' } });
+    assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).toolsOk, true, 'a new model gets tools again');
+    ok('a line that refuses tools: recovers into plain chat instead of failing on every message');
   }
 
   // Notebook through the remember tool; the notebook is in the next prompt.

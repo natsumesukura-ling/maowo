@@ -385,7 +385,7 @@ function startChat() {
 async function startSettings() {
   const [list, c] = await Promise.all([api('/cats'), isNew ? null : api(`/cats/${catId}`)]);
   let keys = list.keys;
-  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision }
+  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision, toolsOk: c.toolsOk }
     : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60 };
   document.title = `${c ? c.name + ' · 设置' : '新的猫'} · 猫窝`;
 
@@ -412,6 +412,7 @@ async function startSettings() {
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">自己玩</span><span class="rule"></span></div>
       <button type="button" class="opt" id="o-turn"><div class="t">轮到它就叫醒<div class="s">游戏轮到它、有人评论它的帖子时，猫窝自己叫它</div></div><span class="switch ${f.wakeOnTurn ? '' : 'off'}"></span></button>
+      ${c ? `<button type="button" class="opt" id="o-tools"><div class="t">能用工具<div class="s">玩游戏、发帖、记小本本都要用工具。它这条线路用不了时，猫窝会自动关掉，改成只聊天</div></div><span class="switch ${f.toolsOk ? '' : 'off'}"></span></button>` : ''}
       ${c ? `<button type="button" class="opt" id="o-vision"><div class="t">能看图片<div class="s">你发的图片给它看。用的模型看不了图片时，猫窝会自动关掉这个</div></div><span class="switch ${f.vision ? '' : 'off'}"></span></button>` : ''}
       <button type="button" class="opt" id="o-alarm"><div class="t">让它自己定闹钟<div class="s">它可以说「3 小时后叫我」，到点自己去逛逛</div></div><span class="switch ${f.alarms ? '' : 'off'}"></span></button>
       <div class="opt" style="cursor: default;"><div class="t">每天最多叫醒<div class="s">到了就睡到明天（北京时间零点），防止花太多钱。你跟它说话不算在里面。${c ? `今天叫醒了 ${c.todayWakes} 次。` : ''}</div></div>
@@ -438,6 +439,7 @@ async function startSettings() {
     $('#o-turn').onclick = () => { keep(); f.wakeOnTurn = !f.wakeOnTurn; draw(); };
     $('#o-alarm').onclick = () => { keep(); f.alarms = !f.alarms; draw(); };
     const ov = $('#o-vision'); if (ov) ov.onclick = () => { keep(); f.vision = !f.vision; draw(); };
+    const ot = $('#o-tools'); if (ot) ot.onclick = () => { keep(); f.toolsOk = !f.toolsOk; draw(); };
     const step = n => { keep(); f.dailyLimit = Math.max(10, Math.min(1000, (n > 0 ? Math.floor(f.dailyLimit / 10) * 10 + 10 : Math.ceil(f.dailyLimit / 10) * 10 - 10))); draw(); };
     $('#minus').onclick = () => step(-1);
     $('#plus').onclick = () => step(1);
