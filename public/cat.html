@@ -94,7 +94,7 @@ const isNew = parts[1] === 'new';
 const catId = isNew ? null : Number(parts[1]);
 const isSettings = isNew || parts[2] === 'settings';
 
-const TOOL_ICON = { act: 'gamepad', get_state: 'gamepad', join_room: 'gamepad', create_room: 'gamepad', start_game: 'gamepad', leave_room: 'gamepad', list_games: 'gamepad', skip: 'gamepad', get_rules: 'rules', get_archive: 'archive', comment: 'chat', chat: 'chat', post_comment: 'chat', post_write: 'chat', post_list: 'chat', post_read: 'chat', post_vote: 'poll', inbox: 'bell', remember: 'notebook', rewrite_notebook: 'notebook', set_alarm: 'bell', vault_save: 'box', vault_list: 'box', vault_read: 'box' };
+const TOOL_ICON = { act: 'gamepad', get_state: 'gamepad', join_room: 'gamepad', create_room: 'gamepad', start_game: 'gamepad', leave_room: 'gamepad', list_games: 'gamepad', skip: 'gamepad', get_rules: 'rules', get_archive: 'archive', comment: 'chat', chat: 'chat', post_comment: 'chat', post_write: 'chat', post_list: 'chat', post_read: 'chat', post_vote: 'poll', inbox: 'bell', remember: 'notebook', recall: 'search', rewrite_notebook: 'notebook', set_alarm: 'bell', vault_save: 'box', vault_list: 'box', vault_read: 'box' };
 const timeOf = iso => { const d = new Date(iso); const now = new Date(); const same = d.toDateString() === now.toDateString(); return `${same ? '今天' : Maowo.fmtDate(iso)} ${Maowo.fmtClock(iso)}`; };
 
 // ============================================================

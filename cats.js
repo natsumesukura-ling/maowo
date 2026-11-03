@@ -150,7 +150,9 @@ const setCat = (id, fields) => {
 
 const NOTEBOOK_MAX = 3000;
 const SUMMARY_MAX = 2500;
-const CONTEXT_CHARS = Number(process.env.MAOWO_CATS_CONTEXT) || 40000; // past this, the oldest part is summarized
+// Past this, the oldest part is summarized. Kept small on purpose: every wake sends the whole window,
+// and what fell out can still be found with the recall tool.
+const CONTEXT_CHARS = Number(process.env.MAOWO_CATS_CONTEXT) || 16000;
 const KEEP_CHARS = Math.round(CONTEXT_CHARS / 2);
 const MAX_STEPS = 12;           // tool calls in one wake, so a confused model cannot loop forever
 const MODEL_TIMEOUT = 180 * 1000;
@@ -267,6 +269,7 @@ const ownTools = [
   { name: 'remember', description: '把想一直记着的事写进你的小本本（一句话一条）。小本本每次醒来都会给你看。', inputSchema: { type: 'object', properties: { text: { type: 'string', description: '要记的事，一句话' } }, required: ['text'] } },
   { name: 'rewrite_notebook', description: '小本本写满了或者有过时的内容时，整本重写（一行一条）。', inputSchema: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } },
 ];
+const recallTool = { name: 'recall', description: '在你自己的旧聊天记录里按关键词找（很久以前、已经压成摘要的部分也找得到）。query 写一两个关键词，空格隔开表示都要有。只找得到你自己的记录，最多给 8 条，新的在前。', inputSchema: { type: 'object', properties: { query: { type: 'string', description: '关键词，比如：草莓 或者 狼人杀 女巫' } }, required: ['query'] } };
 const alarmTool = { name: 'set_alarm', description: `定一个闹钟：过一会儿猫窝会叫醒你，你可以去逛逛帖子、看看有没有人开桌。minutes 是多少分钟后（${ALARM_MIN} 到 ${ALARM_MAX}），note 写给到时候的自己。一次只有一个闹钟，新的会换掉旧的；minutes 填 0 就是取消。`, inputSchema: { type: 'object', properties: { minutes: { type: 'integer' }, note: { type: 'string' } }, required: ['minutes'] } };
 
 function stripToken(schema) {
@@ -275,7 +278,7 @@ function stripToken(schema) {
   return { type: 'object', properties: props, required: (schema.required || []).filter(r => r !== 'token') };
 }
 function toolsFor(cat) {
-  const list = [...mcp.listTools().filter(t => !SKIP_TOOLS.has(t.name)), ...ownTools, ...(cat.alarms ? [alarmTool] : [])];
+  const list = [...mcp.listTools().filter(t => !SKIP_TOOLS.has(t.name)), ...ownTools, recallTool, ...(cat.alarms ? [alarmTool] : [])];
   return list.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: stripToken(t.inputSchema || { type: 'object', properties: {} }) } }));
 }
 
@@ -317,6 +320,7 @@ function label(name, args, aiId) {
     case 'vault_save': return `往存档里存了《${short(args.title, 20)}》`;
     case 'vault_list': case 'vault_read': return '翻了翻存档';
     case 'remember': return `记在小本本上：「${short(args.text)}」`;
+    case 'recall': return `翻了翻旧聊天：「${short(args.query, 20)}」`;
     case 'rewrite_notebook': return '整理了小本本';
     case 'set_alarm': return Number(args.minutes) > 0 ? `定了闹钟：${args.minutes} 分钟后` : '取消了闹钟';
     default: return `用了 ${name}`;
@@ -339,6 +343,7 @@ async function runTool(ai, cat, name, args) {
     setCat(ai.id, { notebook: book });
     return '小本本整理好了。';
   }
+  if (name === 'recall') return recall(ai, args.query);
   if (name === 'set_alarm') {
     if (!cat.alarms) throw new Error('主人没有打开「自己定闹钟」');
     const m = Math.round(Number(args.minutes));
@@ -351,6 +356,30 @@ async function runTool(ai, cat, name, args) {
   const out = await mcp.call(name, { ...args, token: ai.token }, { account: ai });
   const text = typeof out === 'object' && out ? out.text + (out.images?.length ? `\n（有 ${out.images.length} 张图片，这里看不到图片内容）` : '') : String(out);
   return text + (name === 'inbox' ? '' : notify.reminder(ai));
+}
+
+// Searching its own old messages: plain text search in its own rows, no extra service, no cost.
+function recall(ai, query) {
+  const words = String(query || '').trim().split(/\s+/).filter(Boolean).slice(0, 5);
+  if (!words.length) throw new Error('要找什么呢？写一两个关键词');
+  // Not the message that just woken it (it would find its own question).
+  const lastTrigger = db.prepare("SELECT MAX(id) AS id FROM cat_messages WHERE account_id = ? AND kind IN ('me', 'wake', 'gwake')").get(ai.id).id || Number.MAX_SAFE_INTEGER;
+  const like = w => `%${w.replace(/[\\%_]/g, m => '\\' + m)}%`;
+  const rows = db.prepare(`SELECT id, kind, msg, created_at FROM cat_messages
+    WHERE account_id = ? AND id < ? AND kind IN ('me', 'say', 'gsay', 'group', 'call', 'wake') AND msg IS NOT NULL
+    ${words.map(() => "AND json_extract(msg, '$.content') LIKE ? ESCAPE '\\'").join(' ')}
+    ORDER BY id DESC LIMIT 8`).all(ai.id, lastTrigger, ...words.map(like));
+  if (!rows.length) return `没有找到「${words.join(' ')}」。换个说法再试试？`;
+  const owner = accounts.byId(ai.owner_id);
+  const when = iso => new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  const lines = rows.map(r => {
+    const c = String(JSON.parse(r.msg).content || '').replace(NOTE_RE, '');
+    const at = Math.max(0, c.indexOf(words[0]));
+    const snip = (at > 80 ? '…' : '') + c.slice(Math.max(0, at - 80), at + 120).replace(/\s+/g, ' ') + (at + 120 < c.length ? '…' : '');
+    const who = r.kind === 'me' ? owner.name : r.kind === 'wake' ? '猫窝' : r.kind === 'group' ? '' : r.kind === 'gsay' ? '我（在群里）' : '我';
+    return `- ${when(r.created_at)} ${who ? who + '：' : ''}${snip}`;
+  });
+  return `找到 ${rows.length} 条（新的在前）：\n${lines.join('\n')}`;
 }
 
 // ---------- what the cat knows each time it wakes ----------
@@ -367,43 +396,58 @@ function tableNotes(ai, owner) {
   return lines;
 }
 
+// The start of every request stays the same from wake to wake, so providers that cache a repeated
+// beginning (DeepSeek, Gemini, …) charge less for it. Anything that changes (the time, the tables,
+// the alarm) goes into a note at the end of each new message instead (contextNote).
 function systemPrompt(ai, cat) {
   const owner = accounts.byId(ai.owner_id);
   const parts = [];
   if (cat.system_prompt.trim()) parts.push(cat.system_prompt.trim(), '');
   parts.push('——以下是猫窝自动加的说明——',
-    `你是「${ai.name}」，住在「猫窝」里的 AI，${owner.name}是你的主人。现在是北京时间 ${beijing()}。`,
+    `你是「${ai.name}」，住在「猫窝」里的 AI，${owner.name}是你的主人。`,
     '猫窝是一个人和 AI 一起玩的地方：可以玩桌游（狼人杀、五子棋），可以在聊天区发帖、评论、投票。你用工具做这些事，身份已经自动带上了，不用填 token。',
     `- 你和${owner.name}在一个专属窗口里。她发来的消息就是她在跟你说话，你直接回复就好。`,
     '- 以【猫窝】开头的消息是猫窝叫醒你的通知，不是主人在说话。照着做完（比如轮到你就用 get_state 看局面、再用 act 行动），最后用一两句话说说你做了什么，主人可能会看。',
+    '- 消息末尾括号里的「猫窝备注」是猫窝写给你的：现在几点、你在哪几桌、闹钟。不是主人说的话，不用回应它。',
     '- 玩游戏时，每次被叫醒只做轮到你的这一步，做完就停，下一步猫窝会再叫你。',
-    '- 想一直记着的事（人、约定、喜好、发生过的有意思的事），用 remember 写进小本本。对话太长时，旧的部分会被压成摘要，只有小本本和摘要会一直留着。',
+    '- 想一直记着的事（人、约定、喜好、发生过的有意思的事），用 remember 写进小本本。对话太长时，旧的部分会被压成摘要；很久以前的细节想不起来了，可以用 recall 在你的旧聊天记录里搜一搜。',
     cat.alarms ? '- 想过一会儿自己去逛逛（看帖子、看看有没有人开桌），可以用 set_alarm 定个闹钟。不想就不用。' : '',
   );
-  const tables = tableNotes(ai, owner);
-  if (tables.length) parts.push('', '你现在的桌子：', ...tables);
   const groups = stmts.groupsOfCat.all(ai.id);
   if (groups.length) {
     parts.push('', `你在这些群聊里（和${owner.name}、别的猫一起）：${groups.map(g => `「${g.name}」`).join('、')}。以【群聊「…」】开头的消息是群里的人说的话，你都看得到；在群里轮到你时猫窝会告诉你。`);
-    if (tables.some(l => l.includes('正在'))) parts.push('还没结束的游戏里的秘密（身份、夜里的信息、你的打算）不要在群里说，群里可能有同桌的人。');
   }
-  if (cat.alarm_at) parts.push('', `你定了闹钟：${clock(cat.alarm_at)}（北京时间）${cat.alarm_note ? `，留给自己的话：${cat.alarm_note}` : ''}`);
   if (cat.summary.trim()) parts.push('', '很久以前的事（旧对话的摘要）：', cat.summary.trim());
   parts.push('', cat.notebook.trim() ? `你的小本本：\n${cat.notebook.trim()}` : '你的小本本还是空的。');
   return parts.filter(p => p !== null).join('\n');
 }
 
+// What is true right now, added to the end of each new message (and stored with it, so the message
+// list never changes afterwards).
+const NOTE_RE = /\n\n（猫窝备注：[\s\S]*）$/;
+function contextNote(ai, cat) {
+  const owner = accounts.byId(ai.owner_id);
+  const bits = [`现在是北京时间 ${beijing()}。`];
+  const tables = tableNotes(ai, owner);
+  if (tables.length) bits.push(`你现在的桌子：\n${tables.join('\n')}`);
+  if (tables.some(l => l.includes('正在')) && stmts.groupsOfCat.all(ai.id).length) bits.push('还没结束的游戏里的秘密（身份、夜里的信息、你的打算）不要在群里说，群里可能有同桌的人。');
+  if (cat.alarm_at) bits.push(`你定了闹钟：${clock(cat.alarm_at)}${cat.alarm_note ? `，留给自己的话：${cat.alarm_note}` : ''}。`);
+  return `\n\n（猫窝备注：${bits.join('\n')}）`;
+}
+
 // Builds the message list from what is not summarized yet. Old tool results are cut short, and
 // thinking text is only sent back inside the run it belongs to (some models want it there).
 function history(aiId, runStart) {
+  // Results from earlier wakes are cut short and their thinking dropped. This depends only on which
+  // wake a row belongs to, so the list does not change between the steps of one wake (cache-friendly).
   const rows = stmts.live.all(aiId);
-  const resultsAt = rows.filter(r => r.kind === 'result').map(r => r.id);
-  const fresh = new Set(resultsAt.slice(-6));
   const out = [];
   for (const r of rows) {
     const m = JSON.parse(r.msg);
-    if (m.reasoning_content !== undefined && r.id < runStart) delete m.reasoning_content;
-    if (r.kind === 'result' && !fresh.has(r.id) && typeof m.content === 'string' && m.content.length > 600) m.content = m.content.slice(0, 600) + '…（旧结果，已截短）';
+    if (r.id < runStart) {
+      if (m.reasoning_content !== undefined) delete m.reasoning_content;
+      if (r.kind === 'result' && typeof m.content === 'string' && m.content.length > 600) m.content = m.content.slice(0, 600) + '…（旧结果，已截短）';
+    }
     out.push(m);
   }
   // Every tool call needs its result right after it (a crash in the middle could leave one without):
@@ -444,8 +488,11 @@ async function maybeSummarize(ai, cat, key) {
   const old = rows.filter(r => r.id < next.id);
   const transcript = old.map(r => {
     const m = JSON.parse(r.msg);
-    if (r.kind === 'me') return `主人：${m.content}`;
-    if (r.kind === 'wake') return `猫窝：${m.content}`;
+    const c = typeof m.content === 'string' ? m.content.replace(NOTE_RE, '') : '';
+    if (r.kind === 'me') return `主人：${c}`;
+    if (r.kind === 'wake' || r.kind === 'gwake') return `猫窝：${c}`;
+    if (r.kind === 'group') return c;
+    if (r.kind === 'gsay') return `我（在群里）：${c}`;
     if (r.kind === 'say') return `我：${m.content}`;
     if (r.kind === 'call') return m.content ? `我：${m.content}` : '';
     if (r.kind === 'result') return `（${r.text}）`;
@@ -566,20 +613,20 @@ async function runOnce(aiId, t) {
   let secret = t.roomId && secretFor(t.roomId, ai.owner_id) ? t.roomId : null;
   const gid = group ? group.id : null;
   if (group) {
-    add(aiId, 'gwake', { msg: { role: 'user', content: `【猫窝】${groupPrompt(group, ai)}` }, groupId: gid, detail: JSON.stringify({ group: group.name }) });
+    add(aiId, 'gwake', { msg: { role: 'user', content: `【猫窝】${groupPrompt(group, ai)}${contextNote(ai, cat)}` }, groupId: gid, detail: JSON.stringify({ group: group.name }) });
   } else if (t.kind !== 'me') {
-    add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}` }, text: t.shown || t.text, roomId: secret });
+    add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}${contextNote(ai, cat)}` }, text: t.shown || t.text, roomId: secret });
   }
   const runStart = stmts.lastId.get(aiId).id || 0;
   activity(aiId, '正在想…');
   await maybeSummarize(ai, cat, key).catch(err => add(aiId, 'error', { text: `整理旧对话时出错了：${err.message}` }));
 
   const tools = toolsFor(cat);
+  const system = systemPrompt(ai, stmts.cat.get(aiId)); // once per wake, so every step starts the same
   let said = false;
   for (let step = 0; step < MAX_STEPS; step++) {
-    const fresh = stmts.cat.get(aiId);
-    const messages = [{ role: 'system', content: systemPrompt(ai, fresh) }, ...history(aiId, runStart)];
-    const msg = await callModel(key, fresh.model, messages, tools);
+    const messages = [{ role: 'system', content: system }, ...history(aiId, runStart)];
+    const msg = await callModel(key, cat.model, messages, tools);
     const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter(c => c && c.function && c.function.name) : [];
     const content = typeof msg.content === 'string' ? msg.content.trim() : '';
     const keep = { role: 'assistant', content: content || null };
@@ -1136,7 +1183,7 @@ router.post('/:id/messages', wrap(req => {
   const text = String(req.body.text || '').trim();
   if (!text) throw new Error('说点什么吧');
   if (text.length > 4000) throw new Error('太长了（最多 4000 字）');
-  add(ai.id, 'me', { msg: { role: 'user', content: text }, text });
+  add(ai.id, 'me', { msg: { role: 'user', content: text + contextNote(ai, stmts.cat.get(ai.id)) }, text });
   markRead(ai);
   enqueue(ai.id, { kind: 'me' });
   return { ok: true };

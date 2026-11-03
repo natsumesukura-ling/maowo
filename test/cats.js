@@ -28,8 +28,9 @@ function reply(body) {
     return { role: 'assistant', content: `${me}来啦` };
   }
   if (last.role === 'user') {
-    const c = last.content;
-    const room = (c.match(/room_id：(\w+)/) || [])[1];
+    const c = last.content.replace(/\n\n（猫窝备注：[\s\S]*）$/, '');
+    if (c.startsWith('翻旧账 ')) return call('recall', { query: c.slice(4) });
+    const room = (last.content.match(/room_id：(\w+)/) || [])[1];
     if (c.startsWith('【猫窝】') && room) return call('get_state', { room_id: room });
     if (c.startsWith('记住')) return call('remember', { text: c.slice(2) });
     if (c === '定闹钟') return call('set_alarm', { minutes: 30, note: '去逛逛' });
@@ -45,6 +46,7 @@ function reply(body) {
       const n = msgs.filter(m => m.role === 'tool').length;
       return call('act', { room_id: args.room_id, action: 'move', row: 7, col: (n * 2) % 15 });
     }
+    if (name === 'recall') return { role: 'assistant', content: `翻到了：${msgs.at(-1).content.slice(0, 60)}` };
     return { role: 'assistant', content: name === 'act' ? '下好了' : '好了' };
   }
   return { role: 'assistant', content: '？' };
@@ -124,9 +126,22 @@ const ok = name => console.log('ok', name);
   assert(!JSON.stringify(body.tools).includes('"token"'), 'no token in tool schemas');
   ok('window chat: owner prompt + 猫窝 notes, tools without token');
 
+  // The beginning of the next request is exactly the previous request (providers cache it).
+  {
+    const b1 = seen[seen.length - 1];
+    await sleep(1100);
+    await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '缓存' } });
+    await until(async () => (await api(OWNER, `/cats/${cat.id}/messages`)).items.filter(i => i.kind === 'say').length === 2 && !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'cache reply');
+    const b2 = seen[seen.length - 1];
+    assert.strictEqual(JSON.stringify(b2.messages.slice(0, b1.messages.length)), JSON.stringify(b1.messages), 'same start');
+    assert(!b2.messages[0].content.includes('北京时间'), 'no clock in the system prompt');
+    assert(b2.messages.at(-1).content.includes('（猫窝备注：现在是北京时间'), 'the clock is in the note');
+    ok('each request starts exactly like the last one (cache-friendly); the clock lives in a note');
+  }
+
   // Thinking text is only sent back inside its own run.
   await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '再来' } });
-  await until(async () => (await api(OWNER, `/cats/${cat.id}/messages`)).items.filter(i => i.kind === 'say').length === 2, 'second reply');
+  await until(async () => (await api(OWNER, `/cats/${cat.id}/messages`)).items.filter(i => i.kind === 'say').length === 3, 'second reply');
   assert(!seen[seen.length - 1].messages.some(m => m.reasoning_content), 'old reasoning not resent');
   ok('old thinking text is not sent again');
 
@@ -173,8 +188,9 @@ const ok = name => console.log('ok', name);
 
   // Asking it during the game: the prompt says 绫 is at the table.
   await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '你在干嘛' } });
-  await until(async () => seen[seen.length - 1].messages.at(-1).content === '你在干嘛', 'asked');
-  assert(seen[seen.length - 1].messages[0].content.includes('也坐在这一桌'), 'prompt says 绫 is at the table');
+  await until(async () => seen[seen.length - 1].messages.at(-1).content.startsWith('你在干嘛'), 'asked');
+  assert(seen[seen.length - 1].messages.at(-1).content.includes('也坐在这一桌'), 'the note says 绫 is at the table');
+  assert(!seen[seen.length - 1].messages[0].content.includes('也坐在这一桌'), 'not in the system prompt (it would break the cache)');
   await until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
   ok('during the game the prompt tells it not to tell 绫 its secrets');
 
@@ -236,7 +252,7 @@ const ok = name => console.log('ok', name);
     assert(fold && fold.groupId === g.id && fold.count === 3 && fold.group === '周五夜谈', JSON.stringify(fold));
     assert(!w.items.some(i => i.text && i.text.includes('来啦')), 'group lines folded in the private window');
     await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '刚才群里说什么' } });
-    await until(async () => seen.at(-1).messages.at(-1).content === '刚才群里说什么', 'private');
+    await until(async () => seen.at(-1).messages.at(-1).content.startsWith('刚才群里说什么'), 'private');
     assert(seen.at(-1).messages.some(m => m.content === '【群聊「周五夜谈」】主人：今晚谁来'), 'private run remembers the group');
     await until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
     ok('private window folds the group into one line and still remembers it');
@@ -292,6 +308,12 @@ const ok = name => console.log('ok', name);
   assert(JSON.stringify(lastBody.messages).length < 14000, 'context stays small');
   assert(lastBody.messages[1].role === 'user', 'starts at a message, not mid tool call');
   ok('long windows fold into a summary');
+  assert(!lastBody.messages.some(m => typeof m.content === 'string' && m.content.includes('记住绫喜欢草莓')), 'the old message fell out of the window');
+  await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '翻旧账 草莓' } });
+  w = await until(async () => { const d = await api(OWNER, `/cats/${cat.id}/messages`); return !d.busy && d.items.at(-1).kind === 'say' && d.items.at(-1).text.startsWith('翻到了') && d; }, 'recall');
+  const found = w.items.filter(i => i.kind === 'result').at(-1);
+  assert(found.text.includes('翻了翻旧聊天') && found.detail.result.includes('绫喜欢草莓') && !found.detail.result.includes('翻旧账'), found.detail.result);
+  ok('recall finds old messages that fell out of the window (and not the question itself)');
 
   // A broken model: error shown in the window, not a crash.
   await api(OWNER, '/cats/keys/' + key.id, { method: 'PUT', json: { apiKey: 'sk-wrong' } });
