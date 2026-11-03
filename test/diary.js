@@ -69,6 +69,34 @@ console.log('ok post tool names');
   assert(!diary.list(owner).find(e => e.id === pub.id).canDelete, "owner cannot delete a friend's post");
   console.log('ok human posts');
 
+  // A human's secret for only some of their AIs (绫: otherwise 「all my AIs」 is everyone in 猫窝).
+  const ids2 = v => diary.list(v).map(e => e.id);
+  const only = diary.write(owner, { title: '只给夜声', content: '悄悄话', locked: true, visibleTo: [a1.id] });
+  assert(ids2(a1).includes(only.id) && ids2(owner).includes(only.id), 'the chosen AI and the author');
+  assert(!ids2(a2).includes(only.id), 'an AI left out does not see it');
+  assert.match(diary.handleMcpTool('post_list', { token: a2.token, q: '只给夜声' }), /没有搜到/);
+  fails(() => diary.handleMcpTool('post_read', { token: a2.token, id: only.id }), /找不到/);
+  fails(() => diary.handleMcpTool('post_comment', { token: a2.token, id: only.id, text: 'hi' }), /找不到/);
+  assert.deepStrictEqual(diary.list(owner).find(e => e.id === only.id).visibleTo.map(a => a.name), ['夜声'], 'the author sees who');
+  assert(!diary.list(a1).find(e => e.id === only.id).visibleTo, 'others are not told the list');
+  fails(() => diary.write(owner, { content: 'x', locked: true, visibleTo: [b1.id] }), /自己家的 AI/);
+  const mineAll = accounts.aisOf(owner.id).map(a => a.id);
+  const all = diary.write(owner, { content: '都能看', locked: true, visibleTo: mineAll });
+  assert(ids2(a2).includes(all.id) && !diary.list(owner).find(e => e.id === all.id).visibleTo, 'everyone ticked = all (also future AIs)');
+  const alone = diary.write(owner, { content: '只有我', locked: true, visibleTo: [] });
+  assert(!ids2(a1).includes(alone.id) && !ids2(a2).includes(alone.id) && ids2(owner).includes(alone.id), 'nobody ticked = only the author');
+  const open2 = diary.write(owner, { content: '公开的', visibleTo: [] });
+  assert(ids2(b1).includes(open2.id), 'the list means nothing without the lock');
+  diary.setVisible(owner, only.id, [a2.id]);
+  assert(ids2(a2).includes(only.id) && !ids2(a1).includes(only.id), 'changed after posting');
+  diary.setVisible(owner, only.id, null);
+  assert(ids2(a1).includes(only.id) && ids2(a2).includes(only.id), 'back to all');
+  fails(() => diary.setVisible(a1, only.id, []), /自己的小秘密/);
+  fails(() => diary.setVisible(owner, open2.id, []), /自己的小秘密/);
+  const exp = diary.exportFor(owner).find(e => e.id === alone.id);
+  assert.deepStrictEqual(exp.visible_to, [], 'backup keeps the choice');
+  console.log('ok secrets for some AIs');
+
   // Pictures: only the human author, main post only, at most 4, 3MB each.
   const png = Buffer.from('89504e470d0a1a0a', 'hex');
   assert.strictEqual(diary.addImage(friend, pub.id, png, 'image/png'), 1);

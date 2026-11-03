@@ -40,7 +40,8 @@ db.exec(`
   );
 `);
 // Pictures (humans, main post only) and a poll live on the post itself.
-for (const col of ['images TEXT', 'poll TEXT']) {
+// visible_to: a human's secret may be shown to only some of their AIs (a JSON list of AI ids; null = all of them).
+for (const col of ['images TEXT', 'poll TEXT', 'visible_to TEXT']) {
   try { db.exec(`ALTER TABLE diary_entries ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 // A comment may quote another comment on the same post (reply_to = that comment's id).
@@ -60,8 +61,9 @@ const MAX_CONTENT = 20000;
 const stmts = {
   all: db.prepare('SELECT * FROM diary_entries ORDER BY created_at DESC'),
   get: db.prepare('SELECT * FROM diary_entries WHERE id = ?'),
-  insert: db.prepare(`INSERT INTO diary_entries (id, author_id, title, content, locked, created_at, updated_at, images, poll)
-    VALUES (@id, @author_id, @title, @content, @locked, @created_at, @updated_at, @images, @poll)`),
+  insert: db.prepare(`INSERT INTO diary_entries (id, author_id, title, content, locked, created_at, updated_at, images, poll, visible_to)
+    VALUES (@id, @author_id, @title, @content, @locked, @created_at, @updated_at, @images, @poll, @visible_to)`),
+  setVisible: db.prepare('UPDATE diary_entries SET visible_to = ? WHERE id = ?'),
   setImages: db.prepare('UPDATE diary_entries SET images = ? WHERE id = ?'),
   votes: db.prepare('SELECT * FROM diary_votes WHERE entry_id = ? ORDER BY ts'),
   vote: db.prepare('INSERT INTO diary_votes (entry_id, account_id, choice, ts) VALUES (?, ?, ?, ?)'),
@@ -75,14 +77,28 @@ const stmts = {
 };
 
 // A secret post is seen by its author and the author's family: an AI's human,
-// or a human's own AIs. Nobody else, not even in search.
+// or a human's own AIs. Nobody else, not even in search. A human may narrow it to
+// some of their AIs (visible_to); an empty list means only the human.
+const visibleOf = e => { try { const v = JSON.parse(e.visible_to || 'null'); return Array.isArray(v) ? v : null; } catch { return null; } };
 function canSee(entry, viewer) {
   if (!viewer) return false;
   if (!entry.locked) return true;
   if (viewer.id === entry.author_id) return true;
   const author = accounts.byId(entry.author_id);
   if (!author) return false;
-  return author.kind === 'ai' ? viewer.id === author.owner_id : viewer.owner_id === author.id;
+  if (author.kind === 'ai') return viewer.id === author.owner_id;
+  const only = visibleOf(entry);
+  return viewer.owner_id === author.id && (!only || only.includes(viewer.id));
+}
+
+// Only the human's own AIs can be picked; null (or every one of them) means all.
+function cleanVisible(author, list) {
+  if (list === undefined || list === null || author.kind !== 'human') return null;
+  if (!Array.isArray(list)) throw new Error('visibleTo 要是一串 AI 的 id');
+  const mine = accounts.aisOf(author.id).map(a => a.id);
+  const ids = [...new Set(list.map(Number))];
+  if (ids.some(id => !mine.includes(id))) throw new Error('只能选你自己家的 AI');
+  return ids.length === mine.length ? null : ids;
 }
 
 // A human deletes their own posts and their AIs' posts; an AI can only edit.
@@ -125,6 +141,9 @@ function shape(entry, viewer, full) {
     mine: viewer.id === entry.author_id, canDelete: canDelete(entry, viewer),
     images: imagesOf(entry).length, poll: pollView(entry, viewer),
   };
+  // The author sees who a narrowed secret is for.
+  const only = entry.locked && viewer.id === entry.author_id ? visibleOf(entry) : null;
+  if (only) out.visibleTo = only.map(id => accounts.byId(id)).filter(Boolean).map(a => ({ id: a.id, name: a.name }));
   if (full) {
     out.content = entry.content;
     out.commentList = commentsOf(entry.id);
@@ -178,7 +197,7 @@ function cleanPoll(poll) {
 }
 
 // Humans and AIs both post. Editing (with id) is for AIs over MCP and cannot touch a poll.
-function write(author, { id, title, content, locked, poll }) {
+function write(author, { id, title, content, locked, poll, visibleTo }) {
   if (!author || !['ai', 'human'].includes(author.kind)) throw new Error('需要登录');
   const now = new Date().toISOString();
   if (id) {
@@ -195,6 +214,7 @@ function write(author, { id, title, content, locked, poll }) {
     return stmts.get.get(e.id);
   }
   const p = cleanPoll(poll);
+  const only = locked ? cleanVisible(author, visibleTo) : null;
   const t = String(title || '').trim().slice(0, 60);
   if (p && !t) throw new Error('发起投票要写一个标题');
   // A post with a poll may skip the body; pictures are added right after, so the page sends a body or title.
@@ -202,10 +222,20 @@ function write(author, { id, title, content, locked, poll }) {
   const entry = {
     id: crypto.randomBytes(6).toString('hex'), author_id: author.id,
     title: t || `${now.slice(0, 10)} 的帖子`, content: c, locked: locked ? 1 : 0, created_at: now, updated_at: now,
-    images: null, poll: p ? JSON.stringify(p) : null,
+    images: null, poll: p ? JSON.stringify(p) : null, visible_to: only ? JSON.stringify(only) : null,
   };
   stmts.insert.run(entry);
   return stmts.get.get(entry.id);
+}
+
+// A human changes who of their AIs may see their own secret after posting.
+function setVisible(viewer, id, visibleTo) {
+  const e = stmts.get.get(String(id || ''));
+  if (!e || !canSee(e, viewer)) throw new Error('找不到这篇帖子');
+  if (e.author_id !== viewer.id || viewer.kind !== 'human' || !e.locked) throw new Error('只能改自己的小秘密');
+  const only = cleanVisible(viewer, visibleTo);
+  stmts.setVisible.run(only ? JSON.stringify(only) : null, e.id);
+  return shape(stmts.get.get(e.id), viewer, false);
 }
 
 // Humans add pictures to their own post (main post only, never in comments).
@@ -327,6 +357,7 @@ function exportFor(viewer) {
   return stmts.all.all().filter(e => canSee(e, viewer)).map(e => ({
     id: e.id, author: accounts.byId(e.author_id)?.name || '已删除', title: e.title, content: e.content,
     locked: !!e.locked, created_at: e.created_at, updated_at: e.updated_at, poll: pollOf(e),
+    visible_to: visibleOf(e) ? visibleOf(e).map(id => accounts.byId(id)?.name).filter(Boolean) : undefined,
     comments: stmts.comments.all(e.id).map(c => ({ name: accounts.byId(c.account_id)?.name || '已删除', text: c.text, ts: c.ts })),
   }));
 }
@@ -349,6 +380,9 @@ function importEntries(owner, entries) {
         id: it.id, author_id: author.id, title: String(it.title || '').slice(0, 60) || '日记', content: it.content,
         locked: it.locked ? 1 : 0, created_at: it.created_at || now, updated_at: it.updated_at || now,
         images: null, poll: it.poll ? JSON.stringify(it.poll) : null,
+        // Names back to ids among the author's AIs; a name that is gone stays out (narrower, never wider).
+        visible_to: Array.isArray(it.visible_to) && author.kind === 'human'
+          ? JSON.stringify(accounts.aisOf(author.id).filter(a => it.visible_to.includes(a.name)).map(a => a.id)) : null,
       });
       for (const c of Array.isArray(it.comments) ? it.comments : []) {
         if (typeof c.text !== 'string') continue;
@@ -369,8 +403,10 @@ const wrap = fn => (req, res) => { try { res.json(fn(req)); } catch (err) { res.
 router.get('/', wrap(req => list(req.account, { author: req.query.author, q: req.query.q })));
 router.post('/', wrap(req => shape(write(req.account, {
   title: req.body.title, content: req.body.content, locked: !!req.body.locked, poll: req.body.poll || null,
+  visibleTo: req.body.visibleTo,
 }), req.account, false)));
 router.get('/:id', wrap(req => read(req.account, req.params.id)));
+router.put('/:id/visible', wrap(req => setVisible(req.account, req.params.id, req.body.visibleTo)));
 router.post('/:id/images', express.raw({ type: () => true, limit: MAX_IMAGE_BYTES + 1024 }),
   wrap(req => ({ images: addImage(req.account, req.params.id, req.body, req.get('content-type')) })));
 router.get('/:id/images/:n', (req, res) => {
@@ -514,4 +550,4 @@ function handleMcpTool(name, args) {
   }
 }
 
-module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries, list, read, write, vote, comment, addImage, remove, IMAGE_DIR };
+module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries, list, read, write, setVisible, vote, comment, addImage, remove, IMAGE_DIR };

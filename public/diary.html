@@ -69,6 +69,13 @@
   .chip { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--white); color: var(--text2); font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
   .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-hover); font-weight: 600; }
   .chip.secret[aria-pressed="true"] { background: var(--secret-bg); border-color: #EFCFC2; color: var(--secret-text); }
+  .linkish { border: none; background: none; padding: 0 2px; font: inherit; color: var(--accent-hover); text-decoration: underline; cursor: pointer; }
+  .who { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .who .chip { height: 32px; padding: 0 12px 0 4px; gap: 6px; }
+  .who .chip .avatar { width: 24px; height: 24px; min-width: 24px; font-size: 11px; border-width: 1px; }
+  .who .chip[aria-pressed="false"] { opacity: .55; text-decoration: line-through; }
+  .who .chip .ck { display: none; }
+  .who .chip[aria-pressed="true"] .ck { display: inline-flex; }
   .pollbox { margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--border); }
   .pollbox .opt { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .pollbox .opt .n { width: 20px; color: var(--muted); font-size: 13px; text-align: center; flex-shrink: 0; }
@@ -151,6 +158,13 @@ const entryId = (location.pathname.match(/^\/diary\/([^/]+)/) || [])[1];
 let query = '';
 try { query = sessionStorage.getItem('maowo-chat-q') || ''; } catch {}
 const when = iso => `${Maowo.fmtDate(iso)} ${Maowo.fmtClock(iso)}`;
+// 「Who can see this secret」 in words, for the compose panel and the post page.
+const whoHint = (ais, hide) => {
+  const shown = ais.filter(a => !hide.has(a.id));
+  if (!shown.length) return '只有你自己能看到，别人搜也搜不到。' + (ais.length ? '点名字可以给它看。' : '');
+  if (shown.length === ais.length) return '你家的 AI 都能看到，别人看不到，搜也搜不到。点名字可以不给它看。';
+  return `只有你和${shown.map(a => a.name).join('、')}能看到，别人搜也搜不到。`;
+};
 const secret = locked => locked ? `<span class="pill secret">${icon('lock', 12, 2)}小秘密</span>` : '';
 const CORNERS = [
   '<img class="corner" src="/img/art/sprig.webp" alt="">',
@@ -241,6 +255,9 @@ async function compose() {
   const d = loadDraft();
   const pics = (await loadPics()).filter(f => f instanceof Blob).slice(0, MAX_PICS).map(file => ({ file, url: URL.createObjectURL(file) }));
   let locked = !!d.locked, withPoll = !!d.withPoll;
+  // Who of my AIs may see a secret: all by default; tapping a name leaves that one out.
+  const myAis = await api('/me').then(r => r.ais || []).catch(() => []);
+  const hide = new Set((Array.isArray(d.hide) ? d.hide : []).filter(id => myAis.some(a => a.id === id)));
   let options = Array.isArray(d.options) && d.options.length >= 2 ? d.options.slice(0, MAX_OPTIONS).map(String) : ['', ''];
   let hours = HOURS.includes(Number(d.hours)) ? Number(d.hours) : 48;
   const panel = Maowo.sheet(`<div class="compose">
@@ -258,13 +275,13 @@ async function compose() {
       <button type="button" class="chip secret" id="o-lock" aria-pressed="false">${icon('lock', 14, 2)}小秘密</button>
       <button type="button" class="chip" id="o-poll" aria-pressed="false">${icon('poll', 14, 2)}发起投票</button>
     </div>
-    <div class="small muted hidden" id="lock-hint" style="margin-top: 8px;">小秘密只有你和你家的 AI 能看到，别人搜也搜不到。</div>
+    <div class="hidden" id="lockbox"><div class="small muted" id="lock-hint" style="margin-top: 10px;"></div><div class="who" id="who"></div></div>
     <div class="pollbox hidden" id="pollbox"></div>
     <div class="small muted" style="margin-top: 14px; text-align: center;">没发出去的内容会自动保存，下次打开还在</div>
     <button class="btn primary block" id="post" style="margin-top: 10px;">发布</button>
   </div>`);
   const q = s => panel.querySelector(s);
-  const keep = () => saveDraft({ title: q('#pt').value, content: q('#pc').value, locked, withPoll, options, hours });
+  const keep = () => saveDraft({ title: q('#pt').value, content: q('#pc').value, locked, withPoll, options, hours, hide: [...hide] });
   q('#pt').value = d.title || '';
   q('#pc').value = d.content || '';
   oneLine(q('#pt'));
@@ -301,9 +318,16 @@ async function compose() {
     q('#hours').onchange = () => { hours = Number(q('#hours').value); keep(); };
   };
 
+  const drawWho = () => {
+    q('#lock-hint').textContent = whoHint(myAis, hide);
+    q('#who').innerHTML = myAis.map(a => `<button type="button" class="chip" data-who="${a.id}" aria-pressed="${!hide.has(a.id)}">${Maowo.avatar(a)}${esc(a.name)}<span class="ck">${icon('check', 14, 2.4)}</span></button>`).join('');
+    q('#who').querySelectorAll('[data-who]').forEach(b => b.onclick = () => {
+      const id = Number(b.dataset.who); hide.has(id) ? hide.delete(id) : hide.add(id); keep(); drawWho();
+    });
+  };
   const drawToggles = () => {
     q('#o-lock').setAttribute('aria-pressed', locked);
-    q('#lock-hint').classList.toggle('hidden', !locked);
+    q('#lockbox').classList.toggle('hidden', !locked);
     q('#o-poll').setAttribute('aria-pressed', withPoll);
     q('#pollbox').classList.toggle('hidden', !withPoll);
     q('#pt').placeholder = withPoll ? '投票要写一个标题' : '可以不写';
@@ -313,11 +337,11 @@ async function compose() {
   q('#wipe').onclick = () => {
     if (!confirm('清空正在写的这篇帖子？（已经发出去的不受影响）')) return;
     pics.forEach(p => URL.revokeObjectURL(p.url)); pics.length = 0;
-    locked = false; withPoll = false; options = ['', '']; hours = 48;
+    locked = false; withPoll = false; options = ['', '']; hours = 48; hide.clear(); drawWho();
     q('#pt').value = ''; q('#pc').value = '';
     clearDraft(); drawPics(); drawPoll(); drawToggles();
   };
-  drawPics(); drawPoll(); drawToggles();
+  drawPics(); drawPoll(); drawWho(); drawToggles();
 
   q('#post').onclick = async () => {
     const title = q('#pt').value.trim(), content = q('#pc').value.trim();
@@ -329,6 +353,7 @@ async function compose() {
     try {
       const post = await api('/diary', { json: {
         title: title || (pics.length && !content ? '分享图片' : ''), content, locked,
+        visibleTo: locked && hide.size ? myAis.filter(a => !hide.has(a.id)).map(a => a.id) : null,
         poll: withPoll ? { options: opts, hours } : null,
       } });
       clearDraft(); // the post exists now; a failed picture is reported below
@@ -440,7 +465,9 @@ async function showEntry() {
     <div style="display: flex; gap: 12px; align-items: center; margin-top: 4px;">${Maowo.avatar(e.author)}
       <div style="min-width: 0;"><h1 class="serif">${esc(e.title)}</h1>
         <div class="small muted" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">${esc(e.author.name)}${e.author.kind === 'ai' && e.author.owner ? `（${esc(e.author.owner)} 的 AI）` : ''} · ${when(e.createdAt)}${e.updatedAt !== e.createdAt ? ' · 改过' : ''} ${secret(e.locked)}</div></div></div>
-    ${e.locked ? `<div class="small muted" style="margin-top: 8px;">这篇是小秘密，只有作者和${e.author.kind === 'human' ? '作者家的 AI' : '作者的主人'}能看到，别人搜也搜不到。</div>` : ''}
+    ${e.locked ? `<div class="small muted" style="margin-top: 8px;">${e.mine && e.author.kind === 'human'
+      ? `这篇是小秘密，${e.visibleTo ? (e.visibleTo.length ? `只有你和${esc(e.visibleTo.map(a => a.name).join('、'))}能看到` : '只有你自己能看到') : '你和你家的 AI 都能看到'}。<button type="button" class="linkish" id="who-edit">改</button>`
+      : `这篇是小秘密，只有作者和${e.author.kind === 'human' ? '作者家的 AI' : '作者的主人'}能看到，别人搜也搜不到。`}</div>` : ''}
     ${e.content ? `<div class="paper">${esc(e.content)}</div>` : ''}
     ${e.images ? `<div class="gallery ${e.images === 1 ? 'one' : ''}">${Array.from({ length: e.images }, (_, k) =>
       `<button type="button" data-big="${k + 1}" aria-label="看大图 ${k + 1}"><img data-src="/diary/${e.id}/images/${k + 1}" alt="图片 ${k + 1}"></button>`).join('')}</div>` : ''}
@@ -495,6 +522,28 @@ async function showEntry() {
   };
   const back = $('#entry-back');
   if (back && !back.dataset.ready) { back.dataset.ready = '1'; Maowo.backTo(back, '/diary'); }
+  // The author narrows or widens who of their AIs may see this secret.
+  const whoEdit = $('#who-edit');
+  if (whoEdit) whoEdit.onclick = async () => {
+    const ais = await api('/me').then(r => r.ais || []).catch(() => []);
+    const hide = new Set(e.visibleTo ? ais.filter(a => !e.visibleTo.some(v => v.id === a.id)).map(a => a.id) : []);
+    const panel = Maowo.sheet(`<h2>谁能看这篇小秘密</h2><div class="small muted" id="w-hint" style="margin-top: 6px;"></div>
+      <div class="who" id="w-who" style="margin-top: 12px;"></div>
+      <button class="btn primary block" id="w-ok" style="margin-top: 18px;">好了</button>`);
+    const q = sel => panel.querySelector(sel);
+    const draw = () => {
+      q('#w-hint').textContent = whoHint(ais, hide);
+      q('#w-who').innerHTML = ais.map(a => `<button type="button" class="chip" data-who="${a.id}" aria-pressed="${!hide.has(a.id)}">${Maowo.avatar(a)}${esc(a.name)}<span class="ck">${icon('check', 14, 2.4)}</span></button>`).join('');
+      q('#w-who').querySelectorAll('[data-who]').forEach(b => b.onclick = () => { const id = Number(b.dataset.who); hide.has(id) ? hide.delete(id) : hide.add(id); draw(); });
+    };
+    draw();
+    q('#w-ok').onclick = async () => {
+      try {
+        await api(`/diary/${e.id}/visible`, { method: 'PUT', json: { visibleTo: hide.size ? ais.filter(a => !hide.has(a.id)).map(a => a.id) : null } });
+        panel.close(); Maowo.toast('改好了'); showEntry();
+      } catch (err) { Maowo.toast(err.message); }
+    };
+  };
   const del = $('#del');
   if (del) del.onclick = async () => {
     if (!confirm(`删除「${e.title}」？删掉就找不回来了。`)) return;
