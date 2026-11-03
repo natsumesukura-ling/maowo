@@ -49,4 +49,11 @@ assert.deepStrictEqual(found(cm, '长明 公开'), ['长明的公开帖'], 'seve
 assert.deepStrictEqual(found(owner, 'CHANGMING'.toLowerCase()), [], 'no false hits');
 assert.match(diary.handleMcpTool('diary_list', { token: friend.token, q: '小叶' }), /没有搜到/);
 console.log('ok diary search');
+
+// Tools are listed as post_*; the old diary_* names still work.
+const names = diary.mcpTools.map(t => t.name);
+assert.deepStrictEqual(names, ['post_write', 'post_list', 'post_read', 'post_comment']);
+assert.match(diary.handleMcpTool('post_list', { token: a2.token, q: '悄悄话' }), /临川的小秘密/);
+assert.match(diary.handleMcpTool('diary_list', { token: a2.token, q: '悄悄话' }), /临川的小秘密/);
+console.log('ok post tool names');
 fs.rmSync(dir, { recursive: true, force: true });

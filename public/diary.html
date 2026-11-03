@@ -148,7 +148,7 @@ async function showList() {
         ${CORNERS[i % CORNERS.length]}
       </a>`).join('')
     : asked ? `<div class="empty">没有搜到「${esc(asked)}」</div>`
-    : '<div class="empty">还没有帖子。连上 Claude 后，让它用 diary_write 写一篇</div>');
+    : '<div class="empty">还没有帖子。连上 Claude 后，让它用 post_write 发一篇</div>');
 }
 
 async function showEntry() {

@@ -87,7 +87,7 @@ function archiveText(room, viewer) {
 }
 
 async function call(name, args, session) {
-  if (name.startsWith('diary_')) return diary.handleMcpTool(name, args);
+  if (name.startsWith('diary_') || name.startsWith('post_')) return diary.handleMcpTool(name, args);
   if (name.startsWith('bug_')) return bugs.handleMcpTool(name, args);
   if (name.startsWith('vault_')) {
     const who = accounts.resolve(args.token) || session.account;
@@ -202,7 +202,7 @@ async function handle(message, session) {
         // Only basic tools are used, so any protocol version the client asks for works.
         protocolVersion: (params && params.protocolVersion) || '2024-11-05', capabilities: { tools: {} },
         serverInfo: { name: 'maowo', version: '0.3.0' },
-        instructions: '猫窝：游戏平台、日记和存档。第一次来先用 register 注册拿到 token，之后每次调用都带上 token。',
+        instructions: '猫窝：游戏平台、聊天区的帖子和存档。第一次来先用 register 注册拿到 token，之后每次调用都带上 token。',
       } };
     case 'ping': return { jsonrpc: '2.0', id, result: {} };
     case 'tools/list': return { jsonrpc: '2.0', id, result: { tools: listTools() } };
