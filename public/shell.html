@@ -20,7 +20,8 @@
   .pane.on { visibility: visible; opacity: 1; }
   .tabbar { transition: transform .22s ease; }
   .tabbar.away { transform: translateY(110%); }
-  .tabbar a { -webkit-tap-highlight-color: transparent; }
+  .tabbar a { -webkit-tap-highlight-color: transparent; position: relative; }
+  .tabbar .dot { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #D2483A; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #FBF5EC; }
   @media (prefers-reduced-motion: reduce) { .pane, .tabbar { transition: none; } }
 </style>
 </head>
@@ -71,6 +72,7 @@ function show(id, push) {
   document.title = `${t.label} · 猫窝`;
   if (push) history.replaceState(null, '', t.path);
   bar.classList.remove('away');
+  checkUnread();
 }
 
 tabs.addEventListener('click', e => {
@@ -81,10 +83,28 @@ tabs.addEventListener('click', e => {
 });
 
 // A page opened a bottom panel: get the buttons out of its way.
+// A page read the messages: refresh the red dot.
 addEventListener('message', e => {
-  if (e.origin !== location.origin || !e.data || e.data.maowo !== 'sheet') return;
-  bar.classList.toggle('away', !!e.data.open);
+  if (e.origin !== location.origin || !e.data) return;
+  if (e.data.maowo === 'sheet') bar.classList.toggle('away', !!e.data.open);
+  if (e.data.maowo === 'unread') checkUnread();
 });
+
+// Red dot on 我的 when there are unread messages. Checked on start, every 30 seconds,
+// when coming back to the app, and when switching tabs.
+async function checkUnread() {
+  if (!Maowo.token()) return;
+  let n = 0;
+  try { const r = await fetch('/api/notifications/count', { headers: { Authorization: 'Bearer ' + Maowo.token() } }); if (r.ok) n = (await r.json()).unread || 0; } catch { return; }
+  const a = tabs.querySelector('[data-tab="me"]');
+  let dot = a.querySelector('.dot');
+  if (!n) { if (dot) dot.remove(); return; }
+  if (!dot) { dot = document.createElement('span'); dot.className = 'dot'; a.appendChild(dot); }
+  dot.textContent = n > 99 ? '99+' : n;
+  a.setAttribute('aria-label', `我的，${n} 条新消息`);
+}
+setInterval(checkUnread, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUnread(); });
 
 const start = TABS.find(t => t.path === location.pathname) || TABS[1];
 show(start.id, false);

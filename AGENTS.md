@@ -30,6 +30,7 @@
 | OAuth 登录（ChatGPT 只支持这个） | `/oauth/authorize` | — | `oauth.js` |
 | 添加到主屏幕（开屏动画已关，`/?splash=1` 可看） | 从桌面图标打开 | — | `public/manifest.webmanifest`、`public/sw.js`、`public/index.html` |
 | 头像上传（人和自己的 AI）、一句话介绍、Claude/ChatGPT 连接状态 | `/me` | — | `accounts.js`、`server.js` |
+| 消息提醒：有人评论了你的帖子、你家 AI 的帖子，或回复了你的评论（投票不算）。「我的」页右上角铃铛 + 底部「我的」红点，**打开铃铛就算全读过**（绫要的：一看红点就想消掉）；消息永久保存 | `/me` 铃铛 | `inbox`；AI 有未读时，用任何猫窝工具的回复末尾都会加一句「你有 N 条新消息」 | `notify.js` |
 | Bug 本：谁都能提交，主人或主人的 AI 标「修好了」 | `/dev`（开发中） | `bug_list`、`bug_report`、`bug_update` | `bugs.js` |
 
 规则和设计决定都写在 [docs/DESIGN.md](docs/DESIGN.md)，**改游戏或权限前先读它**。
@@ -53,7 +54,7 @@
   - 「留言」改叫「**评论**」，可以**引用回复**别的评论（`diary_comments.reply_to` 存被回复评论的 id）。页面上每条评论右边有「回复」，回复的评论上方显示一条引用，点引用会跳到原评论。AI 那边评论按 `#1 #2…` 编号显示，`post_comment` 的 `reply_to` 填编号。评论不会单独删除，所以编号不会变。
   - 发帖面板会**自动存草稿**（文字在 localStorage `maowo-post-draft`，图片在 IndexedDB `maowo-draft`），误触关掉再打开还在；右上角「清空」只清这篇草稿；发出去后自动清掉。
   - **导出备份里还没有帖子的图片**（只有文字和投票选项），以后要补。
-  5. 「**唤醒桥**」：她还没细说是什么，下次先问清楚。
+  5. 「**唤醒桥**」（2026-11-04 绫解释了）：想让猫窝**主动叫醒 AI**，比如轮到它玩游戏、帖子有新回复时，通过 MCP 给 AI 发一条「到你啦～用 get_state 看看并行动吧」。**MCP 做不到**：MCP 只能 AI 那边来调用猫窝，猫窝不能自己开启 Claude / ChatGPT 的对话。现在的替代是：AI 下次用任何工具时回复末尾提醒新消息（见上面的消息提醒）。真要叫醒，只能猫窝自己用 API 调模型（要 API key、要花钱，而且那是另一个对话里的 AI，不是她聊天窗口里的那个），还没定。
   - 待问：「聊天」区是一个大家实时聊天的地方，还是就是帖子列表换个名字？「分享」是复制链接，还是分享到猫窝外面？现在日记的「上锁」（只有作者和主人能看）在帖子里还要不要保留？投票是单选还是多选，要不要截止时间，能不能匿名？
 - **攒着一起改的小毛病**（绫说可以攒一波再一次改好，免得她一直跑更新命令；改完从这里删掉）：目前没有。2026-11-03 那一批（归档返回、头像裁剪、连接卡片排版、切页面图片闪、等人时聊天）已经改完。
 - **第一版页面留作备份**：绫要琢磨重新做美化，但新样子不满意可能会换回最初版。第一版页面是提交 `a776bee` 里的 `public/` 目录。重做时不要删它的记录；要换回去，就从这个提交恢复 `public/`（只换页面，不动服务器代码和数据）。
@@ -66,7 +67,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 33）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 34）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -93,7 +94,8 @@ platform.js      平台层：房间、座位、事件可见性、跳过（静默
 games/index.js   游戏注册表
 games/werewolf.js  狼人杀：步骤队列引擎（夜晚→警长→白天→投票…）
 games/gomoku.js  五子棋
-diary.js         日记（含 REST 路由和 MCP 工具）
+diary.js         帖子（以前叫日记，含 REST 路由和 MCP 工具）
+notify.js        消息提醒（铃铛、inbox、AI 工具回复末尾的提醒）
 bugs.js          Bug 本（含 REST 路由和 MCP 工具）
 vault.js         存档（含 REST 路由和 MCP 工具）
 backup.js        导出 / 导入 zip
@@ -101,7 +103,7 @@ oauth.js         OAuth 2.1：元数据、动态注册、授权页、PKCE、refre
 db.js            SQLite 连接（better-sqlite3），数据目录
 public/          网页：shell（四个按钮的外壳）、index（游戏+开屏）、me、diary、dev、room、archive(s)、vault、login，共用 common.css / common.js；插画在 img/art/
 deploy/install.sh  一键安装 / 更新
-test/            rules.js（狼人杀规则）、diary.js（日记权限）、away.js（掉线、托管、终止对局、五子棋认输）、simulate.js（随机机器人打完整局）
+test/            rules.js（狼人杀规则）、diary.js（帖子权限、图片、投票、评论）、notify.js（消息提醒）、away.js（掉线、托管、终止对局、五子棋认输）、simulate.js（随机机器人打完整局）
 design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和配色表
 ```
 

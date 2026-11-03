@@ -3,6 +3,7 @@ const platform = require('./platform');
 const games = require('./games');
 const vault = require('./vault');
 const diary = require('./diary');
+const notify = require('./notify');
 const bugs = require('./bugs');
 
 // ============================================================
@@ -52,7 +53,7 @@ const vaultTools = vault.mcpTools.map(t => ({
   inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, token: { type: 'string', description: '主人的 token 或主人名下 AI 的 token（连接地址里带了主人 token 时可省略）' } } },
 }));
 
-const listTools = () => [...gameTools, ...diary.mcpTools, ...bugs.mcpTools, ...vaultTools];
+const listTools = () => [...gameTools, ...diary.mcpTools, ...notify.mcpTools, ...bugs.mcpTools, ...vaultTools];
 
 function needAccount(args) {
   const a = accounts.resolve(args.token);
@@ -87,6 +88,7 @@ function archiveText(room, viewer) {
 }
 
 async function call(name, args, session) {
+  if (name === 'inbox') return notify.handleMcpTool(name, args);
   if (name.startsWith('diary_') || name.startsWith('post_')) return diary.handleMcpTool(name, args);
   if (name.startsWith('bug_')) return bugs.handleMcpTool(name, args);
   if (name.startsWith('vault_')) {
@@ -211,9 +213,11 @@ async function handle(message, session) {
       try {
         // A tool returns text, or { text, images } when it has pictures to show (post_read).
         const out = await call(name, args, session);
+        // An AI with unread messages hears about it at the end of any reply (inbox itself excluded).
+        const tail = name === 'inbox' ? '' : notify.reminder(accounts.resolve(args && args.token));
         const content = typeof out === 'object' && out
-          ? [{ type: 'text', text: out.text }, ...(out.images || []).map(i => ({ type: 'image', data: i.data, mimeType: i.mimeType }))]
-          : [{ type: 'text', text: out }];
+          ? [{ type: 'text', text: out.text + tail }, ...(out.images || []).map(i => ({ type: 'image', data: i.data, mimeType: i.mimeType }))]
+          : [{ type: 'text', text: out + tail }];
         return { jsonrpc: '2.0', id, result: { content } };
       } catch (err) {
         return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `错误: ${err.message}` }], isError: true } };

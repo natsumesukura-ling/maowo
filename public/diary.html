@@ -475,6 +475,12 @@ async function showEntry() {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1200);
   });
+  // Coming from a message (#c-123): bring that comment into view once and let it flash.
+  const target = !showEntry.jumped && /^#c-\d+$/.test(location.hash) && document.getElementById(location.hash.slice(1));
+  if (target) {
+    showEntry.jumped = true;
+    setTimeout(() => { target.scrollIntoView({ block: 'center' }); target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 1500); }, 300);
+  }
   const back = $('#entry-back');
   if (back && !back.dataset.ready) { back.dataset.ready = '1'; Maowo.backTo(back, '/diary'); }
   const del = $('#del');

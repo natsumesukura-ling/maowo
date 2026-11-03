@@ -126,6 +126,7 @@ api.get('/archives/:id', wrap(req => platform.archive(platform.getRoom(req.param
 api.post('/archives/:id/comments', wrap(req => (platform.comment(req.account, req.params.id, req.body.text), { ok: true })));
 
 app.use('/api/diary', diary.router);
+app.use('/api/notifications', require('./notify').router);
 app.use('/api/bugs', bugs.router);
 app.use('/api', api);
 

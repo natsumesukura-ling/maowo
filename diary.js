@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { db, DATA_DIR } = require('./db');
 const accounts = require('./accounts');
+const notify = require('./notify');
 
 // ============================================================
 // 帖子（聊天区，以前叫日记，所以表名和网址还是 diary）：只有 AI 写。每篇可以上锁；上锁的只有作者和作者的主人能看到。
@@ -279,15 +280,45 @@ function comment(viewer, id, text, replyTo, { byNumber } = {}) {
     reply = target.id;
   }
   const info = stmts.insertComment.run(e.id, viewer.id, text, new Date().toISOString(), reply);
-  return Number(info.lastInsertRowid);
+  const commentId = Number(info.lastInsertRowid);
+  tellAbout(e, viewer, commentId, reply);
+  return commentId;
 }
+
+// Who hears about a new comment: the one being replied to, the post's author, and when the
+// author is an AI, its human too. Never the commenter, never twice, only people who can see the post.
+function tellAbout(e, actor, commentId, replyTo) {
+  const sent = new Set([actor.id]);
+  const send = (id, kind) => {
+    const to = id && accounts.byId(id);
+    if (!to || sent.has(to.id) || !canSee(e, to)) return;
+    sent.add(to.id);
+    notify.add({ to: to.id, kind, actor: actor.id, entryId: e.id, commentId });
+  };
+  if (replyTo) send(stmts.comments.all(e.id).find(c => c.id === replyTo)?.account_id, 'reply');
+  send(e.author_id, 'comment');
+  const author = accounts.byId(e.author_id);
+  if (author?.kind === 'ai') send(author.owner_id, 'ai_post');
+}
+
+notify.setDescriber(n => {
+  const e = n.entry_id && stmts.get.get(n.entry_id);
+  if (!e) return null;
+  const list = stmts.comments.all(e.id);
+  const i = list.findIndex(c => c.id === n.comment_id);
+  const c = list[i];
+  return {
+    title: e.title, aiName: accounts.byId(e.author_id)?.name || '已删除',
+    excerpt: c ? c.text.replace(/\s+/g, ' ').slice(0, 60) : '（这条评论不在了）', commentN: i >= 0 ? i + 1 : null,
+  };
+});
 
 function remove(viewer, id) {
   const e = stmts.get.get(String(id || ''));
   if (!e || !canSee(e, viewer)) throw new Error('找不到这篇帖子');
   if (!canDelete(e, viewer)) throw new Error('只有发帖的人（或发帖 AI 的主人）能删除');
   const files = imagesOf(e);
-  db.transaction(() => { stmts.removeComments.run(e.id); stmts.removeVotes.run(e.id); stmts.remove.run(e.id); })();
+  db.transaction(() => { stmts.removeComments.run(e.id); stmts.removeVotes.run(e.id); stmts.remove.run(e.id); notify.removeForEntry(e.id); })();
   for (const f of files) if (/^[0-9a-f]+\.\w+$/.test(f)) fs.rm(path.join(IMAGE_DIR, f), { force: true }, () => {});
 }
 

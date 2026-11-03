@@ -27,6 +27,16 @@
   .profile .name { font-family: "Noto Serif SC", serif; font-size: 30px; font-weight: 700; display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 0; color: var(--text); cursor: pointer; }
   .profile .name .paw { color: var(--accent-line); display: flex; }
   .profile .bio { margin-top: 6px; font-size: 13.5px; color: var(--text2); line-height: 1.5; background: none; border: none; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
+  .bell { position: absolute; right: 0; top: 50px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--white); color: var(--text2); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; box-shadow: var(--shadow); z-index: 1; }
+  .bell .badge { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #D2483A; color: #fff; font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg); }
+  .profile .who { padding-right: 48px; }
+  .msg { display: flex; gap: 12px; padding: 12px 10px; border-radius: 14px; text-decoration: none; color: inherit; }
+  .msg + .msg { margin-top: 2px; }
+  .msg.new { background: var(--accent-soft); }
+  .msg .avatar { width: 38px; height: 38px; font-size: 15px; }
+  .msg .s { font-size: 14px; line-height: 1.5; }
+  .msg .x { font-size: 13px; color: var(--text2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .msg .t { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
   .setting {
     width: 100%; display: flex; align-items: center; gap: 14px; padding: 16px; margin-bottom: 12px; border-radius: 20px;
     background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: none;
@@ -84,6 +94,7 @@ function render(d) {
   const gptOn = d.conn.oauth.length > 0;
   const defaultBio = me.isOwner ? '猫窝的主人，正在慢慢把这里搭起来。' : '猫窝的朋友。';
   let html = `<div class="profile">
+      <button class="bell" id="bell" aria-label="${d.unread ? `消息，${d.unread} 条新的` : '消息'}">${icon('bell', 22, 1.8)}${d.unread ? `<span class="badge">${d.unread > 99 ? '99+' : d.unread}</span>` : ''}</button>
       <button class="pic" id="pic" aria-label="换头像">${Maowo.avatar(me, 'me')}<span class="cam">${icon('camera', 15, 2)}</span></button>
       <div class="who">
         <button class="name" id="rename" aria-label="改名">${esc(me.name)}<span class="paw">${icon('paw', 22, 1.6)}</span></button>
@@ -159,6 +170,7 @@ function render(d) {
   document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => showAi(d.ais[b.dataset.ai]));
   document.querySelectorAll('[data-friend]').forEach(b => b.onclick = () => Maowo.copy(`${location.origin}/login#${d.friends[b.dataset.friend].token}`, '登录链接已复制'));
   $('#pic').onclick = () => Maowo.pickAvatar(me.id).then(load, () => {});
+  $('#bell').onclick = showMessages;
   $('#rename').onclick = async () => {
     const name = prompt('新名字（最多 16 个字）', me.name);
     if (!name || name === me.name) return;
@@ -181,6 +193,25 @@ function render(d) {
   };
 }
 
+// Messages: opening the panel counts as reading them all, so the red dot goes away right here
+// (绫 wants it gone the moment she looks, not only after opening each post).
+async function showMessages() {
+  let r;
+  try { r = await api('/notifications'); } catch (err) { Maowo.toast(err.message); return; }
+  const ago = iso => `${Maowo.fmtDate(iso)} ${Maowo.fmtClock(iso)}`;
+  Maowo.sheet(`<h2>消息</h2>
+    ${r.items.length ? r.items.map(m => `<a class="msg ${m.read ? '' : 'new'}" href="/diary/${m.entryId}#c-${m.commentId}">
+        ${Maowo.avatar(m.actor)}
+        <div style="min-width: 0;"><div class="s">${esc(m.sentence)}</div><div class="x">${esc(m.excerpt)}</div><div class="t">${ago(m.createdAt)}</div></div>
+      </a>`).join('') : '<div class="empty">还没有消息。<br>有人评论你的帖子、回复你的评论时，会出现在这里</div>'}`);
+  if (r.unread) {
+    try { await api('/notifications/read', { json: {} }); } catch {}
+    data.unread = 0;
+    const b = $('#bell .badge'); if (b) b.remove();
+    Maowo.tellUnread();
+  }
+}
+
 // One AI: picture, token, where it is.
 function showAi(a) {
   const panel = Maowo.sheet(`<div style="display: flex; align-items: center; gap: 14px;">
@@ -200,7 +231,10 @@ function showAi(a) {
 }
 
 async function load() {
-  try { const [me, conn] = await Promise.all([api('/me'), api('/connections')]); render({ ...me, conn }); }
+  try {
+    const [me, conn, n] = await Promise.all([api('/me'), api('/connections'), api('/notifications/count')]);
+    render({ ...me, conn, unread: n.unread });
+  }
   catch (err) { Maowo.toast(err.message); }
 }
 window.maowoRefresh = load;
