@@ -215,15 +215,12 @@ async function load() {
   renderGames(); renderArchives();
 }
 // ---------- splash ----------
-// Shown when the app is opened from the home screen (or with ?splash=1), once per launch.
+// Only shown with ?splash=1 now. Android already shows its own launch screen (the icon on the
+// background color) when the app opens from the home screen, and two in a row felt like a double splash.
 function showSplash() {
   const q = new URLSearchParams(location.search);
-  const standalone = q.has('app') || matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  let seen = false;
-  try { seen = sessionStorage.getItem('maowo-splash') === '1'; } catch {}
-  if (!(q.has('splash') || (standalone && !seen))) return;
-  try { sessionStorage.setItem('maowo-splash', '1'); } catch {}
   if (q.has('app') || q.has('splash')) history.replaceState(null, '', '/');
+  if (!q.has('splash')) return;
 
   const el = document.createElement('div');
   el.className = 'splash';
