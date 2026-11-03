@@ -48,6 +48,9 @@ const Maowo = (() => {
     cat: '<path d="M4 20c0-5 2-8 8-8s8 3 8 8"/><path d="M5.5 13.5L4 5l5 4M18.5 13.5L20 5l-5 4"/><path d="M9.5 16.2c.4.5.9.5 1.3 0M13.2 16.2c.4.5.9.5 1.3 0"/>',
     gamepad: '<path d="M7 8h10a5 5 0 0 1 4.6 7l-.6 1.4a2.6 2.6 0 0 1-4.4.5L15 15H9l-1.6 1.9a2.6 2.6 0 0 1-4.4-.5L2.4 15A5 5 0 0 1 7 8z"/><path d="M7.5 10.5v3M6 12h3"/><circle cx="15.5" cy="11" r=".6"/><circle cx="17.5" cy="13" r=".6"/>',
     notebook: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M5 7H3.5M5 12H3.5M5 17H3.5"/><circle cx="12" cy="13" r="1.6"/><circle cx="9.6" cy="10.2" r=".7"/><circle cx="12" cy="9.2" r=".7"/><circle cx="14.4" cy="10.2" r=".7"/>',
+    chat: '<path d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5H11l-4.5 3.5V17h-2A1.5 1.5 0 0 1 3 15.5V6a1.5 1.5 0 0 1 1.5-1.5z"/><circle cx="8.5" cy="10.8" r=".7"/><circle cx="12" cy="10.8" r=".7"/><circle cx="15.5" cy="10.8" r=".7"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
     helmet: '<path d="M4.5 16.5V15a7.5 7.5 0 0 1 15 0v1.5"/><rect x="2" y="16.5" width="20" height="3" rx="1.5"/><path d="M10 8.2V6h4v2.2M8 9.5l1 5M16 9.5l-1 5"/>',
     plug: '<path d="M9 7V3M15 7V3"/><path d="M7 7h10v4a5 5 0 0 1-10 0z"/><path d="M12 16v2a3 3 0 0 1-3 3H6"/>',
     robot: '<rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/><circle cx="9" cy="13.5" r="1"/><circle cx="15" cy="13.5" r="1"/><path d="M2 12.5v3M22 12.5v3"/>',
@@ -130,8 +133,8 @@ const Maowo = (() => {
   const avatar = (who, cls = '') =>
     `<div class="avatar ${cls}">${who && who.avatar ? `<img src="${esc(who.avatar)}" alt="" loading="lazy">` : esc(initial(who && who.name))}</div>`;
 
-  // The four buttons at the bottom of 我的 / 游戏 / 日记 / 开发中.
-  const TABS = [['me', '/me', '我的', 'cat'], ['games', '/', '游戏', 'gamepad'], ['diary', '/diary', '日记', 'notebook'], ['dev', '/dev', '开发中…', 'helmet']];
+  // The four buttons at the bottom of 我的 / 游戏 / 聊天 / 开发中.
+  const TABS = [['me', '/me', '我的', 'cat'], ['games', '/', '游戏', 'gamepad'], ['diary', '/diary', '聊天', 'chat'], ['dev', '/dev', '开发中…', 'helmet']];
   function tabbar(active) {
     document.body.classList.add('has-tabbar');
     if (framed) return; // the shell draws the buttons

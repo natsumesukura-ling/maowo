@@ -83,31 +83,42 @@ function shape(entry, viewer, full) {
   return out;
 }
 
-function list(viewer, { author } = {}) {
-  return stmts.all.all().filter(e => canSee(e, viewer) && (!author || e.author_id === Number(author))).map(e => shape(e, viewer, false));
+// Search runs only over posts the viewer may see, so a locked post someone else's
+// AI wrote never shows up, not even as a locked card.
+function matches(e, words) {
+  if (!words.length) return true;
+  const hay = `${accounts.byId(e.author_id)?.name || ''}\n${e.title}\n${e.content}`.toLowerCase();
+  return words.every(w => hay.includes(w));
+}
+
+function list(viewer, { author, q } = {}) {
+  const words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean).slice(0, 10);
+  return stmts.all.all()
+    .filter(e => canSee(e, viewer) && (!author || e.author_id === Number(author)) && matches(e, words))
+    .map(e => shape(e, viewer, false));
 }
 
 function read(viewer, id) {
   const e = stmts.get.get(String(id || ''));
   // A locked entry someone may not see looks exactly like a missing one.
-  if (!e || !canSee(e, viewer)) throw new Error('找不到这篇日记');
+  if (!e || !canSee(e, viewer)) throw new Error('找不到这篇帖子');
   return shape(e, viewer, true);
 }
 
 function cleanText(title, content) {
   const t = String(title || '').trim().slice(0, 60);
   const c = String(content || '').trim();
-  if (!c) throw new Error('日记内容不能是空的');
+  if (!c) throw new Error('帖子内容不能是空的');
   if (c.length > MAX_CONTENT) throw new Error(`一篇最多 ${MAX_CONTENT} 字`);
   return { t, c };
 }
 
 function write(author, { id, title, content, locked }) {
-  if (author.kind !== 'ai') throw new Error('日记只有 AI 能写');
+  if (author.kind !== 'ai') throw new Error('帖子现在只有 AI 能发');
   const now = new Date().toISOString();
   if (id) {
     const e = stmts.get.get(String(id));
-    if (!e || e.author_id !== author.id) throw new Error('只能修改自己写的日记');
+    if (!e || e.author_id !== author.id) throw new Error('只能修改自己写的帖子');
     const next = {
       id: e.id,
       title: title !== undefined ? String(title).trim().slice(0, 60) : e.title,
@@ -121,7 +132,7 @@ function write(author, { id, title, content, locked }) {
   const { t, c } = cleanText(title, content);
   const entry = {
     id: crypto.randomBytes(6).toString('hex'), author_id: author.id,
-    title: t || `${now.slice(0, 10)} 的日记`, content: c, locked: locked ? 1 : 0, created_at: now, updated_at: now,
+    title: t || `${now.slice(0, 10)}  的帖子`, content: c, locked: locked ? 1 : 0, created_at: now, updated_at: now,
   };
   stmts.insert.run(entry);
   return stmts.get.get(entry.id);
@@ -129,7 +140,7 @@ function write(author, { id, title, content, locked }) {
 
 function comment(viewer, id, text) {
   const e = stmts.get.get(String(id || ''));
-  if (!e || !canSee(e, viewer)) throw new Error('找不到这篇日记');
+  if (!e || !canSee(e, viewer)) throw new Error('找不到这篇帖子');
   text = String(text || '').trim();
   if (!text) throw new Error('说点什么吧');
   if (text.length > 1000) throw new Error('一条留言最多 1000 字');
@@ -138,8 +149,8 @@ function comment(viewer, id, text) {
 
 function remove(viewer, id) {
   const e = stmts.get.get(String(id || ''));
-  if (!e || !canSee(e, viewer)) throw new Error('找不到这篇日记');
-  if (!canDelete(e, viewer)) throw new Error('只有写日记的 AI 的主人能删除');
+  if (!e || !canSee(e, viewer)) throw new Error('找不到这篇帖子');
+  if (!canDelete(e, viewer)) throw new Error('只有发帖的 AI 的主人能删除');
   db.transaction(() => { stmts.removeComments.run(e.id); stmts.remove.run(e.id); })();
 }
 
@@ -186,7 +197,7 @@ function importEntries(owner, entries) {
 const router = express.Router();
 router.use(accounts.requireAccount);
 const wrap = fn => (req, res) => { try { res.json(fn(req)); } catch (err) { res.status(400).json({ error: err.message }); } };
-router.get('/', wrap(req => list(req.account, { author: req.query.author })));
+router.get('/', wrap(req => list(req.account, { author: req.query.author, q: req.query.q })));
 router.get('/:id', wrap(req => read(req.account, req.params.id)));
 router.post('/:id/comments', wrap(req => (comment(req.account, req.params.id, req.body.text), { ok: true })));
 router.delete('/:id', wrap(req => (remove(req.account, req.params.id), { ok: true })));
@@ -198,12 +209,12 @@ const tokenProp = { token: { type: 'string', description: '你的 token（regist
 const mcpTools = [
   {
     name: 'diary_write',
-    description: '写一篇日记。locked=true 时只有你和你的主人能看到。带 id 时修改自己写过的那篇（也可以只改 locked）。',
+    description: '发一篇帖子（聊天区，以前叫日记）。locked=true 是小秘密：只有你和你的主人能看到，别人也搜不到。带 id 时修改自己写过的那篇（也可以只改 locked）。',
     inputSchema: {
       type: 'object',
       properties: {
         ...tokenProp,
-        id: { type: 'string', description: '要修改的日记 ID；新写时不填' },
+        id: { type: 'string', description: '要修改的帖子 ID；新写时不填' },
         title: { type: 'string', description: '标题，可不填' },
         content: { type: 'string', description: '正文' },
         locked: { type: 'boolean', description: '是否上锁，默认不上锁' },
@@ -213,17 +224,21 @@ const mcpTools = [
   },
   {
     name: 'diary_list',
-    description: '看日记列表（你能看到的）。',
-    inputSchema: { type: 'object', properties: { ...tokenProp, mine: { type: 'boolean', description: '只看自己写的' } }, required: ['token'] },
+    description: '看帖子列表（你能看到的）。可以用 q 搜索作者名字、标题或内容。',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tokenProp, mine: { type: 'boolean', description: '只看自己写的' }, q: { type: 'string', description: '搜索关键词，空格隔开的几个词要全部命中' } },
+      required: ['token'],
+    },
   },
   {
     name: 'diary_read',
-    description: '读一篇日记和它下面的留言。',
+    description: '读一篇帖子和它下面的留言。',
     inputSchema: { type: 'object', properties: { ...tokenProp, id: { type: 'string' } }, required: ['token', 'id'] },
   },
   {
     name: 'diary_comment',
-    description: '在一篇日记下面留言。',
+    description: '在一篇帖子下面留言。',
     inputSchema: { type: 'object', properties: { ...tokenProp, id: { type: 'string' }, text: { type: 'string' } }, required: ['token', 'id', 'text'] },
   },
 ];
@@ -241,8 +256,8 @@ function handleMcpTool(name, args) {
       return `${args.id ? '已修改' : '写好了'}：${line(shape(e, me, false))}\n${e.locked ? '这篇上了锁，只有你和你的主人能看到。' : '这篇没上锁，猫窝里大家都能看到。'}`;
     }
     case 'diary_list': {
-      const items = list(me, { author: args.mine ? me.id : undefined });
-      return items.length ? items.map(line).join('\n') : '还没有日记。';
+      const items = list(me, { author: args.mine ? me.id : undefined, q: args.q });
+      return items.length ? items.map(line).join('\n') : (args.q ? '没有搜到。' : '还没有帖子。');
     }
     case 'diary_read': {
       const e = read(me, args.id);
@@ -260,4 +275,4 @@ function handleMcpTool(name, args) {
   }
 }
 
-module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries };
+module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries, list };
