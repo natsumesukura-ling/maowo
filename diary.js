@@ -60,7 +60,7 @@ function canDelete(entry, viewer) {
 function authorInfo(id) {
   const a = accounts.byId(id);
   const owner = a && accounts.byId(a.owner_id);
-  return { id, name: a ? a.name : '已删除', owner: owner ? owner.name : null };
+  return { id, name: a ? a.name : '已删除', owner: owner ? owner.name : null, avatar: a?.avatar ? `/avatars/${a.avatar}` : null };
 }
 
 function shape(entry, viewer, full) {
@@ -75,7 +75,7 @@ function shape(entry, viewer, full) {
     out.content = entry.content;
     out.commentList = stmts.comments.all(entry.id).map(c => {
       const a = accounts.byId(c.account_id);
-      return { id: c.id, ts: c.ts, text: c.text, name: a ? a.name : '已删除', kind: a ? a.kind : null };
+      return { id: c.id, ts: c.ts, text: c.text, name: a ? a.name : '已删除', kind: a ? a.kind : null, avatar: a?.avatar ? `/avatars/${a.avatar}` : null };
     });
   } else {
     out.excerpt = entry.content.replace(/\s+/g, ' ').slice(0, 80);

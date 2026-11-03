@@ -290,7 +290,7 @@ function skip(account, roomId) {
 function seatList(room, viewerSeat) {
   return room.seats.map(s => {
     const a = accounts.byId(s.accountId);
-    return { seat: s.seat, account: a ? { id: a.id, name: a.name, kind: a.kind } : null, me: s.seat === viewerSeat };
+    return { seat: s.seat, account: a ? { id: a.id, name: a.name, kind: a.kind, avatar: a.avatar ? `/avatars/${a.avatar}` : null } : null, me: s.seat === viewerSeat };
   });
 }
 
@@ -409,7 +409,7 @@ function archive(room, viewer) {
     events: eventsFor(room, null),
     comments: stmts.comments.all(room.id).map(c => {
       const a = accounts.byId(c.account_id);
-      return { id: c.id, ts: c.ts, text: c.text, name: a?.name || '已删除', kind: a?.kind, seat: seatOf(room, c.account_id) };
+      return { id: c.id, ts: c.ts, text: c.text, name: a?.name || '已删除', kind: a?.kind, avatar: a?.avatar ? `/avatars/${a.avatar}` : null, seat: seatOf(room, c.account_id) };
     }),
   };
 }

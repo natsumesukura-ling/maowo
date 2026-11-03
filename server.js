@@ -8,6 +8,7 @@ const games = require('./games');
 const vault = require('./vault');
 const backup = require('./backup');
 const diary = require('./diary');
+const bugs = require('./bugs');
 const mcp = require('./mcp');
 const oauth = require('./oauth');
 
@@ -32,7 +33,10 @@ app.get('/login', page('login.html'));
 app.get('/vault', page('vault.html'));
 app.get('/diary', page('diary.html'));
 app.get('/diary/:id', page('diary.html'));
+app.get('/dev', page('dev.html'));
 app.use(express.static(path.join(__dirname, 'public')));
+// Profile pictures; the file names are random, see accounts.js.
+app.use('/avatars', express.static(accounts.AVATAR_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));
 
 // ============================================================
 // REST API — Vault (owner only)
@@ -60,7 +64,27 @@ api.get('/me', wrap(req => {
     friends: me.is_owner ? accounts.friends().map(f => ({ ...accounts.publicInfo(f), token: f.token })) : null,
   };
 }));
-api.put('/me', wrap(req => accounts.publicInfo(accounts.rename(req.account, req.body.name))));
+api.put('/me', wrap(req => {
+  let me = req.account;
+  if (req.body.name !== undefined && req.body.name !== me.name) me = accounts.rename(me, req.body.name);
+  if (req.body.bio !== undefined) me = accounts.setBio(me, req.body.bio);
+  return accounts.publicInfo(me);
+}));
+// Connection status for the 我的 page: Claude connects with ?token=, ChatGPT with OAuth.
+api.get('/connections', wrap(req => {
+  const human = accounts.humanOf(req.account);
+  const grants = oauth.grantsOf(human.id);
+  return { urlToken: { lastUsedAt: human.mcp_url_at || null }, oauth: grants };
+}));
+// Profile pictures: the page shrinks the image first and sends the raw bytes.
+const avatarBody = express.raw({ type: () => true, limit: '2mb' });
+function avatarTarget(req) {
+  const target = accounts.byId(Number(req.params.id));
+  if (!accounts.canEditAvatar(req.account, target)) throw new Error('只能换自己和自己 AI 的头像');
+  return target;
+}
+api.put('/avatar/:id', avatarBody, wrap(req => accounts.publicInfo(accounts.setAvatar(avatarTarget(req), req.body, req.get('content-type')))));
+api.delete('/avatar/:id', wrap(req => accounts.publicInfo(accounts.clearAvatar(avatarTarget(req)))));
 api.post('/friends', wrap(req => {
   if (!req.account.is_owner) throw new Error('只有主人能邀请朋友');
   const f = accounts.create('human', req.body.name);
@@ -92,6 +116,7 @@ api.get('/archives/:id', wrap(req => platform.archive(platform.getRoom(req.param
 api.post('/archives/:id/comments', wrap(req => (platform.comment(req.account, req.params.id, req.body.text), { ok: true })));
 
 app.use('/api/diary', diary.router);
+app.use('/api/bugs', bugs.router);
 app.use('/api', api);
 
 // ============================================================
@@ -100,7 +125,10 @@ app.use('/api', api);
 // Who is connecting: an OAuth access token, or a maowo token in the URL (?token=...).
 function mcpAccount(req) {
   const bearer = (req.get('authorization') || '').match(/^Bearer (.+)$/);
-  return (bearer && oauth.accountForAccessToken(bearer[1].trim())) || accounts.resolve(req.query.token);
+  if (bearer) { const a = oauth.accountForAccessToken(bearer[1].trim()); if (a) return a; }
+  const account = accounts.resolve(req.query.token);
+  if (account) accounts.touchMcpUrl(account);
+  return account;
 }
 
 app.post('/mcp', async (req, res) => {

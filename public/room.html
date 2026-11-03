@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#FAF9F5">
+<meta name="theme-color" content="#F7EEE1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="猫窝">
@@ -132,7 +132,7 @@ function renderHeader() {
   $('#config').textContent = `${view.gameName} · ${view.configLabel} · 房间号 ${view.id}`;
   const night = view.board && view.board.night;
   document.body.classList.toggle('night', !!night);
-  document.querySelector('meta[name=theme-color]').content = night ? '#1F1E1D' : '#FAF9F5';
+  document.querySelector('meta[name=theme-color]').content = night ? '#1F1E1D' : '#F7EEE1';
   $('#phase').innerHTML = (night ? icon('moon', 13, 2) : '') + esc(view.phase);
 }
 
@@ -224,7 +224,7 @@ function renderSeats() {
     const note = seatNote(s, p);
     const wolfNote = p && p.wolf && (view.status === 'finished' || !p.alive) ? 'wolf' : '';
     return `<button class="${cls.join(' ')}" data-seat="${s.seat}" ${pickable ? '' : 'tabindex="-1"'} aria-label="${s.seat}号 ${esc(name)}">
-      <div class="av"><div class="circle">${s.account ? esc(Maowo.initial(name)) : '+'}</div><div class="no">${s.seat}</div>
+      <div class="av"><div class="circle">${s.account ? (s.account.avatar ? `<img src="${esc(s.account.avatar)}" alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">` : esc(Maowo.initial(name))) : '+'}</div><div class="no">${s.seat}</div>
         ${p && p.sheriff ? '<div class="badge">警</div>' : ''}</div>
       <div class="name">${esc(name)}${s.account && s.account.kind === 'ai' ? '' : ''}</div>
       <div class="note ${wolfNote}">${esc(note)}</div>

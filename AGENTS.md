@@ -1,7 +1,7 @@
 # 猫窝 · 接手说明
 
 > 写给下一个来帮忙的 AI（Claude、ChatGPT、Codex 或者别的）。先读完这一页，再动代码。
-> 最后更新：2026-11-02，v0.3.0。每次做完一轮改动，请把「进度」和「踩过的坑」更新一下。
+> 最后更新：2026-11-03，v0.4.0。每次做完一轮改动，请把「进度」和「踩过的坑」更新一下。
 
 ## 一句话
 
@@ -29,6 +29,8 @@
 | 一键导出 / 导入（存档 + 日记） | 存档页底部 | — | `backup.js` |
 | OAuth 登录（ChatGPT 只支持这个） | `/oauth/authorize` | — | `oauth.js` |
 | 添加到主屏幕、开屏动画 | 从桌面图标打开 | — | `public/manifest.webmanifest`、`public/sw.js`、`public/index.html` |
+| 头像上传（人和自己的 AI）、一句话介绍、Claude/ChatGPT 连接状态 | `/me` | — | `accounts.js`、`server.js` |
+| Bug 本：谁都能提交，主人或主人的 AI 标「修好了」 | `/dev`（开发中） | `bug_list`、`bug_report`、`bug_update` | `bugs.js` |
 
 规则和设计决定都写在 [docs/DESIGN.md](docs/DESIGN.md)，**改游戏或权限前先读它**。
 
@@ -39,6 +41,8 @@
 - **Claude 连接**：已经连通（用地址里带 token 的方式），AI「小55」已注册并写过一篇开发者日记。
 - **代码在开发分支上**：所有改动都在 `ccr-d223d08b-tyy5yy` 分支，还没合并到 `main`。安装脚本默认装这个分支。合并后要把 `deploy/install.sh` 里的 `BRANCH` 默认值和 README、本文件里的命令一起改成 `main`。
 - **域名**：现在用 `<IP 用横线连接>.sslip.io` 的免费地址。绫嫌不好听，但不想买域名。以后要换的话：买域名 → 解析到服务器 IP → `curl ... | sudo DOMAIN=新域名 bash`。换了以后浏览器要重新登录，Claude 连接器的地址也要改。
+- **第二版页面（暖纸水彩风）**：2026-11-03 按绫用 ChatGPT 画的示意图重做。底部四个按钮：我的 `/me`、游戏 `/`、日记 `/diary`、开发中 `/dev`。插画是 ChatGPT 画好、绫发来的透明 PNG，处理成 `public/img/art/*.webp`。房间页保留原来的布局和夜晚变暗，只换了颜色。存档入口在「我的」页。
+- **Bug 本**：绫在「开发中」页提交的问题存在服务器上。接手时如果能连猫窝的 MCP，先用 `bug_list` 看看有什么待修的；修好后用 `bug_update` 标成 done。导出备份里**还没有**包含 Bug 本。
 - **第一版页面留作备份**：绫要琢磨重新做美化，但新样子不满意可能会换回最初版。第一版页面是提交 `a776bee` 里的 `public/` 目录。重做时不要删它的记录；要换回去，就从这个提交恢复 `public/`（只换页面，不动服务器代码和数据）。
 - **推送通知**（「轮到你了」）：网页版做不了，需要真正的 apk。绫说不是非要 apk。
 
@@ -49,9 +53,9 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 8）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 9）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
-- **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
+- **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
 
 ## 安全模型（别弄坏）
@@ -61,6 +65,7 @@
 - **MCP 连接必须带身份**：要么地址带 `?token=`（Claude 用），要么 OAuth 的 Bearer access token（ChatGPT 用）。都没有返回 401，并给出 OAuth 元数据地址。
 - 连上以后，**游戏和日记的身份看工具参数里的 `token`**（AI 自己的），不看连接身份。连接身份只用来 `register` 和判断存档权限。
 - **存档**只有主人和主人名下的 AI 能用；朋友看不到。AI 没有删除存档的工具，删除只能主人在网页上做。
+- **头像**放在 `/avatars/<随机文件名>`，不需要登录就能打开（`<img>` 带不了 token），靠文件名随机保护。人只能换自己和自己 AI 的头像。AI 通过 MCP 拿不到图片。
 - **日记**上锁的只有作者 AI 和它的主人能看，别人按 ID 读也只得到「找不到」。
 - **狼人杀没有上帝视角**：私密信息只在服务器端发给本座位（`platform.js` 的 `canSee`）。夜间公屏不显示谁在行动；出局的人都要「确认出局」，用来藏猎人。
 
@@ -76,11 +81,12 @@ games/index.js   游戏注册表
 games/werewolf.js  狼人杀：步骤队列引擎（夜晚→警长→白天→投票…）
 games/gomoku.js  五子棋
 diary.js         日记（含 REST 路由和 MCP 工具）
+bugs.js          Bug 本（含 REST 路由和 MCP 工具）
 vault.js         存档（含 REST 路由和 MCP 工具）
 backup.js        导出 / 导入 zip
 oauth.js         OAuth 2.1：元数据、动态注册、授权页、PKCE、refresh token
 db.js            SQLite 连接（better-sqlite3），数据目录
-public/          网页：index（大厅+开屏）、room、archive(s)、me、diary、vault、login，共用 common.css / common.js
+public/          网页：index（游戏+开屏）、me、diary、dev、room、archive(s)、vault、login，共用 common.css / common.js；插画在 img/art/
 deploy/install.sh  一键安装 / 更新
 test/            rules.js（狼人杀规则）、diary.js（日记权限）、simulate.js（随机机器人打完整局）
 design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和配色表
@@ -99,8 +105,9 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 
 ## 网页风格
 
-- 配色（见 `design/README.md`）：白天底色 `#FAF9F5`、卡片 `#F0EEE6`、主文字 `#141413`、次要文字 `#5E5D59`、强调 `#B4532F` / `#D97757`；夜晚底色 `#1F1E1D`。都在 `public/common.css` 的变量里。
-- 标题用 Noto Serif SC，正文用系统字体。**界面不用 emoji**，图标用线条 SVG（`common.js` 的 `icon()`）。头像用名字第一个字。
+- 第二版「暖纸」配色：底色 `#F7EEE1`（带很淡的纸张噪点）、卡片 `#FBF5EC`、边框 `#EADCC8`、主文字 `#2A1F17`、次要文字 `#85715F`、强调 `#B8612E` / `#D9874F`、浅强调 `#F6E2CC`、「已连接」绿 `#E4E6CC`/`#5E6B32`、「小秘密」粉 `#F6DCD3`/`#A9503C`；夜晚底色仍是 `#1F1E1D`。都在 `public/common.css` 的变量里。第一版配色见 `design/README.md`。
+- 标题用 Noto Serif SC（加粗），正文用系统字体。**界面不用 emoji**，小图标用线条 SVG（`common.js` 的 `icon()`），大插画用 `public/img/art/` 里的水彩图。新插画请绫找 ChatGPT 用同一画风画（透明背景、无文字），不要自己从截图抠。
+- 小节标题用 `.ribbon`（纸签 + 细线），底部按钮用 `Maowo.tabbar('me'|'games'|'diary'|'dev')`，弹出面板用 `Maowo.sheet(html)`，头像用 `Maowo.avatar(info)`（有图显示图，没图显示名字第一个字）。
 - 手机竖屏优先；夜晚阶段整页变暗。
 
 ## 踩过的坑

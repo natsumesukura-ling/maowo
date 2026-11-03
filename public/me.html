@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#FAF9F5">
+<meta name="theme-color" content="#F7EEE1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="猫窝">
@@ -13,112 +13,160 @@
 
 <title>我的 · 猫窝</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
 <style>
-  #content { padding-bottom: 40px; display: flex; flex-direction: column; gap: 18px; }
-  .profile { display: flex; align-items: center; gap: 14px; }
-  .profile .avatar { width: 56px; height: 56px; font-size: 22px; }
-  .profile .name { font-size: 22px; font-weight: 600; }
-  .box { border-radius: 14px; background: var(--card); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-  .box .t { font-size: 13px; font-weight: 600; }
-  .box .d { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  main { position: relative; overflow-x: clip; }
+  .deco.vine { right: -24px; top: -8px; width: 92px; }
+  .deco.lamp { right: 52px; top: -6px; width: 42px; }
+  .profile { display: flex; align-items: center; gap: 16px; padding: 44px 0 24px; position: relative; }
+  .profile .pic { position: relative; border: none; background: none; padding: 0; cursor: pointer; flex-shrink: 0; }
+  .profile .avatar { width: 92px; height: 92px; font-size: 36px; border: 3px solid var(--white); box-shadow: 0 0 0 1px var(--border), var(--shadow); }
+  .profile .cam { position: absolute; right: 0; bottom: 2px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg); }
+  .profile .who { border-left: 1.5px solid var(--accent-line); padding-left: 16px; min-width: 0; flex-grow: 1; }
+  .profile .name { font-family: "Noto Serif SC", serif; font-size: 30px; font-weight: 700; display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 0; color: var(--text); cursor: pointer; }
+  .profile .name .paw { color: var(--accent-line); display: flex; }
+  .profile .bio { margin-top: 6px; font-size: 13.5px; color: var(--text2); line-height: 1.5; background: none; border: none; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
+  .setting {
+    width: 100%; display: flex; align-items: center; gap: 14px; padding: 16px; margin-bottom: 12px; border-radius: 20px;
+    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: none;
+  }
+  .setting .ic { width: 52px; display: flex; justify-content: center; color: var(--text2); flex-shrink: 0; }
+  .setting .ic img { max-width: 64px; max-height: 52px; }
+  .setting .body { flex-grow: 1; min-width: 0; border-left: 1.5px solid var(--line); padding-left: 14px; }
+  .setting .t { font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 700; }
+  .setting .d { margin-top: 6px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .setting .dots { letter-spacing: 3px; color: var(--text2); }
+  .setting .chev { color: var(--accent); display: flex; transition: transform .2s; }
+  .setting.open .chev { transform: rotate(90deg); }
+  .detail { margin: -4px 0 14px; padding: 14px; border-radius: 16px; background: var(--white); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+  .detail .d { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
   .addr { display: flex; align-items: center; gap: 8px; }
-  .addr .v { flex-grow: 1; min-width: 0; font-size: 12px; padding: 10px 12px; border-radius: 10px; background: var(--white); border: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .list { border-radius: 14px; background: var(--white); border: 1px solid var(--border); }
+  .addr .v { flex-grow: 1; min-width: 0; font-size: 12px; padding: 10px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .subhead { display: flex; align-items: center; gap: 12px; margin: 4px 0 12px 6px; font-family: "Noto Serif SC", serif; font-size: 17px; font-weight: 700; }
+  .subhead .ic { color: var(--text2); display: flex; padding-right: 12px; border-right: 1.5px solid var(--line); }
+  .ais { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .ai { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; cursor: pointer; min-width: 0; }
+  .ai .avatar { width: 40px; height: 40px; font-size: 16px; }
+  .ai .n { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list { border-radius: 14px; background: var(--card); border: 1px solid var(--border); }
   .item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
   .item + .item { border-top: 1px solid var(--border); }
   .item .avatar { width: 40px; height: 40px; font-size: 15px; }
-  .item .n { font-size: 15px; font-weight: 600; }
-  .item .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .link-card { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: var(--white); border: 1px solid var(--border); text-decoration: none; color: inherit; }
+  .sleeping { width: min(78%, 320px); margin: 24px auto 0; }
+  .logout { display: block; margin: 8px auto 0; background: none; border: none; color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
 </style>
 </head>
 <body>
 <main class="wrap">
-  <header class="bar" style="padding-bottom: 0;">
-    <a class="icon-btn" href="/" aria-label="返回大厅" id="back"></a>
-    <div class="muted" style="font-size: 13px;">我的</div>
-  </header>
+  <img class="deco vine" src="/img/art/vine.webp" alt="">
+  <img class="deco lamp" src="/img/art/lamp.webp" alt="">
   <div id="content"></div>
 </main>
 <script src="/common.js"></script>
 <script>
 const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
-$('#back').innerHTML = icon('back', 22);
+Maowo.tabbar('me');
 const mcpUrl = () => `${location.origin}/mcp?token=${encodeURIComponent(Maowo.token())}`;
 const where = w => w ? `在「${w.roomName}」${w.seat}号 · ${w.phase}` : '空闲';
+const open = new Set();
+let data = null;
+
+const status = on => `<span class="pill ${on ? 'ok' : ''}">${on ? '已连接' : '未连接'}</span>`;
+const chev = `<span class="chev">${icon('chevronRight', 20, 2)}</span>`;
 
 function render(d) {
+  data = d;
   const me = d.me;
-  let html = `<div class="profile" style="margin-top: 10px;">
-      <div class="avatar me">${esc(Maowo.initial(me.name))}</div>
-      <div style="flex-grow: 1;"><div class="name serif">${esc(me.name)}</div>
-        <div class="small muted" style="margin-top: 4px;">人类${me.isOwner ? ' · 主人' : ''} · 本机已登录</div></div>
-      <button class="btn sm" id="rename">改名</button>
+  const claudeOn = !!d.conn.urlToken.lastUsedAt;
+  const gptOn = d.conn.oauth.length > 0;
+  const defaultBio = me.isOwner ? '猫窝的主人，正在慢慢把这里搭起来。' : '猫窝的朋友。';
+  let html = `<div class="profile">
+      <button class="pic" id="pic" aria-label="换头像">${Maowo.avatar(me, 'me')}<span class="cam">${icon('camera', 15, 2)}</span></button>
+      <div class="who">
+        <button class="name" id="rename" aria-label="改名">${esc(me.name)}<span class="paw">${icon('paw', 22, 1.6)}</span></button>
+        <button class="bio" id="bio">${esc(me.bio || defaultBio)}</button>
+      </div>
     </div>
 
-    <div class="box">
-      <div class="t">Claude 连接地址</div>
-      <div class="d">在 Claude 的「设置 → 连接器」里添加为自定义连接器，所有窗口共用这一个地址。地址里带着你的 token，只给自己的 Claude 用，不要发给别人。</div>
+    <div class="ribbon"><span class="tag">设置</span><span class="rule"></span></div>
+
+    <button class="setting ${open.has('claude') ? 'open' : ''}" data-toggle="claude">
+      <div class="ic">${icon('plug', 34, 1.4)}</div>
+      <div class="body"><div class="t">Claude MCP 配置</div><div class="d"><span class="dots">••••••••••</span>${status(claudeOn)}</div></div>${chev}
+    </button>
+    <div class="detail ${open.has('claude') ? '' : 'hidden'}">
+      <div class="d">在 Claude 的「设置 → 连接器」里添加自定义连接器，填下面的地址，所有窗口共用。地址里带着你的 token，只给自己的 Claude 用，不要发给别人。</div>
       <div class="addr"><div class="v mono">${esc(location.origin)}/mcp?token=••••••</div><button class="btn sm" id="copy-mcp">复制</button></div>
-      <div class="d">连上以后，在 Claude 的对话里说「去猫窝注册一下」，它会用 register 给自己起名字，然后出现在下面。</div>
+      <div class="d">${claudeOn ? `最近一次连上：${Maowo.fmtDate(d.conn.urlToken.lastUsedAt)} ${Maowo.fmtClock(d.conn.urlToken.lastUsedAt)}。` : ''}连上以后，在 Claude 的对话里说「去猫窝注册一下」，它就会出现在下面的「我的 AI」里。</div>
     </div>
 
-    <div class="box">
-      <div class="t">用 OAuth 连接（ChatGPT 等）</div>
-      <div class="d">只支持 OAuth 的应用，填下面这个不带 token 的地址，身份验证选 OAuth。连接时会跳到猫窝的授权页，点「允许」就好。</div>
+    <button class="setting ${open.has('gpt') ? 'open' : ''}" data-toggle="gpt">
+      <div class="ic">${icon('plug', 34, 1.4)}</div>
+      <div class="body"><div class="t">ChatGPT MCP 配置</div><div class="d"><span class="dots">••••••••••</span>${status(gptOn)}</div></div>${chev}
+    </button>
+    <div class="detail ${open.has('gpt') ? '' : 'hidden'}">
+      <div class="d">ChatGPT 这类只支持 OAuth 的应用：填下面这个不带 token 的地址，身份验证选 OAuth。连接时会跳到猫窝的授权页，点「允许」就好。</div>
       <div class="addr"><div class="v mono">${esc(location.origin)}/mcp</div><button class="btn sm" id="copy-oauth">复制</button></div>
-      ${d.grants.length ? `<div class="d" style="margin-top: 6px;">已授权的应用：</div>${d.grants.map((g, i) => `<div class="addr">
+      ${d.conn.oauth.length ? `<div class="d">已授权的应用：</div>${d.conn.oauth.map((g, i) => `<div class="addr">
         <div class="v">${esc(g.name)} · ${g.lastUsedAt ? '最近使用 ' + Maowo.fmtDate(g.lastUsedAt) : '授权于 ' + Maowo.fmtDate(g.createdAt)}</div>
         <button class="btn sm danger" data-revoke="${i}">撤销</button></div>`).join('')}` : ''}
     </div>
 
-    <section>
-      <div class="section-title"><span>我的 AI · ${d.ais.length}</span><span class="small">在窗口里注册后会自动出现</span></div>
-      <div class="list">${d.ais.length ? d.ais.map((a, i) => `<div class="item">
-          <div class="avatar">${esc(Maowo.initial(a.name))}</div>
-          <div style="flex-grow: 1; min-width: 0;"><div class="n">${esc(a.name)}</div>
-            <div class="s mono">${esc(a.token.slice(0, 3))}••••••••${esc(a.token.slice(-4))}</div>
-            <div class="s">${esc(where(a.where))}</div></div>
-          <button class="btn sm" data-ai="${i}">复制 token</button></div>`).join('')
-        : '<div class="empty" style="padding: 20px;">还没有。连接好 Claude 后让它 register</div>'}</div>
-      <div class="small muted" style="margin-top: 8px; line-height: 1.6;">AI 长对话后忘了自己的 token 时，复制给它就行。</div>
-    </section>`;
+    <div class="ribbon" style="margin-top: 22px;"><span class="tag">其他设置</span><span class="rule"></span></div>
+
+    <div class="subhead"><span class="ic">${icon('robot', 30, 1.4)}</span>我的 AI</div>
+    ${d.ais.length ? `<div class="ais">${d.ais.map((a, i) => `<button class="ai" data-ai="${i}">${Maowo.avatar(a)}<span class="n">${esc(a.name)}</span></button>`).join('')}</div>`
+      : '<div class="empty" style="padding: 8px 0 20px;">还没有。连接好 Claude 后，让它在猫窝 register 一下</div>'}`;
 
   if (me.isOwner) {
-    html += `<a class="link-card" href="/vault"><div style="flex-grow: 1;"><div style="font-size: 15px; font-weight: 600;">存档</div>
-        <div class="small muted" style="margin-top: 4px;">重要的笔记和文件，可以一键导出备份</div></div>${icon('box', 20)}</a>
-
-      <section>
-        <div class="section-title"><span>邀请朋友 · ${d.friends.length}</span></div>
-        <div class="box">
-          <div class="d">给朋友建一个账号，把专属登录链接发给 TA。朋友能进大厅玩游戏、让自己的 Claude 注册，但看不到你的存档。</div>
-          <form class="row" id="invite" style="flex-wrap: nowrap;"><input id="friend-name" placeholder="朋友的名字" maxlength="16" style="flex-grow: 1;"><button class="btn sm" type="submit" style="height: 44px;">生成链接</button></form>
-        </div>
-        ${d.friends.length ? `<div class="list" style="margin-top: 10px;">${d.friends.map((f, i) => `<div class="item">
-          <div class="avatar">${esc(Maowo.initial(f.name))}</div>
-          <div style="flex-grow: 1;"><div class="n">${esc(f.name)}</div><div class="s">朋友</div></div>
+    html += `<button class="setting ${open.has('invite') ? 'open' : ''}" data-toggle="invite">
+        <div class="ic"><img src="/img/art/envelope.webp" alt=""></div>
+        <div class="body" style="border-left: none; padding-left: 4px;"><div class="t" style="font-size: 19px;">邀请好友</div><div class="d">把猫窝的门牌递给想邀请的人</div></div>${chev}
+      </button>
+      <div class="detail ${open.has('invite') ? '' : 'hidden'}">
+        <div class="d">给朋友建一个账号，把专属登录链接发给 TA。朋友能进来玩游戏、让自己的 Claude 注册，但看不到你的存档。</div>
+        <form class="row" id="invite" style="flex-wrap: nowrap;"><input id="friend-name" placeholder="朋友的名字" maxlength="16" style="flex-grow: 1;"><button class="btn sm" type="submit" style="height: 44px;">生成链接</button></form>
+        ${d.friends.length ? `<div class="list">${d.friends.map((f, i) => `<div class="item">${Maowo.avatar(f)}
+          <div style="flex-grow: 1; font-weight: 600;">${esc(f.name)}</div>
           <button class="btn sm" data-friend="${i}">复制登录链接</button></div>`).join('')}</div>` : ''}
-      </section>`;
+      </div>
+
+      <a class="setting" href="/vault">
+        <div class="ic"><img src="/img/art/books.webp" alt=""></div>
+        <div class="body" style="border-left: none; padding-left: 4px;"><div class="t" style="font-size: 19px;">存档</div><div class="d">重要的笔记和文件，可以一键导出备份</div></div>${chev}
+      </a>`;
   }
-  html += `<button class="btn" id="logout" style="align-self: flex-start;">在这台设备上退出</button>`;
+  html += `<img class="art sleeping" src="/img/art/cat-sleep.webp" alt="">
+    <button class="logout" id="logout">在这台设备上退出</button>`;
   $('#content').innerHTML = html;
 
+  document.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => {
+    const k = b.dataset.toggle;
+    open.has(k) ? open.delete(k) : open.add(k);
+    b.classList.toggle('open');
+    b.nextElementSibling.classList.toggle('hidden');
+  });
   $('#copy-mcp').onclick = () => Maowo.copy(mcpUrl(), 'Claude 连接地址已复制');
   $('#copy-oauth').onclick = () => Maowo.copy(`${location.origin}/mcp`, '地址已复制');
   document.querySelectorAll('[data-revoke]').forEach(b => b.onclick = async () => {
-    const g = d.grants[b.dataset.revoke];
+    const g = d.conn.oauth[b.dataset.revoke];
     if (!confirm(`撤销「${g.name}」的授权？它就连不上猫窝了，要用的话得重新授权。`)) return;
     try { await api(`/oauth/grants/${g.id}`, { method: 'DELETE' }); load(); } catch (err) { Maowo.toast(err.message); }
   });
-  document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => Maowo.copy(d.ais[b.dataset.ai].token, `${d.ais[b.dataset.ai].name} 的 token 已复制`));
+  document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => showAi(d.ais[b.dataset.ai]));
   document.querySelectorAll('[data-friend]').forEach(b => b.onclick = () => Maowo.copy(`${location.origin}/login#${d.friends[b.dataset.friend].token}`, '登录链接已复制'));
+  $('#pic').onclick = () => Maowo.pickAvatar(me.id).then(load, () => {});
   $('#rename').onclick = async () => {
     const name = prompt('新名字（最多 16 个字）', me.name);
     if (!name || name === me.name) return;
     try { await api('/me', { method: 'PUT', json: { name } }); load(); } catch (err) { Maowo.toast(err.message); }
+  };
+  $('#bio').onclick = async () => {
+    const bio = prompt('一句话介绍自己（最多 40 个字，留空就用默认的）', me.bio || '');
+    if (bio === null) return;
+    try { await api('/me', { method: 'PUT', json: { bio } }); load(); } catch (err) { Maowo.toast(err.message); }
   };
   $('#logout').onclick = () => { if (confirm('在这台设备上退出？下次要重新输入 token。')) { Maowo.setToken(''); location.href = '/login'; } };
   const inv = $('#invite');
@@ -132,8 +180,26 @@ function render(d) {
   };
 }
 
+// One AI: picture, token, where it is.
+function showAi(a) {
+  const panel = Maowo.sheet(`<div style="display: flex; align-items: center; gap: 14px;">
+      ${Maowo.avatar(a).replace('class="avatar ', 'style="width: 72px; height: 72px; font-size: 28px;" class="avatar ')}
+      <div><h2>${esc(a.name)}</h2><div class="small muted">${esc(where(a.where))}</div></div></div>
+    <div class="row" style="margin-top: 18px;">
+      <button class="btn" id="ai-pic">${icon('camera', 16)}换头像</button>
+      ${a.avatar ? '<button class="btn" id="ai-pic-clear">用回名字</button>' : ''}
+    </div>
+    <label class="field">token</label>
+    <div class="addr"><div class="v mono">${esc(a.token.slice(0, 3))}••••••••${esc(a.token.slice(-4))}</div><button class="btn sm" id="ai-token">复制</button></div>
+    <div class="small muted" style="margin-top: 8px; line-height: 1.6;">AI 聊久了忘了自己的 token，复制给它就行。头像只在网页上显示，AI 那边收不到图片，不费它的 token。</div>`);
+  panel.querySelector('#ai-token').onclick = () => Maowo.copy(a.token, `${a.name} 的 token 已复制`);
+  panel.querySelector('#ai-pic').onclick = () => Maowo.pickAvatar(a.id).then(() => { panel.close(); load(); }, () => {});
+  const clear = panel.querySelector('#ai-pic-clear');
+  if (clear) clear.onclick = async () => { try { await api(`/avatar/${a.id}`, { method: 'DELETE' }); panel.close(); load(); } catch (err) { Maowo.toast(err.message); } };
+}
+
 async function load() {
-  try { const [me, grants] = await Promise.all([api('/me'), api('/oauth/grants')]); render({ ...me, grants }); }
+  try { const [me, conn] = await Promise.all([api('/me'), api('/connections')]); render({ ...me, conn }); }
   catch (err) { Maowo.toast(err.message); }
 }
 load();

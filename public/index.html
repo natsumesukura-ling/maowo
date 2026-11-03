@@ -4,61 +4,65 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#FAF9F5">
+<meta name="theme-color" content="#F7EEE1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="猫窝">
 <link rel="icon" href="/img/favicon.png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 
-<title>大厅 · 猫窝</title>
+<title>游戏 · 猫窝</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
 <style>
-  main { padding-top: 18px; padding-bottom: 32px; display: flex; flex-direction: column; gap: 22px; }
-  .top { display: flex; align-items: flex-start; gap: 12px; }
-  .me-link { display: flex; flex-direction: column; align-items: center; gap: 4px; text-decoration: none; color: var(--text); padding: 2px; }
-  .me-link .label { font-size: 12px; color: var(--muted); }
-  .current {
-    flex-grow: 1; min-width: 0; text-decoration: none; color: inherit; padding: 4px 4px 12px 8px;
-    border-bottom: 2px solid var(--accent-line); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right;
+  main { position: relative; overflow-x: clip; }
+  .hero { position: relative; padding-top: 44px; }
+  .hero .vine { right: -22px; top: -6px; width: 104px; }
+  .hero .lamp { right: 66px; top: -4px; width: 46px; }
+  .hero h1 { font-size: 30px; font-weight: 700; margin: 0; letter-spacing: 1px; position: relative; }
+  .hero p { margin: 8px 0 0; color: var(--text2); font-size: 14px; position: relative; }
+  .hero .shelfcat { width: 100%; margin-top: 4px; }
+  .games { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .game {
+    position: relative; text-align: center; padding: 12px 12px 14px; border-radius: 22px; background: var(--card);
+    border: 1px solid var(--border); box-shadow: var(--shadow); cursor: pointer; font: inherit; color: inherit;
+    display: flex; flex-direction: column; align-items: stretch;
   }
-  .current .title { font-size: 30px; font-weight: 600; line-height: 1.2; }
-  .current .sub { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-  .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
-  .chips::-webkit-scrollbar { display: none; }
-  .diary { text-decoration: none; color: inherit; display: flex; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--card); }
-  .diary + .diary { margin-top: 8px; }
-  .diary .avatar { width: 32px; height: 32px; font-size: 13px; background: var(--white); }
-  .diary .t { font-size: 14px; font-weight: 600; }
-  .diary .m { font-size: 12px; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-  .diary .x { font-size: 13px; color: var(--text2); margin-top: 4px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lock { display: inline-flex; align-items: center; gap: 3px; color: var(--accent); }
-  .chip {
-    height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--white);
-    color: var(--text); font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer;
+  .game.mine { border: 1.5px solid var(--accent-line); }
+  .game.todo { background: transparent; border: 1.5px dashed var(--line); box-shadow: none; cursor: default; }
+  .game .pic { height: 104px; display: flex; align-items: center; justify-content: center; }
+  .game .pic img { max-height: 100px; max-width: 86%; }
+  .game.todo .pic img { opacity: .75; }
+  .game .name { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 23px; margin-top: 6px; letter-spacing: 2px; }
+  .game .status { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--text2); text-align: left; }
+  .game .status .txt { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game .status .chev { color: var(--accent); display: flex; }
+  .game.todo .status, .game.todo .status .chev { color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--muted); flex-shrink: 0; }
+  .dot.live { background: var(--accent); border-color: var(--accent); }
+  .arch-wrap { margin-top: 26px; }
+  .arch {
+    position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 40px 10px 12px; margin-bottom: 10px;
+    border-radius: 16px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); text-decoration: none; color: inherit;
   }
-  .chip.on { background: var(--text); border-color: var(--text); color: var(--bg); }
-  .chip:disabled { border-style: dashed; background: transparent; color: var(--muted); cursor: default; }
-  .rooms { display: flex; flex-direction: column; gap: 10px; }
+  .arch .thumb { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .arch .thumb img { max-width: 42px; max-height: 42px; }
+  .arch .t { font-size: 13.5px; color: var(--text2); line-height: 1.5; min-width: 0; }
+  .arch .sprig { right: 8px; bottom: 6px; width: 24px; opacity: .85; }
+  .floor { position: relative; height: 112px; margin: 18px -16px 0; }
+  .floor .blanket { left: 0; bottom: 0; width: 56%; max-width: 280px; }
+  .floor .books { right: 6px; bottom: 4px; width: 34%; max-width: 170px; }
+  /* 面板里的房间 */
+  .rooms { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
   .room {
-    text-decoration: none; color: inherit; display: flex; align-items: center; gap: 12px; padding: 16px;
-    border-radius: 16px; background: var(--white); border: 1px solid var(--border);
+    text-decoration: none; color: inherit; display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+    border-radius: 16px; background: var(--card); border: 1px solid var(--border);
   }
-  .room:hover { border-color: var(--accent-line); }
+  .room.mine { border-color: var(--accent-line); }
   .room .name { font-size: 15px; font-weight: 600; }
   .room .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .room .game { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); white-space: nowrap; }
-  .gicon { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-  .divider { height: 1px; background: var(--border); }
-  .arch { text-decoration: none; color: inherit; display: flex; align-items: flex-start; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
-  .arch .name { font-size: 14px; font-weight: 600; }
-  .arch .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .arch .when { font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; line-height: 1.6; }
-  .sheet { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 10px; }
-  .opt { display: flex; gap: 8px; flex-wrap: wrap; }
-  .footer { display: flex; justify-content: center; gap: 18px; font-size: 13px; }
+  .newroom { margin-top: 18px; padding: 14px; border-radius: 16px; background: var(--card); border: 1px dashed var(--line); }
   /* 开屏：从主屏幕打开时出现，滑动解锁进入大厅 */
   .splash {
     position: fixed; inset: 0; z-index: 100; background: #FAF9F5; color: #141413;
@@ -85,159 +89,130 @@
 </head>
 <body>
 <main class="wrap">
-  <div class="top">
-    <a class="me-link" href="/me" aria-label="我的">
-      <div class="avatar me" id="me-initial"></div>
-      <div class="label">我的</div>
-    </a>
-    <a class="current" id="current" href="/"></a>
+  <div class="hero">
+    <img class="deco vine" src="/img/art/vine.webp" alt="">
+    <img class="deco lamp" src="/img/art/lamp.webp" alt="">
+    <h1 class="serif">今天玩点什么？</h1>
+    <p>选一局，等朋友和 AI 来猫窝。</p>
+    <img class="art shelfcat" src="/img/art/shelf-cat.webp" alt="">
   </div>
 
-  <div class="chips" id="chips"></div>
+  <div class="games" id="games"></div>
 
-  <section>
-    <div class="section-title">
-      <span>房间</span>
-      <button class="btn sm soft" id="new-btn" style="border-radius: 999px;">新建</button>
-    </div>
-    <form class="sheet hidden" id="new-form">
-      <label class="field" style="margin-top: 0;">游戏</label>
-      <div class="opt" id="new-games"></div>
-      <div id="players-wrap">
-        <label class="field" for="new-players">人数</label>
-        <select id="new-players"></select>
-      </div>
-      <label class="field" for="new-name">房间名（可不填）</label>
-      <input id="new-name" maxlength="24">
-      <div class="row" style="margin-top: 14px;">
-        <button class="btn primary" type="submit">建好，进入房间</button>
-        <button class="btn" type="button" id="new-cancel">取消</button>
-      </div>
-    </form>
-    <div class="rooms" id="rooms"></div>
-  </section>
-
-  <div class="divider"></div>
-
-  <section>
-    <div class="section-title"><span>日记</span><a href="/diary" style="text-decoration: none;">全部</a></div>
-    <div id="diary"></div>
-  </section>
-
-  <div class="divider"></div>
-
-  <section>
-    <div class="section-title"><span>归档</span><a href="/archive" style="text-decoration: none;">全部</a></div>
+  <section class="arch-wrap">
+    <div class="ribbon"><span class="tag">归档 <span style="color: var(--accent); display: flex;" id="arch-icon"></span></span><span class="rule"></span>
+      <a class="more" href="/archive">全部<span id="more-icon" style="display: flex;"></span></a></div>
     <div id="archives"></div>
   </section>
 
-  <div class="footer" id="footer"></div>
+  <div class="floor" aria-hidden="true">
+    <img class="deco blanket" src="/img/art/blanket.webp" alt="">
+    <img class="deco books" src="/img/art/books.webp" alt="">
+  </div>
 </main>
 
 <script src="/common.js"></script>
 <script>
-const { api, esc, icon, GAME_ICON, GAME_TINT } = Maowo;
+const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
-let filter = '';
-let gamesList = [];
-let state = { rooms: [], archives: [] };
+Maowo.tabbar('games');
+$('#arch-icon').innerHTML = icon('archive', 20, 1.6);
+$('#more-icon').innerHTML = icon('chevronRight', 16, 2);
+
+const ART = { werewolf: '/img/art/wolf.webp', gomoku: '/img/art/gomoku.webp', uno: '/img/art/uno.webp' };
 const WEREWOLF_CONFIGS = {
   6: '2 狼 2 民 · 预言家 女巫', 7: '2 狼 3 民 · 预言家 女巫', 8: '3 狼 3 民 · 预言家 女巫',
   9: '3 狼 3 民 · 预言家 女巫 猎人', 10: '3 狼 4 民 · 预言家 女巫 猎人', 11: '4 狼 4 民 · 预言家 女巫 猎人',
   12: '4 狼 4 民 · 预言家 女巫 猎人 守卫',
 };
+let gamesList = [];
+let state = { rooms: [], archives: [] };
+let openSheet = null;
 
-function gameBadge(game, name) {
-  return `<div class="game">${esc(name)}<div class="gicon" style="${GAME_TINT[game] || ''}">${icon(GAME_ICON[game] || 'grid', 16)}</div></div>`;
+const roomStatus = r => r.status === 'waiting' ? '等人中' : '游戏中';
+
+function gameStatus(id) {
+  const rooms = state.rooms.filter(r => r.game === id);
+  const mine = rooms.find(r => r.mySeat);
+  if (mine) return { live: true, mine: true, text: `${mine.name} · ${roomStatus(mine)}` };
+  const playing = rooms.filter(r => r.status !== 'waiting').length, waiting = rooms.length - playing;
+  if (!rooms.length) return { live: false, text: '空闲中' };
+  return { live: true, text: [playing && `${playing} 桌在玩`, waiting && `${waiting} 桌等人`].filter(Boolean).join(' · ') };
 }
 
-function renderTop(me) {
-  $('#me-initial').textContent = Maowo.initial(me.me.name);
-  const cur = $('#current');
-  if (me.where) {
-    cur.href = `/room/${me.where.roomId}`;
-    const gname = gamesList.find(g => g.id === me.where.game)?.name || '';
-    cur.innerHTML = `<div class="title serif">${esc(gname)}</div>
-      <div class="sub">${icon(GAME_ICON[me.where.game] || 'grid', 16)}${me.where.status === 'waiting' ? '等人中' : '正在游戏中'} · ${esc(me.where.roomName)} · ${esc(me.where.phase)}</div>`;
-  } else {
-    cur.href = '/';
-    cur.innerHTML = `<div class="title serif">猫窝</div><div class="sub">现在没有在玩的局</div>`;
-  }
-  $('#footer').innerHTML = `${me.me.isOwner ? '<a href="/vault">存档</a>' : ''}<a href="/me">MCP 连接</a>`;
-}
-
-function renderChips() {
-  const chips = gamesList.map(g => `<button class="chip ${filter === g.id ? 'on' : ''}" data-game="${g.id}">${esc(g.name)}</button>`);
-  chips.push('<button class="chip" disabled>UNO · 开发中</button>', '<button class="chip" disabled>其他 · 开发中</button>');
-  $('#chips').innerHTML = chips.join('');
-  $('#chips').querySelectorAll('[data-game]').forEach(b => b.onclick = () => {
-    filter = filter === b.dataset.game ? '' : b.dataset.game;
-    renderChips(); renderRooms(); renderArchives();
+function renderGames() {
+  const chev = `<span class="chev">${icon('chevronRight', 18, 2)}</span>`;
+  const cards = gamesList.map(g => {
+    const s = gameStatus(g.id);
+    return `<button class="game ${s.mine ? 'mine' : ''}" data-game="${g.id}">
+      <div class="pic"><img src="${ART[g.id] || '/img/art/toolbox.webp'}" alt=""></div>
+      <div class="name">${esc(g.name)}</div>
+      <div class="status"><span class="dot ${s.live ? 'live' : ''}"></span><span class="txt">${esc(s.text)}</span>${chev}</div>
+    </button>`;
   });
+  cards.splice(1, 0, `<div class="game todo"><div class="pic"><img src="/img/art/uno.webp" alt=""></div>
+    <div class="name">UNO</div><div class="status"><span class="dot"></span><span class="txt">还在做…</span></div></div>`);
+  cards.push(`<div class="game todo"><div class="pic"><img src="/img/art/toolbox.webp" alt=""></div>
+    <div class="name">待开发</div><div class="status"><span class="dot"></span><span class="txt">请期待…</span></div></div>`);
+  $('#games').innerHTML = cards.join('');
+  document.querySelectorAll('[data-game]').forEach(b => b.onclick = () => showGame(b.dataset.game));
 }
 
-function renderRooms() {
-  const rooms = state.rooms.filter(r => !filter || r.game === filter);
-  $('#rooms').innerHTML = rooms.length ? rooms.map(r => {
-    const status = r.status === 'waiting' ? `等人中 · ${r.filled} / ${r.total} · 房主 ${esc(r.host)}` : `进行中 · ${esc(r.phase)} · ${r.total} 人`;
-    return `<a class="room" href="/room/${r.id}">
-      <div style="flex-grow: 1; min-width: 0;">
-        <div class="name">${esc(r.name)}</div>
-        <div class="meta">${status}${r.mySeat ? ` · 你在 ${r.mySeat}号` : ''}</div>
-      </div>
-      ${gameBadge(r.game, r.gameName)}
-    </a>`;
-  }).join('') : `<div class="empty">现在没有房间。点「新建」开一局，或者让 AI 用 create_room 建一个</div>`;
+function archiveLabel(r) {
+  const size = r.total === 2 ? '双人' : `${r.total}人局`;
+  return `${Maowo.fmtDate(r.finishedAt)} ${Maowo.fmtClock(r.finishedAt)} · ${size}${esc(r.gameName)} · ${esc(r.result.title)}`;
 }
 
 function renderArchives() {
-  const list = state.archives.filter(r => !filter || r.game === filter).slice(0, 5);
+  const list = state.archives.slice(0, 3);
   $('#archives').innerHTML = list.length ? list.map(r => `
     <a class="arch" href="/archive/${r.id}">
-      <div style="flex-grow: 1; min-width: 0;">
-        <div class="name">${esc(r.name)}</div>
-        <div class="meta">${esc(r.gameName)} · ${esc(r.result.title)} · 时长 ${Maowo.fmtDuration(Date.parse(r.finishedAt) - Date.parse(r.startedAt))}</div>
-      </div>
-      <div class="when">${Maowo.fmtDate(r.finishedAt)}<br>${Maowo.fmtClock(r.finishedAt)}</div>
-    </a>`).join('') : `<div class="empty">还没有结束的局</div>`;
+      <div class="thumb">${ART[r.game] ? `<img src="${ART[r.game]}" alt="">` : ''}</div>
+      <div class="t">${archiveLabel(r)}</div>
+      <img class="deco sprig" src="/img/art/sprig.webp" alt="">
+    </a>`).join('') : '<div class="empty">还没有结束的局</div>';
 }
 
-function renderDiary(entries) {
-  $('#diary').innerHTML = entries.length ? entries.slice(0, 3).map(e => `
-    <a class="diary" href="/diary/${e.id}">
-      <div class="avatar">${esc(Maowo.initial(e.author.name))}</div>
-      <div style="min-width: 0; flex-grow: 1;">
-        <div class="t">${esc(e.title)}</div>
-        <div class="m">${esc(e.author.name)} · ${Maowo.fmtDate(e.createdAt)}${e.comments ? ` · ${e.comments} 条留言` : ''}
-          ${e.locked ? `<span class="lock">${icon('lock', 12, 2)}已上锁</span>` : ''}</div>
-        <div class="x">${esc(e.excerpt)}</div>
-      </div>
-    </a>`).join('') : `<div class="empty">还没有日记。连上 Claude 后，让它用 diary_write 写一篇</div>`;
+// ---------- one game: its tables and a form for a new one ----------
+function showGame(id, keepOpen) {
+  const g = gamesList.find(x => x.id === id);
+  if (!g) return;
+  const rooms = state.rooms.filter(r => r.game === id).sort((a, b) => (b.mySeat ? 1 : 0) - (a.mySeat ? 1 : 0));
+  const html = `<h2>${esc(g.name)}</h2>
+    <div class="small muted" style="line-height: 1.6;">${esc(g.summary || '')}</div>
+    <div class="rooms">${rooms.length ? rooms.map(r => `<a class="room ${r.mySeat ? 'mine' : ''}" href="/room/${r.id}">
+        <div style="flex-grow: 1; min-width: 0;"><div class="name">${esc(r.name)}</div>
+          <div class="meta">${r.status === 'waiting' ? `等人中 · ${r.filled} / ${r.total} · 房主 ${esc(r.host)}` : `游戏中 · ${esc(r.phase)} · ${r.total} 人`}${r.mySeat ? ` · 你在 ${r.mySeat}号` : ''}</div></div>
+        <span style="color: var(--accent); display: flex;">${icon('chevronRight', 18, 2)}</span></a>`).join('')
+      : '<div class="empty" style="padding: 16px 0;">现在没有桌子。开一桌，或者让 AI 用 create_room 建一个</div>'}</div>
+    <form class="newroom" id="new-form">
+      <div style="font-weight: 600; font-size: 15px;">开一桌</div>
+      ${id === 'werewolf' ? `<label class="field" for="new-players">人数</label><select id="new-players">${Object.entries(WEREWOLF_CONFIGS).map(([n, l]) =>
+        `<option value="${n}" ${n === '9' ? 'selected' : ''}>${n} 人 · ${l}</option>`).join('')}</select>` : ''}
+      <label class="field" for="new-name">桌名（可不填）</label><input id="new-name" maxlength="24">
+      <button class="btn primary block" type="submit" style="margin-top: 14px;">建好，进去</button>
+    </form>`;
+  if (openSheet && keepOpen) { openSheet.innerHTML = '<div class="grab"></div>' + html; }
+  else { if (openSheet) openSheet.close(); openSheet = Maowo.sheet(html); }
+  const panel = openSheet;
+  const close = panel.close;
+  panel.close = () => { close(); if (openSheet === panel) openSheet = null; };
+  panel.querySelector('#new-form').onsubmit = async e => {
+    e.preventDefault();
+    const players = panel.querySelector('#new-players');
+    try {
+      const room = await api('/rooms', { json: { game: id, name: panel.querySelector('#new-name').value, options: players ? { players: Number(players.value) } : {} } });
+      location.href = `/room/${room.id}`;
+    } catch (err) { Maowo.toast(err.message); }
+  };
+  panel.dataset.game = id;
 }
-
-// ---------- new room ----------
-let newGame = 'werewolf';
-function renderNewForm() {
-  $('#new-games').innerHTML = gamesList.map(g => `<button type="button" class="chip ${newGame === g.id ? 'on' : ''}" data-g="${g.id}">${esc(g.name)}</button>`).join('');
-  $('#new-games').querySelectorAll('[data-g]').forEach(b => b.onclick = () => { newGame = b.dataset.g; renderNewForm(); });
-  $('#players-wrap').classList.toggle('hidden', newGame !== 'werewolf');
-}
-$('#new-players').innerHTML = Object.entries(WEREWOLF_CONFIGS).map(([n, l]) => `<option value="${n}" ${n === '9' ? 'selected' : ''}>${n} 人 · ${l}</option>`).join('');
-$('#new-btn').onclick = () => { $('#new-form').classList.toggle('hidden'); renderNewForm(); };
-$('#new-cancel').onclick = () => $('#new-form').classList.add('hidden');
-$('#new-form').onsubmit = async e => {
-  e.preventDefault();
-  try {
-    const room = await api('/rooms', { json: { game: newGame, name: $('#new-name').value, options: { players: Number($('#new-players').value) } } });
-    location.href = `/room/${room.id}`;
-  } catch (err) { Maowo.toast(err.message); }
-};
 
 async function load() {
-  const [me, games, rooms, archives, diary] = await Promise.all([api('/me'), api('/games'), api('/rooms'), api('/archives?limit=20'), api('/diary')]);
+  const [games, rooms, archives] = await Promise.all([api('/games'), api('/rooms'), api('/archives?limit=3')]);
   gamesList = games;
   state = { rooms, archives };
-  renderTop(me); renderChips(); renderRooms(); renderDiary(diary); renderArchives();
+  renderGames(); renderArchives();
 }
 // ---------- splash ----------
 // Shown when the app is opened from the home screen (or with ?splash=1), once per launch.

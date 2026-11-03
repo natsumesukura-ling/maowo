@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F7EEE1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="猫窝">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
+<title>开发中 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  main { position: relative; overflow-x: clip; }
+  .top { position: relative; height: 104px; margin: 0 -16px; }
+  .top .shelf { left: 40px; top: 70px; width: calc(100% - 20px); height: 20px; object-fit: fill; }
+  .top .cloth { left: -8px; top: 58px; width: 110px; transform: scaleY(-1) rotate(-4deg); }
+  .top .vine { right: -20px; top: -6px; width: 86px; }
+  .top .lamp { right: 50px; top: -14px; width: 42px; }
+  .logo { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); text-align: center; }
+  .logo .ears { color: var(--accent-line); display: block; margin: 0 auto -10px; }
+  .logo .t { font-family: "Noto Serif SC", serif; font-size: 34px; font-weight: 700; letter-spacing: 4px; }
+  .grow { position: relative; display: flex; align-items: flex-end; gap: 8px; margin-top: 18px; min-height: 190px; }
+  .grow .txt { flex-grow: 1; padding-bottom: 54px; }
+  .grow h1 { font-family: "Noto Serif SC", serif; font-size: 38px; font-weight: 700; margin: 0; letter-spacing: 2px; }
+  .grow p { margin: 8px 0 0; color: var(--text2); font-size: 14.5px; letter-spacing: 1px; }
+  .grow img { width: 52%; max-width: 250px; flex-shrink: 0; }
+  .report {
+    width: 100%; display: flex; align-items: center; gap: 14px; padding: 18px 16px; border-radius: 22px; margin-top: 10px;
+    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; text-align: left; cursor: pointer;
+  }
+  .report .ic { width: 64px; height: 64px; border-radius: 50%; background: var(--accent-soft); color: var(--text2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .report .body { flex-grow: 1; border-left: 1.5px solid var(--line); padding-left: 14px; }
+  .report .t { font-family: "Noto Serif SC", serif; font-size: 22px; font-weight: 700; }
+  .report .d { font-size: 13.5px; color: var(--text2); margin-top: 6px; line-height: 1.6; }
+  .report .chev { color: var(--accent); display: flex; }
+  .bugs { display: flex; flex-direction: column; gap: 10px; }
+  .bug { padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); }
+  .bug.done { opacity: .72; }
+  .bug .h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+  .bug .h .avatar { width: 26px; height: 26px; font-size: 12px; }
+  .bug .x { margin-top: 8px; font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .bug .note { margin-top: 8px; font-size: 13px; color: var(--ok-text); }
+  .paws { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 28px 0 0 60px; color: var(--accent-line); opacity: .7; }
+  .paws span:nth-child(2) { margin-left: 46px; } .paws span:nth-child(3) { margin-left: 100px; opacity: .6; }
+  .floor { position: relative; height: 112px; margin: 18px -16px 0; }
+  .floor .blanket { left: 0; bottom: 0; width: 56%; max-width: 280px; }
+  .floor .books { right: 6px; bottom: 4px; width: 34%; max-width: 170px; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top" aria-hidden="true">
+    <img class="deco shelf" src="/img/art/shelf.webp" alt="">
+    <img class="deco cloth" src="/img/art/blanket.webp" alt="">
+    <img class="deco vine" src="/img/art/vine.webp" alt="">
+    <img class="deco lamp" src="/img/art/lamp.webp" alt="">
+    <div class="logo"><svg class="ears" width="92" height="22" viewBox="0 0 92 22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L10 4 L22 13 Q46 6 70 13 L82 4 L88 20"/></svg><div class="t">猫窝</div></div>
+  </div>
+
+  <div class="grow">
+    <div class="txt"><h1>还在长大</h1><p>猫窝会一点点变得更好</p></div>
+    <img class="art" src="/img/art/cat-apron.webp" alt="">
+  </div>
+
+  <button class="report" id="report">
+    <div class="ic" id="bug-icon"></div>
+    <div class="body"><div class="t">提交 Bug</div><div class="d">发现哪里不对劲？告诉小猫，<br>我们一起把猫窝修好。</div></div>
+    <span class="chev" id="chev"></span>
+  </button>
+
+  <div id="list" style="margin-top: 26px;"></div>
+
+  <div class="paws" aria-hidden="true"><span id="p1"></span><span id="p2"></span><span id="p3"></span></div>
+  <div class="floor" aria-hidden="true">
+    <img class="deco blanket" src="/img/art/blanket.webp" alt="">
+    <img class="deco books" src="/img/art/books.webp" alt="">
+  </div>
+</main>
+<script src="/common.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+Maowo.tabbar('dev');
+$('#bug-icon').innerHTML = icon('bug', 36, 1.5);
+$('#chev').innerHTML = icon('chevronRight', 22, 2);
+['#p1', '#p2', '#p3'].forEach((p, i) => { $(p).innerHTML = icon('paw', 22 - i * 3, 1.6); });
+let me = null;
+
+$('#report').onclick = () => {
+  const panel = Maowo.sheet(`<h2>提交 Bug</h2>
+    <div class="small muted" style="line-height: 1.6;">哪里不对劲、哪里不好用、想要什么新东西，都可以写。会存在猫窝里，下一个来帮忙的 AI 能直接看到。</div>
+    <form id="bug-form"><textarea id="bug-text" rows="6" maxlength="2000" placeholder="比如：日记页的按钮点了没反应…" style="margin-top: 14px; resize: vertical;"></textarea>
+      <button class="btn primary block" type="submit" style="margin-top: 12px;">交给小猫</button></form>`);
+  const ta = panel.querySelector('#bug-text');
+  setTimeout(() => ta.focus(), 50);
+  panel.querySelector('#bug-form').onsubmit = async e => {
+    e.preventDefault();
+    try { await api('/bugs', { json: { text: ta.value } }); panel.close(); Maowo.toast('收到啦，谢谢'); load(); }
+    catch (err) { Maowo.toast(err.message); }
+  };
+};
+
+function render(bugs) {
+  const open = bugs.filter(b => b.status === 'open'), done = bugs.filter(b => b.status === 'done');
+  const canEdit = me.isOwner;
+  const card = b => `<div class="bug ${b.status}">
+      <div class="h">${Maowo.avatar(b.author)}<span>${esc(b.author.name)} · ${Maowo.fmtDate(b.createdAt)}</span>
+        ${b.status === 'done' ? `<span class="pill ok" style="margin-left: auto;">${icon('check', 12, 2.4)}修好了</span>` : ''}</div>
+      <div class="x">${esc(b.text)}</div>
+      ${b.note ? `<div class="note">${esc(b.note)}</div>` : ''}
+      ${canEdit ? `<div class="row" style="margin-top: 10px;">
+        <button class="btn sm" data-toggle="${b.id}">${b.status === 'open' ? '标成修好了' : '还没好，重新打开'}</button>
+        <button class="btn sm danger" data-del="${b.id}">删除</button></div>` : ''}
+    </div>`;
+  $('#list').innerHTML = bugs.length ? `
+    <div class="ribbon"><span class="tag" style="font-size: 17px;">待修 · ${open.length}</span><span class="rule"></span></div>
+    <div class="bugs">${open.map(card).join('') || '<div class="empty" style="padding: 10px 0;">现在没有待修的</div>'}</div>
+    ${done.length ? `<div class="ribbon" style="margin-top: 22px;"><span class="tag" style="font-size: 17px;">修好了 · ${done.length}</span><span class="rule"></span></div>
+    <div class="bugs">${done.map(card).join('')}</div>` : ''}` : '';
+  document.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {
+    const bug = bugs.find(x => x.id === b.dataset.toggle);
+    try { await api(`/bugs/${bug.id}`, { method: 'PUT', json: { status: bug.status === 'open' ? 'done' : 'open' } }); load(); }
+    catch (err) { Maowo.toast(err.message); }
+  });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('删除这条？')) return;
+    try { await api(`/bugs/${b.dataset.del}`, { method: 'DELETE' }); load(); } catch (err) { Maowo.toast(err.message); }
+  });
+}
+
+async function load() {
+  const [m, bugs] = await Promise.all([me ? null : api('/me'), api('/bugs')]);
+  if (m) me = m.me;
+  render(bugs);
+}
+load().catch(err => Maowo.toast(err.message));
+</script>
+</body>
+</html>

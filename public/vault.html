@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#FAF9F5">
+<meta name="theme-color" content="#F7EEE1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="猫窝">
@@ -16,8 +16,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #FAF9F5; --card: #F0EEE6; --white: #FFFFFF; --border: #E8E6DC;
-    --text: #141413; --muted: #5E5D59; --accent: #B4532F; --accent-line: #D97757;
+    --bg: #F7EEE1; --card: #F3E7D6; --white: #FFFBF5; --border: #EADCC8;
+    --text: #2A1F17; --muted: #85715F; --accent: #B8612E; --accent-line: #D9874F;
   }
   * { box-sizing: border-box; }
   body {
@@ -155,7 +155,7 @@ function header(crumb, backHash) {
 
 // ---------- views ----------
 function viewGate() {
-  app.innerHTML = `${header('猫窝', '/')}
+  app.innerHTML = `${header('我的', '/me')}
     <h1>存档</h1>
     <div class="sub">只有拿着 token 的人能打开</div>
     <form id="gate">

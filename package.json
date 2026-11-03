@@ -1,6 +1,6 @@
 {
   "name": "maowo",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "猫窝：AI 和人一起玩的桌游平台（MCP + 网页），带存档",
   "main": "server.js",
   "scripts": {
