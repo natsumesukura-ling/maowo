@@ -43,10 +43,17 @@ db.exec(`
   );
 `);
 
+// Many webhook triggers want a password with the call (a 401 otherwise): one header, e.g.
+// 「Authorization: Bearer …」 or 「X-Webhook-Secret: …」, sent with every call.
+for (const col of ['header_name TEXT', 'header_value TEXT']) {
+  try { db.exec(`ALTER TABLE wake_hooks ADD COLUMN ${col}`); } catch { /* already there */ }
+}
+
 const stmts = {
   hook: db.prepare('SELECT * FROM wake_hooks WHERE account_id = ?'),
-  setHook: db.prepare(`INSERT INTO wake_hooks (account_id, url, created_at) VALUES (?, ?, ?)
-    ON CONFLICT(account_id) DO UPDATE SET url = excluded.url, created_at = excluded.created_at, last_at = NULL, last_ok = NULL, last_error = NULL`),
+  setHook: db.prepare(`INSERT INTO wake_hooks (account_id, url, created_at, header_name, header_value) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(account_id) DO UPDATE SET url = excluded.url, created_at = excluded.created_at, header_name = excluded.header_name,
+      header_value = excluded.header_value, last_at = NULL, last_ok = NULL, last_error = NULL`),
   removeHook: db.prepare('DELETE FROM wake_hooks WHERE account_id = ?'),
   hookResult: db.prepare('UPDATE wake_hooks SET last_at = ?, last_ok = ?, last_error = ? WHERE account_id = ?'),
   byKey: db.prepare('SELECT * FROM wake_keys WHERE key = ?'),
@@ -139,9 +146,14 @@ async function callHook(accountId, { reason, message, key }, { retry = true } = 
     const url = await checkHookUrl(row.url);
     const res = await fetch(url, {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-      headers: { 'Content-Type': 'application/json', 'User-Agent': 'maowo-wake/1' }, body,
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'maowo-wake/1', ...(row.header_name ? { [row.header_name]: row.header_value || '' } : {}) }, body,
     });
-    result = res.ok ? { ok: true } : { ok: false, error: `对方回了 ${res.status}` };
+    result = res.ok ? { ok: true } : {
+      ok: false,
+      error: res.status === 401 || res.status === 403
+        ? `对方回了 ${res.status}：要通行证（密码）才让进，或者通行证不对`
+        : `对方回了 ${res.status}`,
+    };
   } catch (err) {
     result = { ok: false, error: err.name === 'TimeoutError' ? '等了 15 秒没有回应' : err.message };
   }
@@ -236,7 +248,10 @@ function info(ai) {
     enabled: !!row, online: (streams.get(ai.id)?.size || 0) > 0,
     lastSeenAt: row?.last_seen_at || null, lastWakeAt: row?.last_wake_at || null,
     // The address is a secret of the AI's side: only its start is shown back.
-    hook: hook ? { shown: shortUrl(hook.url), lastAt: hook.last_at, lastOk: hook.last_ok === null ? null : !!hook.last_ok, lastError: hook.last_error } : null,
+    hook: hook ? {
+      shown: shortUrl(hook.url), lastAt: hook.last_at, lastOk: hook.last_ok === null ? null : !!hook.last_ok, lastError: hook.last_error,
+      header: hook.header_name ? hook.header_name : null,
+    } : null,
   };
 }
 function shortUrl(url) {
@@ -259,12 +274,24 @@ manage.post('/:id', wrap(req => {
 }));
 manage.delete('/:id', wrap(req => { const ai = target(req); stmts.remove.run(ai.id); hangUp(ai.id); return info(ai); }));
 
+// The password header: a plain header name and a one-line value. Empty value = no header.
+function cleanHeader(rawName, rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) return { name: null, value: null };
+  const name = String(rawName || '').trim() || 'Authorization';
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(name)) throw new Error('通行证的名字只能是英文字母、数字和横线，比如 Authorization');
+  if (/[\r\n]/.test(value) || value.length > 2000) throw new Error('通行证要写在一行里，不能太长');
+  if (/^(host|content-type|content-length|user-agent|cookie)$/i.test(name)) throw new Error(`「${name}」不能当通行证用`);
+  return { name, value };
+}
+
 const awrap = fn => async (req, res) => { try { res.json(await fn(req)); } catch (err) { res.status(400).json({ error: err.message }); } };
 // Saving a 唤醒网址 also wakes the AI right away if it is already its turn somewhere.
 manage.put('/:id/hook', awrap(async req => {
   const ai = target(req);
   const url = await checkHookUrl(req.body.url);
-  stmts.setHook.run(ai.id, url, new Date().toISOString());
+  const { name, value } = cleanHeader(req.body.headerName, req.body.headerValue);
+  stmts.setHook.run(ai.id, url, new Date().toISOString(), name, value);
   for (const { room, seat } of platform.turnsFor(ai.id)) {
     const k = `${ai.id}:${room.id}`;
     if (!openTurns.has(k)) openTurns.set(k, `turn:${room.id}:${Date.now().toString(36)}${(++turnCounter).toString(36)}`);

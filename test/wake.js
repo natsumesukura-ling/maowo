@@ -158,10 +158,11 @@ const ok = name => console.log('ok', name);
   // 唤醒网址: 猫窝 calls the AI's webhook itself, no program needed on the other side.
   const http = require('http');
   const got = [];
-  let failNext = false;
+  let failNext = false, needAuth = null;
   const hookServer = http.createServer((req, res) => {
     let b = ''; req.on('data', d => { b += d; }).on('end', () => {
       if (failNext) { failNext = false; res.statusCode = 500; return res.end(); }
+      if (needAuth && req.headers[needAuth.name.toLowerCase()] !== needAuth.value) { res.statusCode = 401; return res.end(); }
       got.push(JSON.parse(b)); res.end('ok');
     });
   });
@@ -204,6 +205,18 @@ const ok = name => console.log('ok', name);
   assert.strictEqual(w.test.ok, false);
   assert.strictEqual(w.hook.lastOk, false);
   assert.match(w.hook.lastError, /500/);
+  // A webhook that wants a password: 401 without it (explained), fine with the header.
+  needAuth = { name: 'X-Webhook-Secret', value: 's3cret' };
+  w = await api(OWNER, `/wake/${kId}/hook/test`, { json: {} });
+  assert.strictEqual(w.test.ok, false);
+  assert.match(w.test.error, /401：要通行证/);
+  await assert.rejects(api(OWNER, `/wake/${kId}/hook`, { method: 'PUT', json: { url: hookUrl, headerName: 'Bad Name', headerValue: 'x' } }), /英文字母/);
+  w = await api(OWNER, `/wake/${kId}/hook`, { method: 'PUT', json: { url: hookUrl, headerName: 'X-Webhook-Secret', headerValue: 's3cret' } });
+  assert.strictEqual(w.hook.header, 'X-Webhook-Secret');
+  assert(!JSON.stringify(w).includes('s3cret'), 'the password is never sent back');
+  w = await api(OWNER, `/wake/${kId}/hook/test`, { json: {} });
+  assert.strictEqual(w.test.ok, true, w.test.error);
+  needAuth = null;
   await api(OWNER, `/wake/${kId}/hook`, { method: 'DELETE' });
   assert.strictEqual((await api(OWNER, `/wake/${kId}`)).hook, null);
   hookServer.close();

@@ -60,6 +60,7 @@
   .ai.add { color: var(--accent); border-style: dashed; box-shadow: none; }
   .ai.add .avatar { color: var(--accent); }
   .wake { margin-top: 22px; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); }
+  .wake textarea.hk { resize: none; height: 44px; font-size: 13px; white-space: nowrap; overflow: hidden; }
   .wake .wk-sec { margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; }
   .wake h3 { margin: 0 0 4px; font-family: "Noto Serif SC", serif; font-size: 17px; display: flex; align-items: center; gap: 8px; }
   .ai { align-items: center; gap: 8px; padding: 8px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; cursor: pointer; min-width: 0; }
@@ -288,10 +289,14 @@ async function drawWake(panel, a, freshKey) {
     <div class="small muted" style="line-height: 1.6;">轮到 ${esc(a.name)} 玩游戏、或者有人评论它时，猫窝去叫醒它。手机 App 里的 AI 叫不醒。</div>
     <div class="wk-sec"><b>唤醒网址</b>${h ? `<span class="pill ${h.lastOk === false ? '' : 'ok'}">${h.lastOk === false ? '没叫成' : '已设置'}</span>` : ''}</div>
     <div class="small muted" style="line-height: 1.6;">AI 那边能用「网址（webhook）」叫醒的（比如云电脑上的机器人），让它建一个 webhook 任务，把网址粘贴在这里。</div>
-    ${h ? `<div class="small" style="margin-top: 6px; color: var(--text2); word-break: break-all;">${esc(h.shown)}<br><span class="muted">${hookState}</span></div>
+    ${h ? `<div class="small" style="margin-top: 6px; color: var(--text2); word-break: break-all;">${esc(h.shown)}${h.header ? `<br>通行证：${esc(h.header)}（已设置）` : '<br><span class="muted">没有通行证</span>'}<br><span class="muted">${hookState}</span></div>
       <div class="row" style="margin-top: 8px;"><button class="btn sm soft" id="hook-test">发一条测试</button><button class="btn sm" id="hook-change">换网址</button><button class="btn sm danger" id="hook-del">删除</button></div>` : ''}
     <div id="hook-form" class="${h ? 'hidden' : ''}" style="margin-top: 8px;">
-      <textarea id="hook-url" rows="1" class="single" placeholder="https://…" autocomplete="off" autocorrect="off" spellcheck="false" style="resize: none; height: 44px; font-size: 13px; white-space: nowrap; overflow: hidden;"></textarea>
+      <div class="small muted" style="margin: 2px 0 4px;">网址</div>
+      <textarea id="hook-url" rows="1" class="single hk" placeholder="https://…" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+      <div class="small muted" style="margin: 10px 0 4px; line-height: 1.6;">通行证（对方要求才填，不要就空着）。问 AI：「叫你的网址要带什么请求头（header）？名字和内容是什么？」</div>
+      <textarea id="hook-hname" rows="1" class="single hk" placeholder="名字，一般是 Authorization" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+      <textarea id="hook-hvalue" rows="1" class="single hk" placeholder="内容，比如 Bearer 一串字" autocomplete="off" autocorrect="off" spellcheck="false" style="margin-top: 6px;"></textarea>
       <button class="btn sm primary" id="hook-save" style="margin-top: 8px;">保存</button>
     </div>
     <div class="wk-sec" style="margin-top: 16px;"><b>小程序</b>${w.enabled ? `<span class="pill ${w.online ? 'ok' : ''}">${w.online ? '在线' : '没连着'}</span>` : ''}</div>
@@ -302,12 +307,13 @@ async function drawWake(panel, a, freshKey) {
       <div class="row" style="margin-top: 10px;"><button class="btn sm" id="wake-new">换新钥匙</button><button class="btn sm danger" id="wake-off">关闭</button></div>`}`;
   const on = (sel, fn) => { const el = box.querySelector(sel); if (el) el.onclick = fn; };
   const url = box.querySelector('#hook-url');
-  if (url) url.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  box.querySelectorAll('.hk').forEach(t => t.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); }));
   on('#hook-change', () => { box.querySelector('#hook-form').classList.remove('hidden'); url.focus(); });
   on('#hook-save', async () => {
     const v = url.value.trim();
     if (!v) { Maowo.toast('先粘贴网址'); return; }
-    try { await api(`/wake/${a.id}/hook`, { method: 'PUT', json: { url: v } }); Maowo.toast('保存好了，点「发一条测试」试试'); drawWake(panel, a); }
+    const headerName = box.querySelector('#hook-hname').value.trim(), headerValue = box.querySelector('#hook-hvalue').value.trim();
+    try { await api(`/wake/${a.id}/hook`, { method: 'PUT', json: { url: v, headerName, headerValue } }); Maowo.toast('保存好了，点「发一条测试」试试'); drawWake(panel, a); }
     catch (err) { Maowo.toast(err.message); }
   });
   on('#hook-test', async () => {
