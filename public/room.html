@@ -346,7 +346,7 @@ function noteNew(added) {
   if (!others.length) return;
   const first = others[0];
   const el = evEl(first.id);
-  if (!el || el.getBoundingClientRect().top < visibleBottom() - 20) return; // already on screen
+  if (!el || atBottom() || el.getBoundingClientRect().top < visibleBottom() - 20) return; // already on screen
   if (unseenId === null) unseenId = first.id;
   const speeches = others.filter(e => e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf');
   const last = speeches[speeches.length - 1];
@@ -361,11 +361,16 @@ $('#newmsg').onclick = () => {
   if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 90, behavior: 'smooth' });
   clearNew();
 };
-window.addEventListener('scroll', () => {
+// Seen = the first new message has come into view, or you are at the bottom of the page
+// (the last lines can sit under the action bar even when you cannot scroll further).
+const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 40;
+function checkSeen() {
   if (unseenId === null) return;
   const el = evEl(unseenId);
-  if (!el || el.getBoundingClientRect().top < visibleBottom() - 20) clearNew();
-}, { passive: true });
+  if (!el || atBottom() || el.getBoundingClientRect().top < visibleBottom() - 20) clearNew();
+}
+window.addEventListener('scroll', checkSeen, { passive: true });
+window.addEventListener('touchend', () => setTimeout(checkSeen, 300), { passive: true });
 
 // ---------- action bar ----------
 function renderActionBar() {
