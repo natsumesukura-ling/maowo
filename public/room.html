@@ -105,6 +105,7 @@
       <div class="title serif" id="title">房间</div>
       <div class="config" id="config"></div>
     </div>
+    <button class="pill" id="rules" aria-label="游戏规则" style="border: none; font: inherit; font-size: 12px; cursor: pointer;"></button>
     <div class="pill" id="phase"></div>
   </header>
   <div id="notice"></div>
@@ -133,6 +134,8 @@ $('#back-icon').innerHTML = icon('back', 22);
 
 const seatName = n => view.seats[n - 1]?.account?.name || '';
 Maowo.backTo(document.getElementById('room-back'), '/');
+document.getElementById('rules').innerHTML = icon('rules', 13, 2) + '规则';
+document.getElementById('rules').onclick = () => view && Maowo.showRules(view.game);
 const tag = n => `${n}号 ${seatName(n)}`;
 const targetActions = () => view.actions.filter(a => a.target === 'seat');
 // Which target action the seats are for. Must be settled before the seats are drawn,

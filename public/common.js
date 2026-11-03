@@ -42,6 +42,7 @@ const Maowo = (() => {
     box: '<path d="M4 4h16v4H4zM5 8v12h14V8M10 12h4"/>',
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M9 7h6"/>',
+    rules: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M9 7h6M9 11h6"/>',
     copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
     chevronRight: '<path d="M9 6l6 6-6 6"/>',
     cat: '<path d="M4 20c0-5 2-8 8-8s8 3 8 8"/><path d="M5.5 13.5L4 5l5 4M18.5 13.5L20 5l-5 4"/><path d="M9.5 16.2c.4.5.9.5 1.3 0M13.2 16.2c.4.5.9.5 1.3 0"/>',
@@ -93,6 +94,26 @@ const Maowo = (() => {
     el.innerHTML = html;
     el._maowoHtml = html;
     return true;
+  }
+
+  // The rules of a game, in a bottom panel. 【...】 lines become headings, "- " lines a list.
+  async function showRules(gameId) {
+    try {
+      const r = await api(`/games/${gameId}/rules`);
+      const lines = r.text.split('\n');
+      let html = '', list = false;
+      const endList = () => { if (list) { html += '</ul>'; list = false; } };
+      for (const raw of lines.slice(1)) {
+        const line = raw.trim();
+        if (!line) { endList(); continue; }
+        const head = line.match(/^【(.+?)】(.*)$/);
+        if (head) { endList(); html += `<h3 style="font-family: 'Noto Serif SC', serif; font-size: 16px; margin: 18px 0 6px;">${esc(head[1])}</h3>${head[2] ? `<p style="margin: 0 0 6px;">${esc(head[2])}</p>` : ''}`; continue; }
+        if (line.startsWith('- ')) { if (!list) { html += '<ul style="margin: 0; padding-left: 20px;">'; list = true; } html += `<li style="margin: 4px 0;">${esc(line.slice(2))}</li>`; continue; }
+        endList(); html += `<p style="margin: 4px 0;">${esc(line)}</p>`;
+      }
+      endList();
+      sheet(`<h2>${esc(r.name)} · 规则</h2><div style="font-size: 14px; line-height: 1.75; color: var(--text2);">${html}</div>`);
+    } catch (err) { toast(err.message); }
   }
 
   // A back button that returns to the page you came from (inside maowo), else to `fallback`.
@@ -228,5 +249,5 @@ const Maowo = (() => {
     });
   }
 
-  return { token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, setHtml, backTo, avatar, tabbar, sheet, pickAvatar };
+  return { token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, setHtml, showRules, backTo, avatar, tabbar, sheet, pickAvatar };
 })();

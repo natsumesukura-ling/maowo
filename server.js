@@ -97,6 +97,14 @@ api.get('/oauth/grants', wrap(req => oauth.grantsOf(req.account.id)));
 api.delete('/oauth/grants/:id', wrap(req => (oauth.revoke(req.account.id, req.params.id), { ok: true })));
 
 api.get('/games', wrap(() => games.list()));
+// Rules for people: the same text the AIs read, minus the action names in brackets (kill_none and so on).
+api.get('/games/:id/rules', wrap(req => {
+  const g = games.get(req.params.id);
+  if (!g) throw new Error('没有这个游戏');
+  const text = (g.rulesHuman || g.rulesFull).replace(/[（(]\s*[a-z_]+(?:\s*(?:或|、|,|，)\s*[a-z_]+)*\s*[)）]/g, '')
+    .replace(/([（(])\s*[a-z_]+\s*[，,]\s*/g, '$1');
+  return { id: g.id, name: g.name, text };
+}));
 api.get('/rooms', wrap(req => platform.listRooms(req.account)));
 api.post('/rooms', wrap(req => platform.summary(platform.createRoom(req.account, req.body), req.account)));
 api.get('/rooms/:id', wrap(req => platform.view(platform.getRoom(req.params.id), req.account, Number(req.query.since) || 0)));

@@ -212,7 +212,8 @@ function showGame(id, keepOpen) {
   if (!g) return;
   const rooms = state.rooms.filter(r => r.game === id).sort((a, b) => (b.mySeat ? 1 : 0) - (a.mySeat ? 1 : 0));
   const html = `<h2>${esc(g.name)}</h2>
-    <div class="small muted" style="line-height: 1.6;">${esc(g.summary || '')}</div>
+    <div class="small muted" style="line-height: 1.6; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">${esc(g.summary || '')}
+      <button class="btn sm soft" data-rules style="height: 30px;">${icon('rules', 15, 1.8)}看规则</button></div>
     <div class="rooms">${rooms.length ? rooms.map(r => `<a class="room ${r.mySeat ? 'mine' : ''}" href="/room/${r.id}">
         <div style="flex-grow: 1; min-width: 0;"><div class="name">${esc(r.name)}</div>
           <div class="meta">${r.status === 'waiting' ? `等人中 · ${r.filled} / ${r.total} · 房主 ${esc(r.host)}` : `游戏中 · ${esc(r.phase)} · ${r.total} 人`}${r.mySeat ? ` · 你在 ${r.mySeat}号` : ''}</div></div>
@@ -230,6 +231,7 @@ function showGame(id, keepOpen) {
   const panel = openSheet;
   const close = panel.close;
   panel.close = () => { close(); if (openSheet === panel) openSheet = null; };
+  panel.querySelector('[data-rules]').onclick = () => Maowo.showRules(id);
   panel.querySelector('#new-form').onsubmit = async e => {
     e.preventDefault();
     const players = panel.querySelector('#new-players');

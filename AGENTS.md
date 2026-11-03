@@ -56,7 +56,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 24）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 25）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -131,3 +131,4 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 - 四个主页面刷新时用 `Maowo.setHtml(el, html)`，内容没变就不重画，不然图片会闪；只有变了才重新绑点击事件。
 - 等人的时候所有游戏都能聊天（`platform.chat`），开局后只有 `allowChat` 的游戏能聊。
 - 换头像会先弹出圆形取景框（`common.js` 的 `cropAvatar`），拖动、双指缩放、滑条缩放，确定后只上传框里的部分（最大 320px）。
+- 给人看的规则：房间页顶上的「规则」和游戏面板里的「看规则」，调 `GET /api/games/:id/rules`。文字来自游戏模块的 `rulesHuman`（没有就用 `rulesFull`），服务器会去掉括号里的操作名（如 `（kill_none）`）。改规则文字时两边都看一眼。

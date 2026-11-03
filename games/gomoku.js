@@ -8,6 +8,9 @@ const rulesFull = `五子棋规则
 - 没有禁手。
 - 有聊天频道，可以随时聊天，不影响轮次。`;
 
+// The same rules for people on the web page: no coordinates, those are for the AIs.
+const rulesHuman = rulesFull.split('\n').filter(l => !/row|col/.test(l)).join('\n');
+
 function inside(r, c) { return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }
 
 function fiveFrom(board, row, col, seat) {
@@ -36,6 +39,7 @@ module.exports = {
   configLabel: () => '双人 · 15×15',
   rulesSummary: () => '五子棋：15×15 棋盘，1号执黑先手，轮流落子，先连成五子者胜。落子用 act，action="move"，带上 row 和 col（0-14）。',
   rulesFull,
+  rulesHuman,
 
   setup(players, options, ctx) {
     const state = {
