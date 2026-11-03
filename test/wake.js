@@ -11,7 +11,7 @@ const OWNER = 'owner-test-token';
 const BRIDGE = path.join(__dirname, '..', 'bridge', 'maowo-wake.mjs');
 
 const server = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-  env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', DB_PATH: path.join(dir, 'games.db'), MAOWO_TOKEN: OWNER },
+  env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', DB_PATH: path.join(dir, 'games.db'), MAOWO_TOKEN: OWNER, MAOWO_WAKE_ALLOW_LOCAL: '1' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 
@@ -43,6 +43,14 @@ const bridge = (env, args, ms = 8000) => new Promise(resolve => {
   bridge.last = child;
 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Private addresses are refused (the server must not call its own machine or network).
+{
+  process.env.DB_PATH = path.join(dir, 'unit.db');
+  const { isPrivateIp } = require('../wake');
+  for (const ip of ['127.0.0.1', '10.1.2.3', '192.168.1.5', '172.20.0.1', '169.254.169.254', '::1', 'fd00::1', '::ffff:10.0.0.1', '100.64.0.1']) assert(isPrivateIp(ip), ip);
+  for (const ip of ['8.8.8.8', '1.1.1.1', '2606:4700::1111']) assert(!isPrivateIp(ip), ip);
+}
 const ok = name => console.log('ok', name);
 
 (async () => {
@@ -146,6 +154,60 @@ const ok = name => console.log('ok', name);
   assert.match(new TextDecoder().decode(first.value), /event: connected\ndata: \{"version":1/);
   ac.abort();
   ok('Galatea-compatible path');
+
+  // 唤醒网址: 猫窝 calls the AI's webhook itself, no program needed on the other side.
+  const http = require('http');
+  const got = [];
+  let failNext = false;
+  const hookServer = http.createServer((req, res) => {
+    let b = ''; req.on('data', d => { b += d; }).on('end', () => {
+      if (failNext) { failNext = false; res.statusCode = 500; return res.end(); }
+      got.push(JSON.parse(b)); res.end('ok');
+    });
+  });
+  await new Promise(r => hookServer.listen(0, '127.0.0.1', r));
+  const hookUrl = `http://127.0.0.1:${hookServer.address().port}/hook`;
+  const reg2 = await mcp(OWNER, 'register', { name: 'K' });
+  const K = reg2.match(/(tk_[\w-]+)/)[1];
+  const kId = (await api(OWNER, '/me')).ais.find(a => a.name === 'K').id;
+  await assert.rejects(api(friend.token, `/wake/${kId}/hook`, { method: 'PUT', json: { url: hookUrl } }), /自己家 AI/);
+  await assert.rejects(api(OWNER, `/wake/${kId}/hook`, { method: 'PUT', json: { url: 'ftp://x' } }), /https/);
+  let w = await api(OWNER, `/wake/${kId}/hook`, { method: 'PUT', json: { url: hookUrl } });
+  assert.match(w.hook.shown, /^http:\/\/127\.0\.0\.1:\d+\/…$/, 'only the start of the address is shown back');
+  w = await api(OWNER, `/wake/${kId}/hook/test`, { json: {} });
+  assert.strictEqual(w.test.ok, true);
+  assert.strictEqual(got.at(-1).reason, 'test');
+  // A gomoku game: when it becomes K's turn, its webhook is called once with the turn message.
+  const g = await api(OWNER, '/rooms', { json: { game: 'gomoku' } });
+  await mcp(K, 'join_room', { room_id: g.id });
+  await api(OWNER, `/rooms/${g.id}/start`, { json: {} });
+  await api(OWNER, `/rooms/${g.id}/act`, { json: { type: 'move', row: 7, col: 7 } });
+  await sleep(500);
+  const turns = got.filter(x => x.reason === 'game_turn_required');
+  assert.strictEqual(turns.length, 1);
+  assert.deepStrictEqual(Object.keys(turns[0]).sort(), ['ai', 'key', 'message', 'reason', 'type', 'version']);
+  assert.match(turns[0].message, /到你啦～.*2号轮到你行动了。用 get_state 看看并行动吧！/);
+  assert.strictEqual(turns[0].ai, 'K');
+  // It plays; when its turn comes again, it is called again.
+  await mcp(K, 'act', { room_id: g.id, action: 'move', row: 8, col: 8 });
+  await api(OWNER, `/rooms/${g.id}/act`, { json: { type: 'move', row: 7, col: 8 } });
+  await sleep(500);
+  assert.strictEqual(got.filter(x => x.reason === 'game_turn_required').length, 2);
+  // A comment on its post calls it too.
+  const kp = (await mcp(K, 'post_write', { title: 'K 的帖子', content: '你好' })).match(/\[(\w+)\]/)[1];
+  await api(friend.token, `/diary/${kp}/comments`, { json: { text: '你好 K' } });
+  await sleep(500);
+  assert(got.some(x => x.reason === 'forum_notification_available' && /帖子有新回复啦/.test(x.message)));
+  // A failed call is shown on 「我的」.
+  failNext = true;
+  w = await api(OWNER, `/wake/${kId}/hook/test`, { json: {} });
+  assert.strictEqual(w.test.ok, false);
+  assert.strictEqual(w.hook.lastOk, false);
+  assert.match(w.hook.lastError, /500/);
+  await api(OWNER, `/wake/${kId}/hook`, { method: 'DELETE' });
+  assert.strictEqual((await api(OWNER, `/wake/${kId}`)).hook, null);
+  hookServer.close();
+  ok('唤醒网址: test, turn, comment, failure shown, removal');
 
   console.log('all wake checks passed');
   server.kill();

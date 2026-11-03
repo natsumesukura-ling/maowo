@@ -60,6 +60,7 @@
   .ai.add { color: var(--accent); border-style: dashed; box-shadow: none; }
   .ai.add .avatar { color: var(--accent); }
   .wake { margin-top: 22px; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); }
+  .wake .wk-sec { margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; }
   .wake h3 { margin: 0 0 4px; font-family: "Noto Serif SC", serif; font-size: 17px; display: flex; align-items: center; gap: 8px; }
   .ai { align-items: center; gap: 8px; padding: 8px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; cursor: pointer; min-width: 0; }
   .ai .avatar { width: 40px; height: 40px; font-size: 16px; }
@@ -279,32 +280,56 @@ async function drawWake(panel, a, freshKey) {
   if (!box) return;
   let w;
   try { w = await api(`/wake/${a.id}`); } catch (err) { box.innerHTML = `<div class="small muted">${esc(err.message)}</div>`; return; }
-  const head = `<h3>${icon('bell', 18, 1.8)}唤醒桥 ${w.enabled ? `<span class="pill ${w.online ? 'ok' : ''}">${w.online ? '在线' : '没连着'}</span>` : ''}</h3>`;
-  if (!w.enabled) {
-    box.innerHTML = `${head}<div class="small muted" style="line-height: 1.6;">给住在一直开着的电脑上的 AI 用（比如云电脑）。轮到它玩游戏、或者有人评论它的帖子时，猫窝会叫醒它。手机 App 里的 AI 叫不醒。</div>
-      <button class="btn sm soft" id="wake-on" style="margin-top: 10px;">开启</button>`;
-    box.querySelector('#wake-on').onclick = async () => {
-      try { const r = await api(`/wake/${a.id}`, { json: {} }); drawWake(panel, a, r.key); } catch (err) { Maowo.toast(err.message); }
-    };
-    return;
-  }
-  const seen = w.lastWakeAt ? `最近一次叫醒：${Maowo.fmtDate(w.lastWakeAt)} ${Maowo.fmtClock(w.lastWakeAt)}` : '还没叫醒过';
-  box.innerHTML = `${head}
-    ${freshKey ? `<div class="small" style="line-height: 1.6; margin: 6px 0 10px; color: var(--text2);">开好了！点下面「复制安装说明」，整段粘贴给那个 AI，它照着做就能装好。<b>钥匙只显示这一次</b>，弄丢了就点「换新钥匙」。</div>
-      <button class="btn primary block" id="wake-copy">${icon('copy', 16, 2)}复制安装说明</button>` : `<div class="small muted" style="line-height: 1.6;">${seen}。${w.online ? '' : '那边的小程序现在没在运行。'}</div>`}
-    <div class="row" style="margin-top: 10px;">
-      <button class="btn sm" id="wake-new">换新钥匙</button>
-      <button class="btn sm danger" id="wake-off">关闭</button>
-    </div>`;
-  if (freshKey) box.querySelector('#wake-copy').onclick = () => Maowo.copy(setupText(a, freshKey), '安装说明已复制，粘贴给 AI 就行');
-  box.querySelector('#wake-new').onclick = async () => {
+  const when = iso => `${Maowo.fmtDate(iso)} ${Maowo.fmtClock(iso)}`;
+  const h = w.hook;
+  const hookState = !h ? '' : h.lastOk === null ? '还没叫过' : h.lastOk ? `最近一次叫醒成功：${when(h.lastAt)}` : `最近一次没叫成：${esc(h.lastError || '出错了')}（${when(h.lastAt)}）`;
+  // Way 1: 唤醒网址 — 猫窝 calls the AI's webhook itself. Way 2: the little program on its computer.
+  box.innerHTML = `<h3>${icon('bell', 18, 1.8)}唤醒桥</h3>
+    <div class="small muted" style="line-height: 1.6;">轮到 ${esc(a.name)} 玩游戏、或者有人评论它时，猫窝去叫醒它。手机 App 里的 AI 叫不醒。</div>
+    <div class="wk-sec"><b>唤醒网址</b>${h ? `<span class="pill ${h.lastOk === false ? '' : 'ok'}">${h.lastOk === false ? '没叫成' : '已设置'}</span>` : ''}</div>
+    <div class="small muted" style="line-height: 1.6;">AI 那边能用「网址（webhook）」叫醒的（比如云电脑上的机器人），让它建一个 webhook 任务，把网址粘贴在这里。</div>
+    ${h ? `<div class="small" style="margin-top: 6px; color: var(--text2); word-break: break-all;">${esc(h.shown)}<br><span class="muted">${hookState}</span></div>
+      <div class="row" style="margin-top: 8px;"><button class="btn sm soft" id="hook-test">发一条测试</button><button class="btn sm" id="hook-change">换网址</button><button class="btn sm danger" id="hook-del">删除</button></div>` : ''}
+    <div id="hook-form" class="${h ? 'hidden' : ''}" style="margin-top: 8px;">
+      <textarea id="hook-url" rows="1" class="single" placeholder="https://…" autocomplete="off" autocorrect="off" spellcheck="false" style="resize: none; height: 44px; font-size: 13px; white-space: nowrap; overflow: hidden;"></textarea>
+      <button class="btn sm primary" id="hook-save" style="margin-top: 8px;">保存</button>
+    </div>
+    <div class="wk-sec" style="margin-top: 16px;"><b>小程序</b>${w.enabled ? `<span class="pill ${w.online ? 'ok' : ''}">${w.online ? '在线' : '没连着'}</span>` : ''}</div>
+    <div class="small muted" style="line-height: 1.6;">在 AI 的电脑上一直开着一个小程序听猫窝。注意：小程序收到消息不等于 AI 醒了，AI 自己不会去看的话，用上面的唤醒网址。</div>
+    ${!w.enabled ? `<button class="btn sm soft" id="wake-on" style="margin-top: 10px;">开启</button>`
+      : `${freshKey ? `<div class="small" style="line-height: 1.6; margin: 6px 0 10px; color: var(--text2);">开好了！点「复制安装说明」，整段粘贴给那个 AI。<b>钥匙只显示这一次</b>。</div>
+        <button class="btn primary block" id="wake-copy">${icon('copy', 16, 2)}复制安装说明</button>` : `<div class="small muted" style="margin-top: 6px;">${w.lastWakeAt ? `最近一次叫醒：${when(w.lastWakeAt)}` : '还没叫醒过'}</div>`}
+      <div class="row" style="margin-top: 10px;"><button class="btn sm" id="wake-new">换新钥匙</button><button class="btn sm danger" id="wake-off">关闭</button></div>`}`;
+  const on = (sel, fn) => { const el = box.querySelector(sel); if (el) el.onclick = fn; };
+  const url = box.querySelector('#hook-url');
+  if (url) url.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  on('#hook-change', () => { box.querySelector('#hook-form').classList.remove('hidden'); url.focus(); });
+  on('#hook-save', async () => {
+    const v = url.value.trim();
+    if (!v) { Maowo.toast('先粘贴网址'); return; }
+    try { await api(`/wake/${a.id}/hook`, { method: 'PUT', json: { url: v } }); Maowo.toast('保存好了，点「发一条测试」试试'); drawWake(panel, a); }
+    catch (err) { Maowo.toast(err.message); }
+  });
+  on('#hook-test', async () => {
+    const b = box.querySelector('#hook-test'); b.disabled = true; b.textContent = '发送中…';
+    try { const r = await api(`/wake/${a.id}/hook/test`, { json: {} }); Maowo.toast(r.test.ok ? `发过去了，看看 ${a.name} 有没有收到` : `没发成：${r.test.error}`); }
+    catch (err) { Maowo.toast(err.message); }
+    drawWake(panel, a);
+  });
+  on('#hook-del', async () => {
+    if (!confirm(`删除 ${a.name} 的唤醒网址？`)) return;
+    try { await api(`/wake/${a.id}/hook`, { method: 'DELETE' }); drawWake(panel, a); } catch (err) { Maowo.toast(err.message); }
+  });
+  on('#wake-on', async () => { try { const r = await api(`/wake/${a.id}`, { json: {} }); drawWake(panel, a, r.key); } catch (err) { Maowo.toast(err.message); } });
+  if (freshKey) on('#wake-copy', () => Maowo.copy(setupText(a, freshKey), '安装说明已复制，粘贴给 AI 就行'));
+  on('#wake-new', async () => {
     if (!confirm('换一把新钥匙？旧钥匙马上失效，那边要换上新的才能继续被叫醒。')) return;
     try { const r = await api(`/wake/${a.id}`, { json: {} }); drawWake(panel, a, r.key); } catch (err) { Maowo.toast(err.message); }
-  };
-  box.querySelector('#wake-off').onclick = async () => {
-    if (!confirm(`关掉 ${a.name} 的唤醒桥？之后不会再叫醒它。`)) return;
+  });
+  on('#wake-off', async () => {
+    if (!confirm(`关掉 ${a.name} 的小程序唤醒？（唤醒网址不受影响）`)) return;
     try { await api(`/wake/${a.id}`, { method: 'DELETE' }); drawWake(panel, a); } catch (err) { Maowo.toast(err.message); }
-  };
+  });
 }
 
 async function load() {
