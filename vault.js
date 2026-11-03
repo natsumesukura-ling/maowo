@@ -17,14 +17,22 @@ const MAX_TEXT_READ = 200 * 1024;
 const INLINE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf']);
 const TEXT_MIMES = /^(text\/|application\/(json|xml|javascript|x-yaml|yaml))/;
 
+// AIs may only WRITE into the vault. They read an item only after the owner shares it with
+// them (shared_with: JSON list of AI account ids, or ["all"] for all of the owner's AIs).
+// created_by remembers which AI saved an item, so it can keep updating its own item by ID.
+for (const col of ['created_by INTEGER', 'shared_with TEXT']) {
+  try { db.exec(`ALTER TABLE vault_items ADD COLUMN ${col}`); } catch { /* already there */ }
+}
+
 const stmts = {
   insert: db.prepare(`
-    INSERT INTO vault_items (id, kind, title, note, tags, content, filename, stored_name, mime, size, sha256, source, created_at, updated_at)
-    VALUES (@id, @kind, @title, @note, @tags, @content, @filename, @stored_name, @mime, @size, @sha256, @source, @created_at, @updated_at)
+    INSERT INTO vault_items (id, kind, title, note, tags, content, filename, stored_name, mime, size, sha256, source, created_at, updated_at, created_by)
+    VALUES (@id, @kind, @title, @note, @tags, @content, @filename, @stored_name, @mime, @size, @sha256, @source, @created_at, @updated_at, @created_by)
   `),
+  setShared: db.prepare('UPDATE vault_items SET shared_with = ? WHERE id = ?'),
   get: db.prepare('SELECT * FROM vault_items WHERE id = ?'),
   list: db.prepare(`
-    SELECT id, kind, title, note, tags, filename, mime, size, source, created_at, updated_at, deleted_at
+    SELECT id, kind, title, note, tags, filename, mime, size, source, created_at, updated_at, deleted_at, created_by, shared_with
     FROM vault_items WHERE (deleted_at IS NULL) = @alive ORDER BY updated_at DESC
   `),
   update: db.prepare(`
@@ -58,8 +66,23 @@ function contentDisposition(type, name, id) {
   return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
+const sharedOf = row => { try { const v = JSON.parse(row.shared_with || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
 function rowToItem(row) {
-  return { ...row, tags: JSON.parse(row.tags), stored_name: undefined };
+  return { ...row, tags: JSON.parse(row.tags), stored_name: undefined, shared_with: sharedOf(row) };
+}
+// Shared with this AI? (Only AIs of the owner ever reach the vault.)
+const sharedWith = (item, ai) => !!ai && ai.kind === 'ai' && (item.shared_with.includes('all') || item.shared_with.includes(ai.id));
+
+// The owner picks who may read an item: a list of AI ids, or 'all'. [] stops sharing.
+function share(id, who) {
+  const row = stmts.get.get(id);
+  if (!row) throw new Error('找不到这份存档');
+  let list;
+  if (who === 'all') list = ['all'];
+  else if (Array.isArray(who)) list = [...new Set(who.map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  else throw new Error('分享对象要么是 all，要么是 AI 的列表');
+  stmts.setShared.run(JSON.stringify(list), id);
+  return getItem(id);
 }
 
 function listItems({ q, tag, trash } = {}) {
@@ -81,14 +104,14 @@ function getItem(id) {
   return row ? rowToItem(row) : null;
 }
 
-function createNote({ title, content, note = '', tags }, source) {
+function createNote({ title, content, note = '', tags }, source, createdBy = null) {
   if (!title || !String(title).trim()) throw new Error('需要标题');
   if (typeof content !== 'string') throw new Error('需要内容');
   const now = new Date().toISOString();
   const item = {
     id: uuidv4().replace(/-/g, '').slice(0, 12), kind: 'note', title: String(title).trim(), note: String(note || ''),
     tags: JSON.stringify(normalizeTags(tags)), content, filename: null, stored_name: null,
-    mime: 'text/plain', size: Buffer.byteLength(content), sha256: null, source, created_at: now, updated_at: now,
+    mime: 'text/plain', size: Buffer.byteLength(content), sha256: null, source, created_at: now, updated_at: now, created_by: createdBy,
   };
   stmts.insert.run(item);
   return getItem(item.id);
@@ -119,7 +142,7 @@ function updateItem(id, changes, source) {
   return getItem(id);
 }
 
-function createFile({ buffer, filename, mime, title, note = '', tags }, source) {
+function createFile({ buffer, filename, mime, title, note = '', tags }, source, createdBy = null) {
   if (!buffer || !buffer.length) throw new Error('文件是空的');
   if (buffer.length > MAX_FILE_BYTES) throw new Error('文件太大，上限 50MB');
   const id = uuidv4().replace(/-/g, '').slice(0, 12);
@@ -131,7 +154,7 @@ function createFile({ buffer, filename, mime, title, note = '', tags }, source) 
     id, kind: 'file', title: String(title || name).trim(), note: String(note || ''),
     tags: JSON.stringify(normalizeTags(tags)), content: null, filename: name, stored_name: storedName,
     mime: mime || 'application/octet-stream', size: buffer.length,
-    sha256: crypto.createHash('sha256').update(buffer).digest('hex'), source, created_at: now, updated_at: now,
+    sha256: crypto.createHash('sha256').update(buffer).digest('hex'), source, created_at: now, updated_at: now, created_by: createdBy,
   });
   return getItem(id);
 }
@@ -189,6 +212,7 @@ router.get('/:id', wrap((req, res) => {
 }));
 
 router.put('/:id', wrap((req, res) => res.json(updateItem(req.params.id, req.body, 'web'))));
+router.put('/:id/share', wrap((req, res) => res.json(share(req.params.id, req.body.ais))));
 
 router.get('/:id/download', (req, res) => {
   const found = filePath(req.params.id);
@@ -242,7 +266,8 @@ const tokenProp = { token: { type: 'string', description: '猫窝 token（连接
 const mcpTools = [
   {
     name: 'vault_save',
-    description: '把一段文字存进猫窝存档（笔记、对话摘录、重要资料）。带 id 时更新已有笔记，旧版本会保留。',
+    description: '把一段文字存进主人的猫窝存档（笔记、对话摘录、重要资料）。存档是主人的：你只能存进去，读不到，除非主人在网页上分享给你。'
+      + '存好后会告诉你 ID，记下它就能用 id 更新你自己存的这份（旧版本会保留）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -275,7 +300,7 @@ const mcpTools = [
   },
   {
     name: 'vault_list',
-    description: '列出或搜索猫窝存档。',
+    description: '列出主人分享给你的存档（可以搜索）。没分享给你的看不到。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -287,7 +312,7 @@ const mcpTools = [
   },
   {
     name: 'vault_read',
-    description: '读取一份存档的内容。',
+    description: '读取一份主人分享给你的存档。',
     inputSchema: {
       type: 'object',
       properties: { ...tokenProp, id: { type: 'string', description: '存档 ID' } },
@@ -308,24 +333,35 @@ function describe(item) {
   return `[${item.id}] ${item.title} · ${kind} · ${formatSize(item.size)} · ${item.updated_at.slice(0, 10)}${tags}`;
 }
 
-function handleMcpTool(name, args) {
+// Everything over MCP comes from the AI side, even on a connection made with the owner's token:
+// `ai` is the AI named by the token argument (or null). Reading needs the owner to have shared
+// the item with that AI; updating works on what it saved itself or what was shared with it.
+function handleMcpTool(name, args, ai = null) {
+  const notFound = () => new Error('找不到这份存档（存档是主人的，只有主人分享给你的才能看到）');
   switch (name) {
     case 'vault_save': {
+      if (args.id) {
+        const cur = getItem(String(args.id));
+        if (!cur || cur.deleted_at || !(ai && (cur.created_by === ai.id || sharedWith(cur, ai)))) throw notFound();
+      }
       const item = args.id
         ? updateItem(args.id, { title: args.title, content: args.content, tags: args.tags, note: args.note }, 'mcp')
-        : createNote(args, 'mcp');
-      return `已存档${args.id ? '（已更新，旧版本保留）' : ''}\n${describe(item)}`;
+        : createNote(args, 'mcp', ai ? ai.id : null);
+      return `已存档${args.id ? '（已更新，旧版本保留）' : ''}\n${describe(item)}\n存档是主人的：存进去以后你读不到，除非主人分享给你。想更新这份就记住上面的 ID。`;
     }
     case 'vault_save_file': {
       if (typeof args.content_base64 !== 'string') throw new Error('需要 content_base64');
-      const item = createFile({ ...args, buffer: Buffer.from(args.content_base64, 'base64') }, 'mcp');
+      const item = createFile({ ...args, buffer: Buffer.from(args.content_base64, 'base64') }, 'mcp', ai ? ai.id : null);
       return `已存档\n${describe(item)}`;
     }
     case 'vault_list': {
-      const items = listItems({ q: args.query, tag: args.tag });
-      return items.length ? items.map(describe).join('\n') : '没有找到存档';
+      const items = listItems({ q: args.query, tag: args.tag }).filter(i => sharedWith(i, ai));
+      if (items.length) return items.map(describe).join('\n');
+      return args.query || args.tag ? '分享给你的存档里没有找到' : '主人还没有分享存档给你。你可以用 vault_save 存东西进来，但读不到存档，除非主人在网页上分享给你。';
     }
     case 'vault_read': {
+      const found = getItem(String(args.id || ''));
+      if (!found || found.deleted_at || !sharedWith(found, ai)) throw notFound();
       const { item, text, truncated } = readText(args.id);
       const head = describe(item) + (item.note ? `\n说明: ${item.note}` : '');
       if (text === null) return `${head}\n\n这是二进制文件（${item.mime}），只能在网页上下载。`;
@@ -335,4 +371,4 @@ function handleMcpTool(name, args) {
   }
 }
 
-module.exports = { router, mcpTools, handleMcpTool, tokenProp, MAX_FILE_BYTES, FILES_DIR, safeFilename };
+module.exports = { router, mcpTools, handleMcpTool, tokenProp, MAX_FILE_BYTES, FILES_DIR, safeFilename, share, createNote, getItem };

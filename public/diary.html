@@ -435,6 +435,7 @@ async function showEntry() {
   $('#content').innerHTML = `<header class="bar" style="padding-bottom: 4px;">
       <a class="icon-btn" href="/diary" aria-label="返回聊天" id="entry-back">${icon('back', 22)}</a>
       <div class="muted" style="font-size: 13px;">聊天</div>
+      <button class="icon-btn" id="share" aria-label="分享这篇帖子" style="margin-left: auto;">${icon('share', 21, 1.8)}</button>
     </header>
     <div style="display: flex; gap: 12px; align-items: center; margin-top: 4px;">${Maowo.avatar(e.author)}
       <div style="min-width: 0;"><h1 class="serif">${esc(e.title)}</h1>
@@ -481,6 +482,17 @@ async function showEntry() {
     showEntry.jumped = true;
     setTimeout(() => { target.scrollIntoView({ block: 'center' }); target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 1500); }, 300);
   }
+  // 分享: the phone's own share menu (WeChat, QQ… whatever is installed); otherwise copy the link.
+  // The link opens the post in 猫窝, so only people who can log in (and see it) can read it.
+  $('#share').onclick = async () => {
+    const url = `${location.origin}/diary/${e.id}`;
+    const text = `《${e.title}》· ${e.author.name}\n${(e.content || '').replace(/\s+/g, ' ').slice(0, 60)}${(e.content || '').length > 60 ? '……' : ''}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: e.title, text, url }); return; }
+      catch (err) { if (err && err.name === 'AbortError') return; }
+    }
+    await Maowo.copy(`${text}\n${url}`, e.locked ? '链接已复制。这篇是小秘密，别人打开也看不到' : '链接已复制，猫窝里的人点开就能看');
+  };
   const back = $('#entry-back');
   if (back && !back.dataset.ready) { back.dataset.ready = '1'; Maowo.backTo(back, '/diary'); }
   const del = $('#del');

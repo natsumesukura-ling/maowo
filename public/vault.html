@@ -17,7 +17,8 @@
 <style>
   :root {
     --bg: #F7EEE1; --card: #F3E7D6; --white: #FFFBF5; --border: #EADCC8;
-    --text: #2A1F17; --muted: #85715F; --accent: #B8612E; --accent-line: #D9874F;
+    --text: #2A1F17; --text2: #4A3B2F; --muted: #85715F; --accent: #B8612E; --accent-line: #D9874F;
+    --accent-soft: #F6E2CC; --accent-hover: #96491D; --line: #D9C6AC;
   }
   * { box-sizing: border-box; }
   body {
@@ -79,6 +80,12 @@
   .item .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .item .note { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .tag { color: var(--accent); }
+  .shared { margin: 4px 0 16px; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--border); }
+  .shared .who { font-size: 13px; color: var(--text2); line-height: 1.6; }
+  .shared .pick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .shared .pick button { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--white); color: var(--text2); font: inherit; font-size: 13px; cursor: pointer; }
+  .shared .pick button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-hover); font-weight: 600; }
+  .sharedmark { color: var(--accent); }
   .empty { text-align: center; color: var(--muted); font-size: 14px; padding: 48px 0; }
 
   .paper {
@@ -143,7 +150,19 @@ function toast(msg) {
 
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 const fmtTime = iso => { const d = new Date(iso); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const sourceLabel = s => s === 'mcp' ? 'AI 存入' : '网页存入';
+const sourceLabel = (s, by) => s === 'mcp' ? `${by && aiName(by) ? aiName(by) : 'AI'} 存入` : '网页存入';
+// The owner's AIs, for 「分享给 AI」 (AIs can only write into the vault; they read what is shared here).
+let myAis = null;
+async function loadAis() {
+  if (myAis) return myAis;
+  try {
+    const res = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + getToken() } });
+    myAis = res.ok ? (await res.json()).ais.map(a => ({ id: a.id, name: a.name })) : [];
+  } catch { myAis = []; }
+  return myAis;
+}
+const aiName = id => (myAis || []).find(a => a.id === id)?.name;
+const sharedText = list => !list.length ? '' : list.includes('all') ? '全部 AI' : list.map(aiName).filter(Boolean).join('、');
 const downloadUrl = (id, inline) => `/api/vault/${id}/download?token=${encodeURIComponent(getToken())}${inline ? '&inline=1' : ''}`;
 
 function header(crumb, backHash) {
@@ -174,7 +193,7 @@ function viewGate() {
 const listState = { q: '', tag: '' };
 
 async function viewList(trash) {
-  const items = await api('/?' + new URLSearchParams(trash ? { trash: '1' } : {}));
+  const [items] = await Promise.all([api('/?' + new URLSearchParams(trash ? { trash: '1' } : {})), loadAis()]);
   const tags = [...new Set(items.flatMap(i => i.tags))].sort();
   app.innerHTML = `${header(trash ? '存档' : '猫窝', trash ? '#/' : '/')}
     <h1>${trash ? '回收站' : '存档'}</h1>
@@ -210,7 +229,7 @@ async function viewList(trash) {
         <div class="body">
           <div class="title">${esc(i.title)}</div>
           ${i.note ? `<div class="note">${esc(i.note)}</div>` : ''}
-          <div class="meta">${i.kind === 'note' ? '笔记' : esc(i.filename)} · ${fmtSize(i.size)} · ${fmtTime(trash ? i.deleted_at : i.updated_at)}
+          <div class="meta">${i.kind === 'note' ? '笔记' : esc(i.filename)} · ${fmtSize(i.size)} · ${fmtTime(trash ? i.deleted_at : i.updated_at)}${i.shared_with.length ? ` · <span class="sharedmark">已分享给 ${esc(sharedText(i.shared_with) || 'AI')}</span>` : ''}
             ${i.tags.map(t => `<span class="tag">#${esc(t)}</span>`).join(' ')}</div>
         </div>
       </a>`).join('') : `<div class="empty">${trash ? '回收站是空的' : items.length ? '没有找到' : '这里还空着，存点什么吧'}</div>`;
@@ -263,15 +282,16 @@ $('#file-input').onchange = async e => {
 };
 
 async function viewItem(id) {
-  const item = await api('/' + id);
+  const [item] = await Promise.all([api('/' + id), loadAis()]);
   const revisions = item.kind === 'note' ? await api(`/${id}/revisions`) : [];
   const isImage = /^image\/(png|jpeg|gif|webp)$/.test(item.mime);
   app.innerHTML = `${header(item.deleted_at ? '回收站' : '存档', item.deleted_at ? '#/trash' : '#/')}
     <h1>${esc(item.title)}</h1>
     <div class="sub">${item.kind === 'note' ? '笔记' : esc(item.filename) + ' · ' + esc(item.mime)} · ${fmtSize(item.size)} ·
-      ${sourceLabel(item.source)} · 更新于 ${fmtTime(item.updated_at)}
+      ${sourceLabel(item.source, item.created_by)} · 更新于 ${fmtTime(item.updated_at)}
       ${item.tags.map(t => `<span class="tag">#${esc(t)}</span>`).join(' ')}</div>
     ${item.note ? `<p class="hint">${esc(item.note)}</p>` : ''}
+    ${item.deleted_at ? '' : `<div class="shared" id="shared"></div>`}
     <div class="actions">
       ${item.deleted_at
         ? `<button class="btn primary" id="restore">恢复</button><button class="btn danger" id="purge">彻底删除</button>`
@@ -289,6 +309,7 @@ async function viewItem(id) {
       <div id="rev-view"></div>` : ''}`;
 
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
+  if (!item.deleted_at) drawShare(item);
   on('#del', async () => { await api('/' + id, { method: 'DELETE' }); toast('已移到回收站'); location.hash = '#/'; });
   on('#restore', async () => { await api(`/${id}/restore`, { method: 'POST' }); toast('已恢复'); viewItem(id); });
   on('#purge', async () => {
@@ -304,6 +325,33 @@ async function viewItem(id) {
       await api('/' + id, { method: 'PUT', json: { title: rev.title, content: rev.content } });
       toast('已恢复到这个版本，现在的内容也留在以前的版本里'); viewItem(id);
     };
+  });
+}
+
+// Who may read this item. Tapping a name adds or removes it; 「全部 AI」 covers every AI, including new ones.
+function drawShare(item) {
+  const box = $('#shared');
+  const list = item.shared_with;
+  const all = list.includes('all');
+  const who = sharedText(list);
+  box.innerHTML = `<div class="who">${who ? `已分享给 <b>${esc(who)}</b>，${all ? '你所有的 AI' : '它们'}都能读这份。` : '没有分享给 AI。AI 只能往存档里存东西，读不到这份。'}</div>
+    ${myAis.length ? `<div class="pick">
+      <button data-share="all" aria-pressed="${all}">全部 AI</button>
+      ${myAis.map(a => `<button data-share="${a.id}" aria-pressed="${all || list.includes(a.id)}">${esc(a.name)}</button>`).join('')}
+    </div>` : '<div class="who" style="margin-top: 6px;">你还没有 AI。</div>'}`;
+  box.querySelectorAll('[data-share]').forEach(b => b.onclick = async () => {
+    let next;
+    if (b.dataset.share === 'all') next = all ? [] : 'all';
+    else {
+      const id = Number(b.dataset.share);
+      const cur = all ? myAis.map(a => a.id) : list.slice();
+      next = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id];
+    }
+    try {
+      const updated = await api(`/${item.id}/share`, { method: 'PUT', json: { ais: next } });
+      Object.assign(item, updated); drawShare(item);
+      toast(updated.shared_with.length ? `已分享给 ${sharedText(updated.shared_with)}` : '已取消分享');
+    } catch (err) { toast(err.message); }
   });
 }
 

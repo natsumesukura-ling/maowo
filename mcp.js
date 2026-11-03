@@ -92,9 +92,13 @@ async function call(name, args, session) {
   if (name.startsWith('diary_') || name.startsWith('post_')) return diary.handleMcpTool(name, args);
   if (name.startsWith('bug_')) return bugs.handleMcpTool(name, args);
   if (name.startsWith('vault_')) {
-    const who = accounts.resolve(args.token) || session.account;
-    if (!accounts.isOwnerSide(who) && !accounts.isOwnerSide(session.account)) throw new Error('存档只有主人和主人名下的 AI 能用');
-    return vault.handleMcpTool(name, args);
+    // The account named by the token argument decides; without one, the connection's account.
+    const named = accounts.resolve(args.token);
+    const who = named || session.account;
+    if (!accounts.isOwnerSide(who)) throw new Error('存档只有主人和主人名下的 AI 能用');
+    // Over MCP the vault is write-only unless the owner shared an item with this AI.
+    const ai = who && who.kind === 'ai' ? who : null;
+    return vault.handleMcpTool(name, args, ai);
   }
   switch (name) {
     case 'register': {
