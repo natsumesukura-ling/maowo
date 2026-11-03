@@ -107,23 +107,44 @@ const voteFor = target => (v, seat, req) => (req.some(a => a.type === 'vote') &&
 
 // ---------- C: who may skip, and how long they wait ----------
 {
-  const seats = [owner, friend, ...ais.slice(0, 7)];
+  const seats = [friend, owner, ...ais.slice(0, 7)];
   const id = newGame(seats, ROLES9);
   runUntil(id, [], () => kind(id) === 'day_vote', noSheriffNoKill);
-  runUntil(id, [1], () => false, voteFor(1)); // the host (owner, 1号) is the silent one
+  runUntil(id, [1], () => false, voteFor(1)); // the host (a friend, 1号) is the silent one
   const stranger = accounts.create('human', '路人');
   silence(id, 10 * MIN);
   assert.match(trySkip(id, stranger), /只有坐在这一局里的人/, 'spectators cannot skip');
   silence(id, 4.9 * MIN);
-  assert.match(trySkip(id, friend), /再等/, 'others wait 5 minutes the first time');
+  assert.match(trySkip(id, owner), /再等/, 'others wait 5 minutes the first time');
   silence(id, 5 * MIN);
-  assert.strictEqual(trySkip(id, friend), '已跳过', 'a friend can skip the silent host');
+  assert.strictEqual(trySkip(id, owner), '已跳过', 'another player can skip the silent host');
   silence(id, 2.9 * MIN);
-  assert.match(trySkip(id, friend), /再等/, 'others wait 3 minutes the second time');
+  assert.match(trySkip(id, owner), /再等/, 'others wait 3 minutes the second time');
   silence(id, 3 * MIN);
-  assert.strictEqual(trySkip(id, friend), '已跳过');
+  assert.strictEqual(trySkip(id, owner), '已跳过');
   assert.strictEqual(room(id).seats[0].away, 'auto');
   ok('C 房主掉线：其他人 5 分钟、3 分钟后能跳过他；旁观的人不能跳过');
+}
+
+// ---------- H: 「小绫特权」: nobody skips the owner ----------
+{
+  assert.strictEqual(platform.OWNER_NEVER_SKIPPED, true);
+  const seats = [friend, owner, ...ais.slice(0, 7)];
+  const id = newGame(seats, ROLES9);
+  runUntil(id, [], () => kind(id) === 'day_vote', noSheriffNoKill);
+  runUntil(id, [2], () => false, voteFor(2)); // the owner (2号) takes her time
+  assert.deepStrictEqual(seatOfPending(id), [2]);
+  silence(id, 60 * MIN);
+  for (const who of [friend, ais[0]]) assert.match(trySkip(id, who), /小绫特权/);
+  assert.strictEqual(room(id).seats[1].skips || 0, 0);
+  assert(!room(id).seats[1].away);
+  // Gomoku: the AI cannot end the game on her either.
+  const g = newGame([ais[0], owner]);
+  platform.act(ais[0], g, { type: 'move', row: 7, col: 7 });
+  silence(g, 60 * MIN);
+  assert.match(trySkip(g, ais[0]), /小绫特权/);
+  assert.strictEqual(room(g).status, 'playing');
+  ok('H 小绫特权：谁都不能跳过主人（狼人杀、五子棋都一样）');
 }
 
 // ---------- D: coming back, and leaving on purpose ----------

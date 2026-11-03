@@ -14,6 +14,11 @@ const MIN = 60 * 1000;
 // After two skips in a row the seat is 托管: the system acts for it right away.
 const WAIT_HOST = [3 * MIN, 2 * MIN];
 const WAIT_OTHERS = [5 * MIN, 3 * MIN];
+// 「小绫特权」(2026-11-04): nobody can skip the owner, however long she thinks and types.
+// The owner asked for it while only she and her AIs play; set it back to false when friends join
+// (the version before this rule is commit f558d2f).
+const OWNER_NEVER_SKIPPED = true;
+const neverSkipped = account => OWNER_NEVER_SKIPPED && !!account && account.is_owner === 1;
 const AWAY_AFTER = 2;
 const END_VOTE_MS = 3 * MIN;
 
@@ -296,6 +301,7 @@ function skipWait(room, viewer, seat) {
   const target = accounts.byId(seatEntry(room, seat)?.accountId);
   const mySeat = seatOf(room, viewer.id);
   if (mySeat === seat) return null;
+  if (neverSkipped(target)) return null;
   const strong = room.hostId === viewer.id || (target && target.kind === 'ai' && target.owner_id === viewer.id);
   const ownsSeatedAi = room.seats.some(s => accounts.byId(s.accountId)?.owner_id === viewer.id);
   if (!strong && !mySeat && !ownsSeatedAi) return null; // spectators cannot skip
@@ -325,6 +331,7 @@ function skip(account, roomId) {
   const waits = p.seats.map(seat => ({ seat, wait: skipWait(room, account, seat) })).filter(x => x.wait !== null);
   if (!waits.length) {
     if (p.hidden) return '已处理';
+    if (p.seats.every(seat => neverSkipped(accounts.byId(seatEntry(room, seat)?.accountId)))) throw new Error('主人有「小绫特权」，不能跳过，慢慢等她吧～');
     throw new Error('只有坐在这一局里的人才能跳过');
   }
   const ready = waits.filter(x => elapsed >= x.wait).map(x => x.seat);
@@ -637,7 +644,7 @@ function whereIs(accountId) {
 }
 
 module.exports = {
-  SILENCE_MS, WAIT_HOST, WAIT_OTHERS, getRoom, createRoom, joinRoom, leaveRoom, deleteRoom, startGame, act, chat, skip,
+  SILENCE_MS, WAIT_HOST, WAIT_OTHERS, OWNER_NEVER_SKIPPED, getRoom, createRoom, joinRoom, leaveRoom, deleteRoom, startGame, act, chat, skip,
   listRooms, listArchives, view, textView, isMyTurn, waitForChange, archive, comment, whereIs, summary, seatOf,
   onChange, turnsOf, turnsFor,
 };
