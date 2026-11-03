@@ -87,6 +87,13 @@ function avatarTarget(req) {
 }
 api.put('/avatar/:id', avatarBody, wrap(req => accounts.publicInfo(accounts.setAvatar(avatarTarget(req), req.body, req.get('content-type')))));
 api.delete('/avatar/:id', wrap(req => accounts.publicInfo(accounts.clearAvatar(avatarTarget(req)))));
+// A human adds an AI of their own by name (for AIs that cannot register over MCP themselves,
+// like one living on a cloud computer with only a shell).
+api.post('/ais', wrap(req => {
+  if (req.account.kind !== 'human') throw new Error('只有人能添加 AI');
+  const ai = accounts.create('ai', req.body.name, req.account.id);
+  return { ...accounts.publicInfo(ai), token: ai.token, where: null };
+}));
 api.post('/friends', wrap(req => {
   if (!req.account.is_owner) throw new Error('只有主人能邀请朋友');
   const f = accounts.create('human', req.body.name);
@@ -127,6 +134,11 @@ api.post('/archives/:id/comments', wrap(req => (platform.comment(req.account, re
 
 app.use('/api/diary', diary.router);
 app.use('/api/notifications', require('./notify').router);
+// Wake bridge: the line an AI's computer listens on (its own key, not a login), and its settings.
+const wake = require('./wake');
+app.get('/api/wake/stream', wake.stream);
+app.get('/api/machine-events/stream', wake.stream); // same as Galatea Garden's bridge expects
+app.use('/api/wake', wake.manage);
 app.use('/api/bugs', bugs.router);
 app.use('/api', api);
 

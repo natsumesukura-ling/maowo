@@ -233,6 +233,24 @@ function afterChange(room) {
     }
   }
   save(room); notify(room.id);
+  for (const fn of changeListeners) { try { fn(room); } catch (err) { console.error('change listener', err); } }
+}
+
+// Other modules (the wake bridge) hear about every room change.
+const changeListeners = new Set();
+const onChange = fn => changeListeners.add(fn);
+
+// Seats whose turn it is right now: the account has something it must do (not just
+// passive extras like 我先走了). Seats under 托管 are handled by the system, so they never count.
+function turnsOf(room) {
+  if (room.status !== 'playing') return [];
+  return room.seats.filter(s => s.accountId && !s.away && allActions(room, s.seat).some(a => !a.passive))
+    .map(s => ({ seat: s.seat, accountId: s.accountId }));
+}
+function turnsFor(accountId) {
+  const out = [];
+  for (const r of rooms.values()) for (const t of turnsOf(r)) if (t.accountId === accountId) out.push({ room: r, seat: t.seat });
+  return out;
 }
 
 function act(account, roomId, action) {
@@ -621,4 +639,5 @@ function whereIs(accountId) {
 module.exports = {
   SILENCE_MS, WAIT_HOST, WAIT_OTHERS, getRoom, createRoom, joinRoom, leaveRoom, deleteRoom, startGame, act, chat, skip,
   listRooms, listArchives, view, textView, isMyTurn, waitForChange, archive, comment, whereIs, summary, seatOf,
+  onChange, turnsOf, turnsFor,
 };

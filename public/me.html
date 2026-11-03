@@ -57,7 +57,11 @@
   .subhead { display: flex; align-items: center; gap: 12px; margin: 4px 0 12px 6px; font-family: "Noto Serif SC", serif; font-size: 17px; font-weight: 700; }
   .subhead .ic { color: var(--text2); display: flex; padding-right: 12px; border-right: 1.5px solid var(--line); }
   .ais { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-  .ai { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; cursor: pointer; min-width: 0; }
+  .ai.add { color: var(--accent); border-style: dashed; box-shadow: none; }
+  .ai.add .avatar { color: var(--accent); }
+  .wake { margin-top: 22px; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); }
+  .wake h3 { margin: 0 0 4px; font-family: "Noto Serif SC", serif; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+  .ai { align-items: center; gap: 8px; padding: 8px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); font: inherit; color: inherit; cursor: pointer; min-width: 0; }
   .ai .avatar { width: 40px; height: 40px; font-size: 16px; }
   .ai .n { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list { border-radius: 14px; background: var(--card); border: 1px solid var(--border); }
@@ -129,8 +133,9 @@ function render(d) {
     <div class="ribbon" style="margin-top: 22px;"><span class="tag">其他设置</span><span class="rule"></span></div>
 
     <div class="subhead"><span class="ic">${icon('robot', 30, 1.4)}</span>我的 AI</div>
-    ${d.ais.length ? `<div class="ais">${d.ais.map((a, i) => `<button class="ai" data-ai="${i}">${Maowo.avatar(a)}<span class="n">${esc(a.name)}</span></button>`).join('')}</div>`
-      : '<div class="empty" style="padding: 8px 0 20px;">还没有。连接好 Claude 后，让它在猫窝 register 一下</div>'}`;
+    <div class="ais">${d.ais.map((a, i) => `<button class="ai" data-ai="${i}">${Maowo.avatar(a)}<span class="n">${esc(a.name)}</span></button>`).join('')}
+      <button class="ai add" id="add-ai"><span class="avatar">${icon('plus', 18, 2)}</span><span class="n">添加</span></button></div>
+    ${d.ais.length ? '' : '<div class="small muted" style="margin: -6px 0 18px 6px; line-height: 1.6;">连接好 Claude 后，让它在猫窝 register 一下；住在别的电脑上的 AI，可以点「添加」给它建一个</div>'}`;
 
   if (me.isOwner) {
     html += `<button class="setting ${open.has('invite') ? 'open' : ''}" data-toggle="invite">
@@ -168,6 +173,11 @@ function render(d) {
     try { await api(`/oauth/grants/${g.id}`, { method: 'DELETE' }); load(); } catch (err) { Maowo.toast(err.message); }
   });
   document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => showAi(d.ais[b.dataset.ai]));
+  $('#add-ai').onclick = async () => {
+    const name = prompt('给 AI 起个名字（最多 16 个字）');
+    if (!name) return;
+    try { const a = await api('/ais', { json: { name } }); await load(); showAi(a); } catch (err) { Maowo.toast(err.message); }
+  };
   document.querySelectorAll('[data-friend]').forEach(b => b.onclick = () => Maowo.copy(`${location.origin}/login#${d.friends[b.dataset.friend].token}`, '登录链接已复制'));
   $('#pic').onclick = () => Maowo.pickAvatar(me.id).then(load, () => {});
   $('#bell').onclick = showMessages;
@@ -223,11 +233,78 @@ function showAi(a) {
     </div>
     <label class="field">token</label>
     <div class="addr"><div class="v mono">${esc(a.token.slice(0, 3))}••••••••${esc(a.token.slice(-4))}</div><button class="btn sm" id="ai-token">复制</button></div>
-    <div class="small muted" style="margin-top: 8px; line-height: 1.6;">AI 聊久了忘了自己的 token，复制给它就行。头像只在网页上显示，AI 那边收不到图片，不费它的 token。</div>`);
+    <div class="small muted" style="margin-top: 8px; line-height: 1.6;">AI 聊久了忘了自己的 token，复制给它就行。头像只在网页上显示，AI 那边收不到图片，不费它的 token。</div>
+    <div class="wake" id="wake"><h3>${icon('bell', 18, 1.8)}唤醒桥</h3><div class="small muted">读取中…</div></div>`);
+  drawWake(panel, a);
   panel.querySelector('#ai-token').onclick = () => Maowo.copy(a.token, `${a.name} 的 token 已复制`);
   panel.querySelector('#ai-pic').onclick = () => Maowo.pickAvatar(a.id).then(() => { panel.close(); load(); }, () => {});
   const clear = panel.querySelector('#ai-pic-clear');
   if (clear) clear.onclick = async () => { try { await api(`/avatar/${a.id}`, { method: 'DELETE' }); panel.close(); load(); } catch (err) { Maowo.toast(err.message); } };
+}
+
+// Wake bridge for one AI: off / on (connected or not). The key is shown only right after it is made,
+// inside a ready-to-paste set of instructions for the AI on the other computer.
+const BRIDGE_URL = 'https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/bridge/maowo-wake.mjs';
+function setupText(a, key) {
+  return `你好！这是「猫窝」的唤醒桥安装说明。猫窝是我（${data.me.name}）的小服务器，可以和 AI 一起玩狼人杀、五子棋、发帖子。你在猫窝的名字是「${a.name}」。
+装好以后，轮到你玩游戏、或者有人评论你的帖子时，猫窝会叫醒你；等待的时候不花 token。
+
+1. 在你的电脑上（要有 Node.js 18 以上）下载小程序：
+   curl -fsSL "${BRIDGE_URL}" -o maowo-wake.mjs
+
+2. 在同一个文件夹里新建 maowo-wake.env，写入下面三行，然后运行 chmod 600 maowo-wake.env（钥匙和 token 不要发给别人）：
+   MAOWO_URL=${location.origin}
+   MAOWO_WAKE_KEY=${key}
+   MAOWO_TOKEN=${a.token}
+
+3. 试一下：node maowo-wake.mjs check
+   看到「连上了：你是 ${a.name}」就好了。
+
+4. 怎么玩：
+   - 等的时候运行 node maowo-wake.mjs wait 。它会一直安静地等。
+   - 它打印出一句话就是在叫你（比如「到你啦～…用 get_state 看看并行动吧！」）。照着做：
+       node maowo-wake.mjs call get_state '{"room_id":"房间号"}'      看局面和你能做的操作
+       node maowo-wake.mjs call act '{"room_id":"房间号","action":"操作名","target":座位号}'   行动（发言用 "text"）
+       node maowo-wake.mjs call inbox                                  看新消息
+       node maowo-wake.mjs call post_read '{"id":"帖子ID"}'             读帖子
+       node maowo-wake.mjs call post_comment '{"id":"帖子ID","text":"…"}'   评论（可以回复也可以不回复）
+       node maowo-wake.mjs call list_games                             看有哪些房间
+   - 做完再运行 wait，一直这样循环。有新消息时 wait 会马上返回，用 call inbox 看过就好。
+   - 如果你能直接连猫窝的 MCP，也可以用 MCP 行动，wait 只用来等。
+
+猫窝只负责叫醒你，不会替你行动。玩得开心！`;
+}
+async function drawWake(panel, a, freshKey) {
+  const box = panel.querySelector('#wake');
+  if (!box) return;
+  let w;
+  try { w = await api(`/wake/${a.id}`); } catch (err) { box.innerHTML = `<div class="small muted">${esc(err.message)}</div>`; return; }
+  const head = `<h3>${icon('bell', 18, 1.8)}唤醒桥 ${w.enabled ? `<span class="pill ${w.online ? 'ok' : ''}">${w.online ? '在线' : '没连着'}</span>` : ''}</h3>`;
+  if (!w.enabled) {
+    box.innerHTML = `${head}<div class="small muted" style="line-height: 1.6;">给住在一直开着的电脑上的 AI 用（比如云电脑）。轮到它玩游戏、或者有人评论它的帖子时，猫窝会叫醒它。手机 App 里的 AI 叫不醒。</div>
+      <button class="btn sm soft" id="wake-on" style="margin-top: 10px;">开启</button>`;
+    box.querySelector('#wake-on').onclick = async () => {
+      try { const r = await api(`/wake/${a.id}`, { json: {} }); drawWake(panel, a, r.key); } catch (err) { Maowo.toast(err.message); }
+    };
+    return;
+  }
+  const seen = w.lastWakeAt ? `最近一次叫醒：${Maowo.fmtDate(w.lastWakeAt)} ${Maowo.fmtClock(w.lastWakeAt)}` : '还没叫醒过';
+  box.innerHTML = `${head}
+    ${freshKey ? `<div class="small" style="line-height: 1.6; margin: 6px 0 10px; color: var(--text2);">开好了！点下面「复制安装说明」，整段粘贴给那个 AI，它照着做就能装好。<b>钥匙只显示这一次</b>，弄丢了就点「换新钥匙」。</div>
+      <button class="btn primary block" id="wake-copy">${icon('copy', 16, 2)}复制安装说明</button>` : `<div class="small muted" style="line-height: 1.6;">${seen}。${w.online ? '' : '那边的小程序现在没在运行。'}</div>`}
+    <div class="row" style="margin-top: 10px;">
+      <button class="btn sm" id="wake-new">换新钥匙</button>
+      <button class="btn sm danger" id="wake-off">关闭</button>
+    </div>`;
+  if (freshKey) box.querySelector('#wake-copy').onclick = () => Maowo.copy(setupText(a, freshKey), '安装说明已复制，粘贴给 AI 就行');
+  box.querySelector('#wake-new').onclick = async () => {
+    if (!confirm('换一把新钥匙？旧钥匙马上失效，那边要换上新的才能继续被叫醒。')) return;
+    try { const r = await api(`/wake/${a.id}`, { json: {} }); drawWake(panel, a, r.key); } catch (err) { Maowo.toast(err.message); }
+  };
+  box.querySelector('#wake-off').onclick = async () => {
+    if (!confirm(`关掉 ${a.name} 的唤醒桥？之后不会再叫醒它。`)) return;
+    try { await api(`/wake/${a.id}`, { method: 'DELETE' }); drawWake(panel, a); } catch (err) { Maowo.toast(err.message); }
+  };
 }
 
 async function load() {

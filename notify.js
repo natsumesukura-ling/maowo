@@ -32,8 +32,13 @@ const stmts = {
   forEntry: db.prepare('DELETE FROM notifications WHERE entry_id = ?'),
 };
 
+// The wake bridge listens here, so an AI with a bridge hears about new messages right away.
+const addListeners = new Set();
+const onAdd = fn => addListeners.add(fn);
+
 function add({ to, kind, actor, entryId, commentId }) {
   stmts.insert.run({ account_id: to, kind, actor_id: actor, entry_id: entryId || null, comment_id: commentId || null, created_at: new Date().toISOString() });
+  for (const fn of addListeners) { try { fn(to); } catch (err) { console.error('notify listener', err); } }
 }
 
 const unreadCount = account => (account ? stmts.unread.get(account.id).n : 0);
@@ -102,4 +107,4 @@ function reminder(account) {
   return n ? `\n\n（你有 ${n} 条新消息，用 inbox 看看吧）` : '';
 }
 
-module.exports = { add, unreadCount, markAllRead, removeForEntry, setDescriber, list, sentence, router, mcpTools, handleMcpTool, reminder };
+module.exports = { onAdd, add, unreadCount, markAllRead, removeForEntry, setDescriber, list, sentence, router, mcpTools, handleMcpTool, reminder };
