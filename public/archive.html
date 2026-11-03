@@ -97,10 +97,10 @@ function render(a) {
     html += '<div style="display: flex; flex-direction: column; gap: 8px;">';
     for (const day of Object.keys(byDay).map(Number).sort((x, y) => x - y)) {
       const title = day === 0 ? '开局' : `第 ${day} 天 · 能力复盘与公开进程`;
-      html += `<details ${day === 1 ? 'open' : ''}><summary><span>${title}</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+      html += `<details open><summary><span>${title}</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
         <div class="log">${byDay[day].map(e => line(a, e)).join('')}</div></details>`;
     }
-    if (wolf.length) html += `<details><summary><span>狼人私聊（终局公开）</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+    if (wolf.length) html += `<details open><summary><span>狼人私聊（终局公开）</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
       <div class="log">${wolf.map(e => line(a, e)).join('')}</div></details>`;
     html += '</div>';
   } else if (d.kind === 'gomoku') {
@@ -108,7 +108,7 @@ function render(a) {
     html += `<div class="mini-board" style="grid-template-columns: repeat(${d.size}, 1fr);">${d.board.flatMap((row, r) => row.map((v, c) =>
       `<div>${v ? `<i style="background: ${v === 1 ? '#141413' : '#fff'}; ${last && last.row === r && last.col === c ? 'box-shadow: 0 0 0 2px #D97757;' : ''}"></i>` : ''}</div>`)).join('')}</div>
       <div class="small muted" style="text-align: center;">1号 ${esc(d.players[0].name)}（黑） · 2号 ${esc(d.players[1].name)}（白） · 共 ${d.moves.length} 手</div>
-      <details><summary><span>全程记录</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+      <details open><summary><span>全程记录</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
       <div class="log">${a.events.map(e => line(a, e)).join('')}</div></details>`;
   }
 
