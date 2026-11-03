@@ -10,6 +10,7 @@ const backup = require('./backup');
 const diary = require('./diary');
 const bugs = require('./bugs');
 const mcp = require('./mcp');
+const cats = require('./cats');
 const oauth = require('./oauth');
 
 const app = express();
@@ -25,11 +26,13 @@ app.use(express.json());
 // ============================================================
 const page = file => (req, res) => res.sendFile(path.join(__dirname, 'public', file));
 // The four tabs share one shell page, so switching tabs never reloads the page.
-for (const p of ['/', '/me', '/diary', '/dev']) app.get(p, page('shell.html'));
+for (const p of ['/', '/me', '/diary', '/cats']) app.get(p, page('shell.html'));
 app.get('/p/games', page('index.html'));
 app.get('/p/me', page('me.html'));
 app.get('/p/diary', page('diary.html'));
-app.get('/p/dev', page('dev.html'));
+app.get('/p/cats', page('cats.html'));
+app.get('/dev', page('dev.html'));
+for (const p of ['/cats/new', '/cats/:id', '/cats/:id/settings']) app.get(p, page('cat.html'));
 app.get('/room/:id', page('room.html'));
 app.get('/archive', page('archives.html'));
 app.get('/archive/:id', page('archive.html'));
@@ -62,7 +65,7 @@ api.get('/me', wrap(req => {
     me: accounts.publicInfo(me),
     where: platform.whereIs(me.id),
     // The token stays in the browser; the page builds the MCP address from it.
-    ais: accounts.aisOf(human.id).map(a => ({ ...accounts.publicInfo(a), token: a.token, where: platform.whereIs(a.id) })),
+    ais: accounts.aisOf(human.id).map(a => ({ ...accounts.publicInfo(a), token: a.token, where: platform.whereIs(a.id), isCat: cats.isCat(a.id) })),
     friends: me.is_owner ? accounts.friends().map(f => ({ ...accounts.publicInfo(f), token: f.token })) : null,
   };
 }));
@@ -140,6 +143,7 @@ app.get('/api/wake/stream', wake.stream);
 app.get('/api/machine-events/stream', wake.stream); // same as Galatea Garden's bridge expects
 app.use('/api/wake', wake.manage);
 app.use('/api/bugs', bugs.router);
+app.use('/api/cats', cats.router);
 app.use('/api', api);
 
 // ============================================================

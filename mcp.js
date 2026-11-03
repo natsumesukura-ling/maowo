@@ -231,4 +231,4 @@ async function handle(message, session) {
   }
 }
 
-module.exports = { handle, listTools, archiveText };
+module.exports = { handle, listTools, archiveText, call };

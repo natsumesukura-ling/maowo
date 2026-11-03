@@ -54,6 +54,9 @@ const Maowo = (() => {
     image: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="M21 15.5l-5-5-9 9.5"/>',
     poll: '<path d="M5 20V11M12 20V5M19 20v-6"/>',
     bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
+    bellOff: '<path d="M6 16.5V11a6 6 0 0 1 9.2-5.1M18 11v5.5l1.5 2H9"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/><path d="M4 4l16 16"/>',
+    sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+    key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2.5 2.5M14 9l2 2"/>',
     share: '<circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.2 10.8l7.6-4.1M8.2 13.2l7.6 4.1"/>',
     helmet: '<path d="M4.5 16.5V15a7.5 7.5 0 0 1 15 0v1.5"/><rect x="2" y="16.5" width="20" height="3" rx="1.5"/><path d="M10 8.2V6h4v2.2M8 9.5l1 5M16 9.5l-1 5"/>',
     plug: '<path d="M9 7V3M15 7V3"/><path d="M7 7h10v4a5 5 0 0 1-10 0z"/><path d="M12 16v2a3 3 0 0 1-3 3H6"/>',
@@ -137,8 +140,8 @@ const Maowo = (() => {
   const avatar = (who, cls = '') =>
     `<div class="avatar ${cls}">${who && who.avatar ? `<img src="${esc(who.avatar)}" alt="" loading="lazy">` : esc(initial(who && who.name))}</div>`;
 
-  // The four buttons at the bottom of 我的 / 游戏 / 聊天 / 开发中.
-  const TABS = [['me', '/me', '我的', 'cat'], ['games', '/', '游戏', 'gamepad'], ['diary', '/diary', '聊天', 'chat'], ['dev', '/dev', '开发中…', 'helmet']];
+  // The four buttons at the bottom of 我的 / 游戏 / 聊天 / 猫们.
+  const TABS = [['me', '/me', '我的', 'cat'], ['games', '/', '游戏', 'gamepad'], ['diary', '/diary', '聊天', 'chat'], ['cats', '/cats', '猫们', 'paw']];
   function tabbar(active) {
     document.body.classList.add('has-tabbar');
     if (framed) return; // the shell draws the buttons

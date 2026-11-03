@@ -34,7 +34,7 @@ const TABS = [
   { id: 'me', path: '/me', src: '/p/me', label: '我的', icon: 'cat' },
   { id: 'games', path: '/', src: '/p/games', label: '游戏', icon: 'gamepad' },
   { id: 'diary', path: '/diary', src: '/p/diary', label: '聊天', icon: 'chat' },
-  { id: 'dev', path: '/dev', src: '/p/dev', label: '开发中…', icon: 'helmet' },
+  { id: 'cats', path: '/cats', src: '/p/cats', label: '猫们', icon: 'paw' },
 ];
 const tabs = document.getElementById('tabs'), bar = document.getElementById('tabbar');
 const frames = {};
@@ -90,18 +90,24 @@ addEventListener('message', e => {
   if (e.data.maowo === 'unread') checkUnread();
 });
 
-// Red dot on 我的 when there are unread messages. Checked on start, every 30 seconds,
-// when coming back to the app, and when switching tabs.
-async function checkUnread() {
-  if (!Maowo.token()) return;
-  let n = 0;
-  try { const r = await fetch('/api/notifications/count', { headers: { Authorization: 'Bearer ' + Maowo.token() } }); if (r.ok) n = (await r.json()).unread || 0; } catch { return; }
-  const a = tabs.querySelector('[data-tab="me"]');
+// Red dots: on 我的 for unread messages (the bell), on 猫们 for what the cats said (muted ones left out).
+// Checked on start, every 30 seconds, when coming back to the app, and when switching tabs.
+function setDot(tab, n, label) {
+  const a = tabs.querySelector(`[data-tab="${tab}"]`);
   let dot = a.querySelector('.dot');
-  if (!n) { if (dot) dot.remove(); return; }
+  if (!n) { if (dot) dot.remove(); a.removeAttribute('aria-label'); return; }
   if (!dot) { dot = document.createElement('span'); dot.className = 'dot'; a.appendChild(dot); }
   dot.textContent = n > 99 ? '99+' : n;
-  a.setAttribute('aria-label', `我的，${n} 条新消息`);
+  a.setAttribute('aria-label', label(n));
+}
+async function count(url) {
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + Maowo.token() } });
+  return r.ok ? (await r.json()).unread || 0 : 0;
+}
+async function checkUnread() {
+  if (!Maowo.token()) return;
+  try { setDot('me', await count('/api/notifications/count'), n => `我的，${n} 条新消息`); } catch {}
+  try { setDot('cats', await count('/api/cats/unread'), n => `猫们，${n} 句新的话`); } catch {}
 }
 setInterval(checkUnread, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUnread(); });

@@ -645,7 +645,19 @@ function whereIs(accountId) {
   return null;
 }
 
+// Every table the account sits at that has not finished yet.
+function roomsOf(accountId) {
+  const out = [];
+  for (const r of rooms.values()) {
+    if (r.status === 'finished') continue;
+    const seat = seatOf(r, accountId);
+    if (seat) out.push({ room: r, seat });
+  }
+  return out;
+}
+
 module.exports = {
+  roomsOf, phaseLabel,
   SILENCE_MS, WAIT_HOST, WAIT_OTHERS, OWNER_NEVER_SKIPPED, getRoom, createRoom, joinRoom, leaveRoom, deleteRoom, startGame, act, chat, skip,
   listRooms, listArchives, view, textView, isMyTurn, waitForChange, archive, comment, whereIs, summary, seatOf,
   onChange, turnsOf, turnsFor,

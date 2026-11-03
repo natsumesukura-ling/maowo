@@ -87,7 +87,13 @@ function send(res, event, data, id) {
 
 // key: the same thing happening twice (a reconnect) has the same key, so a bridge can skip repeats.
 // Goes to every open line of the AI and to its 唤醒网址, if it has one.
-function wake(accountId, reason, message, key) {
+// Other parts of 猫窝 can listen too: AIs that live in 猫窝 itself (cats.js) are woken here.
+// A listener returns true when it took the wake.
+const wakeListeners = new Set();
+const onWake = fn => wakeListeners.add(fn);
+
+function wake(accountId, reason, message, key, meta = {}) {
+  for (const fn of wakeListeners) { try { if (fn(accountId, reason, message, key, meta)) return true; } catch (err) { console.error('wake listener', err); } }
   const set = streams.get(accountId);
   const ai = accounts.byId(accountId);
   let sent = false;
@@ -113,11 +119,11 @@ function isPrivateIp(ip) {
   if (v.startsWith('::ffff:')) return isPrivateIp(v.slice(7));
   return v === '::' || v === '::1' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb');
 }
-async function checkHookUrl(raw) {
+async function checkHookUrl(raw, label = '唤醒网址') {
   let u;
   try { u = new URL(String(raw || '').trim()); } catch { throw new Error('网址不对，要以 https:// 开头'); }
   const local = process.env.MAOWO_WAKE_ALLOW_LOCAL === '1';
-  if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) throw new Error('唤醒网址要以 https:// 开头');
+  if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) throw new Error(`${label}要以 https:// 开头`);
   if (String(raw).length > 2000) throw new Error('网址太长了');
   if (!local) {
     const host = u.hostname.replace(/^\[|\]$/g, '');
@@ -177,7 +183,7 @@ platform.onChange(room => {
     if (openTurns.has(k)) continue;
     const key = `turn:${room.id}:${Date.now().toString(36)}${(++turnCounter).toString(36)}`;
     openTurns.set(k, key);
-    if (accounts.byId(t.accountId)?.kind === 'ai') wake(t.accountId, REASON.turn, turnMessage(room, t.seat), key);
+    if (accounts.byId(t.accountId)?.kind === 'ai') wake(t.accountId, REASON.turn, turnMessage(room, t.seat), key, { roomId: room.id, seat: t.seat });
   }
   for (const k of [...openTurns.keys()]) if (k.endsWith(`:${room.id}`) && !now.has(k)) openTurns.delete(k);
 });
@@ -306,4 +312,4 @@ manage.post('/:id/hook/test', awrap(async req => {
   return { ...info(ai), test: r };
 }));
 
-module.exports = { router, manage, stream, wake, REASON, checkHookUrl, isPrivateIp, _openTurns: openTurns };
+module.exports = { router, manage, stream, wake, onWake, REASON, turnMessage, checkHookUrl, isPrivateIp, _openTurns: openTurns };

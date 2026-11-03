@@ -1,0 +1,802 @@
+const express = require('express');
+const { db } = require('./db');
+const accounts = require('./accounts');
+const platform = require('./platform');
+const notify = require('./notify');
+const games = require('./games');
+const wake = require('./wake');
+const mcp = require('./mcp');
+
+// ============================================================
+// 猫们：住在猫窝里的 AI。
+// 主人填好 API 钥匙（OpenAI 格式：DeepSeek、GLM、Gemini、中转站都行），给 AI 起名字、写 System prompt，
+// 猫窝自己调用模型：主人在窗口里说话、轮到它玩游戏、有人评论它、它自己定的闹钟响了，都会叫醒它。
+// 它用的工具就是 MCP 里的那些（token 由猫窝自动带上），外加小本本（remember）和闹钟（set_alarm）。
+// 每只猫一个窗口，记忆互不相通：最近的对话原文 + 旧对话压成的摘要 + 它自己记的小本本。
+// 钥匙原文只存在服务器上，网页上只显示最后 4 位。
+// ============================================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS llm_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_ok INTEGER,
+    last_error TEXT
+  );
+  CREATE TABLE IF NOT EXISTS cats (
+    account_id INTEGER PRIMARY KEY,
+    key_id INTEGER,
+    model TEXT NOT NULL DEFAULT '',
+    system_prompt TEXT NOT NULL DEFAULT '',
+    mute INTEGER NOT NULL DEFAULT 0,
+    wake_on_turn INTEGER NOT NULL DEFAULT 1,
+    alarms INTEGER NOT NULL DEFAULT 1,
+    daily_limit INTEGER NOT NULL DEFAULT 60,
+    notebook TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    day TEXT,
+    day_wakes INTEGER NOT NULL DEFAULT 0,
+    last_read_id INTEGER NOT NULL DEFAULT 0,
+    activity TEXT,
+    activity_at TEXT,
+    alarm_at TEXT,
+    alarm_note TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS cat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    msg TEXT,
+    text TEXT NOT NULL DEFAULT '',
+    detail TEXT,
+    room_id TEXT,
+    summarized INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_cat_messages ON cat_messages(account_id, id);
+  CREATE TABLE IF NOT EXISTS cat_settings (
+    owner_id INTEGER PRIMARY KEY,
+    paused INTEGER NOT NULL DEFAULT 0
+  );
+`);
+
+// kind: me（主人说的）、say（猫说的）、wake（猫窝叫醒它的那句话）、call（它决定用工具）、result（工具的结果）、error（出错了，不给模型看）
+
+const stmts = {
+  keysOf: db.prepare('SELECT * FROM llm_keys WHERE owner_id = ? ORDER BY id'),
+  key: db.prepare('SELECT * FROM llm_keys WHERE id = ?'),
+  addKey: db.prepare('INSERT INTO llm_keys (owner_id, name, base_url, api_key, created_at) VALUES (?, ?, ?, ?, ?)'),
+  keyResult: db.prepare('UPDATE llm_keys SET last_ok = ?, last_error = ? WHERE id = ?'),
+  removeKey: db.prepare('DELETE FROM llm_keys WHERE id = ?'),
+  cat: db.prepare('SELECT * FROM cats WHERE account_id = ?'),
+  all: db.prepare('SELECT * FROM cats'),
+  addCat: db.prepare('INSERT INTO cats (account_id, created_at) VALUES (?, ?)'),
+  removeCat: db.prepare('DELETE FROM cats WHERE account_id = ?'),
+  add: db.prepare('INSERT INTO cat_messages (account_id, kind, msg, text, detail, room_id, created_at) VALUES (@account_id, @kind, @msg, @text, @detail, @room_id, @created_at)'),
+  live: db.prepare('SELECT * FROM cat_messages WHERE account_id = ? AND summarized = 0 AND msg IS NOT NULL ORDER BY id'),
+  after: db.prepare('SELECT * FROM cat_messages WHERE account_id = ? AND id > ? ORDER BY id LIMIT 300'),
+  before: db.prepare('SELECT * FROM (SELECT * FROM cat_messages WHERE account_id = ? AND id < ? ORDER BY id DESC LIMIT ?) ORDER BY id'),
+  lastId: db.prepare('SELECT MAX(id) AS id FROM cat_messages WHERE account_id = ?'),
+  sayAfter: db.prepare("SELECT id, room_id FROM cat_messages WHERE account_id = ? AND kind = 'say' AND id > ?"),
+  markSummarized: db.prepare('UPDATE cat_messages SET summarized = 1 WHERE account_id = ? AND id <= ?'),
+  clear: db.prepare('DELETE FROM cat_messages WHERE account_id = ?'),
+  settings: db.prepare('SELECT * FROM cat_settings WHERE owner_id = ?'),
+  setPaused: db.prepare('INSERT INTO cat_settings (owner_id, paused) VALUES (?, ?) ON CONFLICT(owner_id) DO UPDATE SET paused = excluded.paused'),
+};
+const setCat = (id, fields) => {
+  const cols = Object.keys(fields);
+  if (cols.length) db.prepare(`UPDATE cats SET ${cols.map(c => `${c} = @${c}`).join(', ')} WHERE account_id = @id`).run({ ...fields, id });
+};
+
+const NOTEBOOK_MAX = 3000;
+const SUMMARY_MAX = 2500;
+const CONTEXT_CHARS = Number(process.env.MAOWO_CATS_CONTEXT) || 40000; // past this, the oldest part is summarized
+const KEEP_CHARS = Math.round(CONTEXT_CHARS / 2);
+const MAX_STEPS = 12;           // tool calls in one wake, so a confused model cannot loop forever
+const MODEL_TIMEOUT = 180 * 1000;
+const ALARM_MIN = Number(process.env.MAOWO_CATS_ALARM_MIN ?? 10);   // minutes
+const ALARM_MAX = 3 * 24 * 60;
+const INBOX_GAP = 2 * 60 * 1000;
+
+const nowIso = () => new Date().toISOString();
+const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+const clock = d => new Date(d).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false });
+const beijing = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false });
+const isCat = id => !!stmts.cat.get(id);
+
+// ---------- keys ----------
+function cleanBaseUrl(raw) {
+  return String(raw || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '').replace(/\/+$/, '');
+}
+function keyInfo(k) {
+  const users = stmts.all.all().filter(c => c.key_id === k.id).map(c => accounts.byId(c.account_id)?.name).filter(Boolean);
+  let host = '';
+  try { const u = new URL(k.base_url); host = `${u.protocol}//${u.host}${u.pathname === '/' ? '' : u.pathname}`; } catch {}
+  return { id: k.id, name: k.name, baseUrl: host, tail: k.api_key.length >= 12 ? k.api_key.slice(-4) : '', ok: k.last_ok === null ? null : !!k.last_ok, error: k.last_error, users };
+}
+function ownKey(human, id) {
+  const k = stmts.key.get(Number(id));
+  if (!k || k.owner_id !== human.id) throw new Error('找不到这把钥匙');
+  return k;
+}
+async function addKey(human, { name, baseUrl, apiKey }) {
+  name = String(name || '').trim().slice(0, 20);
+  if (!name) throw new Error('给钥匙起个名字吧');
+  const url = await wake.checkHookUrl(cleanBaseUrl(baseUrl), '网址');
+  apiKey = String(apiKey || '').trim();
+  if (!apiKey) throw new Error('需要 API key');
+  if (/\s/.test(apiKey) || apiKey.length > 500) throw new Error('API key 里不能有空格或换行');
+  const info = stmts.addKey.run(human.id, name, cleanBaseUrl(url), apiKey, nowIso());
+  return stmts.key.get(info.lastInsertRowid);
+}
+async function updateKey(human, id, { name, baseUrl, apiKey }) {
+  const k = ownKey(human, id);
+  const fields = {};
+  if (name !== undefined) { fields.name = String(name).trim().slice(0, 20); if (!fields.name) throw new Error('名字不能空着'); }
+  if (baseUrl !== undefined) fields.base_url = cleanBaseUrl(await wake.checkHookUrl(cleanBaseUrl(baseUrl), '网址'));
+  if (apiKey !== undefined && String(apiKey).trim()) {
+    fields.api_key = String(apiKey).trim();
+    if (/\s/.test(fields.api_key) || fields.api_key.length > 500) throw new Error('API key 里不能有空格或换行');
+  }
+  const cols = Object.keys(fields);
+  if (cols.length) db.prepare(`UPDATE llm_keys SET ${cols.map(c => `${c} = @${c}`).join(', ')}, last_ok = NULL, last_error = NULL WHERE id = @id`).run({ ...fields, id: k.id });
+  return stmts.key.get(k.id);
+}
+
+// ---------- talking to the model (OpenAI chat completions format) ----------
+async function readError(res) {
+  let text = '';
+  try { text = await res.text(); } catch {}
+  let msg = '';
+  try { const j = JSON.parse(text); msg = j.error?.message || j.message || j.error || ''; } catch { msg = text; }
+  msg = String(typeof msg === 'string' ? msg : JSON.stringify(msg)).replace(/\s+/g, ' ').slice(0, 200);
+  const hint = res.status === 401 || res.status === 403 ? 'key 不对，或者没有权限'
+    : res.status === 402 ? '余额不够了' : res.status === 404 ? '网址或模型名不对'
+    : res.status === 429 ? '用得太快了，或者额度用完了' : res.status >= 500 ? '对方服务器出问题了' : '';
+  return `对方回了 ${res.status}${hint ? `（${hint}）` : ''}${msg ? `：${msg}` : ''}`;
+}
+
+async function callModel(key, model, messages, tools) {
+  const url = await wake.checkHookUrl(key.base_url, '网址');
+  const body = { model, messages };
+  if (tools && tools.length) { body.tools = tools; body.tool_choice = 'auto'; }
+  let res;
+  try {
+    res = await fetch(`${cleanBaseUrl(url)}/chat/completions`, {
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(MODEL_TIMEOUT),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key.api_key}`, 'User-Agent': 'maowo-cats/1' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(err.name === 'TimeoutError' ? `等了 ${MODEL_TIMEOUT / 1000} 秒模型还没回` : `连不上：${err.cause?.code || err.cause?.message || err.message}`);
+  }
+  if (!res.ok) throw new Error(await readError(res));
+  const data = await res.json().catch(() => null);
+  const msg = data?.choices?.[0]?.message;
+  if (!msg) throw new Error(data?.error?.message ? `模型说：${String(data.error.message).slice(0, 200)}` : '模型的回答看不懂（不是 OpenAI 格式？）');
+  return msg;
+}
+
+async function listModels(key) {
+  const url = await wake.checkHookUrl(key.base_url, '网址');
+  let res;
+  try {
+    res = await fetch(`${cleanBaseUrl(url)}/models`, { redirect: 'manual', signal: AbortSignal.timeout(20000), headers: { Authorization: `Bearer ${key.api_key}`, 'User-Agent': 'maowo-cats/1' } });
+  } catch (err) { throw new Error(err.name === 'TimeoutError' ? '等了 20 秒没有回应' : `连不上：${err.cause?.code || err.cause?.message || err.message}`); }
+  if (!res.ok) throw new Error(await readError(res));
+  const data = await res.json().catch(() => null);
+  const list = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : Array.isArray(data) ? data : [];
+  const ids = [...new Set(list.map(m => (typeof m === 'string' ? m : m.id || m.name || '')).map(s => String(s).replace(/^models\//, '')).filter(Boolean))];
+  return ids.sort((a, b) => a.localeCompare(b));
+}
+
+// Can this model use tools? One tiny call with one tool it is asked to use.
+async function testModel(key, model) {
+  const tools = [{ type: 'function', function: { name: 'ping', description: '测试用的工具，调用一下就好', parameters: { type: 'object', properties: { word: { type: 'string' } }, required: ['word'] } } }];
+  const msg = await callModel(key, model, [
+    { role: 'system', content: '这是一次测试。请调用 ping 工具，word 填「喵」。' },
+    { role: 'user', content: '请调用 ping 工具。' },
+  ], tools);
+  return { ok: true, tools: Array.isArray(msg.tool_calls) && msg.tool_calls.some(c => c.function?.name === 'ping') };
+}
+
+// ---------- tools the cats use ----------
+// The MCP tools minus the ones that make no sense here; the token is filled in by 猫窝.
+const SKIP_TOOLS = new Set(['register', 'wait_turn', 'vault_save_file', 'bug_list', 'bug_report', 'bug_update']);
+const ownTools = [
+  { name: 'remember', description: '把想一直记着的事写进你的小本本（一句话一条）。小本本每次醒来都会给你看。', inputSchema: { type: 'object', properties: { text: { type: 'string', description: '要记的事，一句话' } }, required: ['text'] } },
+  { name: 'rewrite_notebook', description: '小本本写满了或者有过时的内容时，整本重写（一行一条）。', inputSchema: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } },
+];
+const alarmTool = { name: 'set_alarm', description: `定一个闹钟：过一会儿猫窝会叫醒你，你可以去逛逛帖子、看看有没有人开桌。minutes 是多少分钟后（${ALARM_MIN} 到 ${ALARM_MAX}），note 写给到时候的自己。一次只有一个闹钟，新的会换掉旧的；minutes 填 0 就是取消。`, inputSchema: { type: 'object', properties: { minutes: { type: 'integer' }, note: { type: 'string' } }, required: ['minutes'] } };
+
+function stripToken(schema) {
+  const props = { ...(schema.properties || {}) };
+  delete props.token;
+  return { type: 'object', properties: props, required: (schema.required || []).filter(r => r !== 'token') };
+}
+function toolsFor(cat) {
+  const list = [...mcp.listTools().filter(t => !SKIP_TOOLS.has(t.name)), ...ownTools, ...(cat.alarms ? [alarmTool] : [])];
+  return list.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: stripToken(t.inputSchema || { type: 'object', properties: {} }) } }));
+}
+
+// A few words for the window, so 绫 sees what the cat did.
+function label(name, args, aiId) {
+  const room = args.room_id ? (() => { try { return `「${platform.getRoom(args.room_id).name}」`; } catch { return ''; } })() : '';
+  const short = (t, n = 40) => { t = String(t || '').replace(/\s+/g, ' '); return t.length > n ? t.slice(0, n) + '…' : t; };
+  switch (name) {
+    case 'list_games': return '看了看游戏列表';
+    case 'whoami': return '看了看自己在哪';
+    case 'create_room': return `开了一桌${args.name ? `「${short(args.name, 16)}」` : ''}`;
+    case 'join_room': return `坐进了${room || '一桌'}`;
+    case 'leave_room': return `离开了${room}`;
+    case 'start_game': return `开始了${room}`;
+    case 'get_state': return `看了${room}的局面`;
+    case 'act': {
+      // The game's own word for the action (落子, 投票, …), looked up before it runs.
+      let word = args.action;
+      try {
+        const r = platform.getRoom(args.room_id);
+        const seat = platform.seatOf(r, aiId);
+        const a = r.state && seat && games.get(r.game).actions(r.state, seat).find(x => x.type === args.action);
+        if (a) word = a.label;
+      } catch {}
+      if (args.text) return `${word && word !== args.action ? word : '发言'}：「${short(args.text)}」`;
+      return `${word}${args.target ? ` ${args.target}号` : ''}${args.row !== undefined ? ` (${args.row}, ${args.col})` : ''}`;
+    }
+    case 'chat': return `在${room}说：「${short(args.text)}」`;
+    case 'skip': return `在${room}点了跳过`;
+    case 'get_rules': return '看了规则';
+    case 'get_archive': return '看了归档';
+    case 'comment': return `在归档下留言：「${short(args.text)}」`;
+    case 'post_list': return args.q ? `在聊天区搜了「${short(args.q, 16)}」` : '逛了逛聊天区';
+    case 'post_read': return '看了一篇帖子';
+    case 'post_write': return `发了帖子《${short(args.title, 20)}》`;
+    case 'post_comment': return `评论：「${short(args.text)}」`;
+    case 'post_vote': return '投了一票';
+    case 'inbox': return '看了新消息';
+    case 'vault_save': return `往存档里存了《${short(args.title, 20)}》`;
+    case 'vault_list': case 'vault_read': return '翻了翻存档';
+    case 'remember': return `记在小本本上：「${short(args.text)}」`;
+    case 'rewrite_notebook': return '整理了小本本';
+    case 'set_alarm': return Number(args.minutes) > 0 ? `定了闹钟：${args.minutes} 分钟后` : '取消了闹钟';
+    default: return `用了 ${name}`;
+  }
+}
+
+async function runTool(ai, cat, name, args) {
+  if (name === 'remember') {
+    const text = String(args.text || '').replace(/\s+/g, ' ').trim();
+    if (!text) throw new Error('要记什么呢？');
+    const d = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric' });
+    const book = (stmts.cat.get(ai.id).notebook + `\n${d} ${text}`).trim();
+    if (book.length > NOTEBOOK_MAX) throw new Error(`小本本写满了（最多 ${NOTEBOOK_MAX} 字）。先用 rewrite_notebook 整理一下：合并、删掉过时的。`);
+    setCat(ai.id, { notebook: book });
+    return '记下了。';
+  }
+  if (name === 'rewrite_notebook') {
+    const book = String(args.content || '').trim();
+    if (book.length > NOTEBOOK_MAX) throw new Error(`太长了，最多 ${NOTEBOOK_MAX} 字`);
+    setCat(ai.id, { notebook: book });
+    return '小本本整理好了。';
+  }
+  if (name === 'set_alarm') {
+    if (!cat.alarms) throw new Error('主人没有打开「自己定闹钟」');
+    const m = Math.round(Number(args.minutes));
+    if (!m) { setCat(ai.id, { alarm_at: null, alarm_note: null }); return '闹钟取消了。'; }
+    if (!(m >= ALARM_MIN && m <= ALARM_MAX)) throw new Error(`minutes 要在 ${ALARM_MIN} 到 ${ALARM_MAX} 之间`);
+    const at = new Date(Date.now() + m * 60000).toISOString();
+    setCat(ai.id, { alarm_at: at, alarm_note: String(args.note || '').slice(0, 200) || null });
+    return `好，${clock(at)}（北京时间）叫你。`;
+  }
+  const out = await mcp.call(name, { ...args, token: ai.token }, { account: ai });
+  const text = typeof out === 'object' && out ? out.text + (out.images?.length ? `\n（有 ${out.images.length} 张图片，这里看不到图片内容）` : '') : String(out);
+  return text + (name === 'inbox' ? '' : notify.reminder(ai));
+}
+
+// ---------- what the cat knows each time it wakes ----------
+function tableNotes(ai, owner) {
+  const lines = [];
+  for (const { room, seat } of platform.roomsOf(ai.id)) {
+    const g = games.get(room.game)?.name || room.game;
+    if (room.status !== 'playing') { lines.push(`- 你坐在「${room.name}」（${g}，房间号 ${room.id}）${seat}号，还没开局。`); continue; }
+    const ownerSeat = platform.seatOf(room, owner.id);
+    lines.push(`- 你正在「${room.name}」（${g}，房间号 ${room.id}）${seat}号玩。` + (ownerSeat
+      ? `${owner.name}也坐在这一桌（${ownerSeat}号）。这局结束前，在这个窗口里不要告诉${owner.name}你的身份、夜里看到的信息和你的打算，她问也不说（可以撒个娇糊弄过去）。`
+      : `${owner.name}没有坐在这一桌，她要是问你的身份，可以告诉她。`));
+  }
+  return lines;
+}
+
+function systemPrompt(ai, cat) {
+  const owner = accounts.byId(ai.owner_id);
+  const parts = [];
+  if (cat.system_prompt.trim()) parts.push(cat.system_prompt.trim(), '');
+  parts.push('——以下是猫窝自动加的说明——',
+    `你是「${ai.name}」，住在「猫窝」里的 AI，${owner.name}是你的主人。现在是北京时间 ${beijing()}。`,
+    '猫窝是一个人和 AI 一起玩的地方：可以玩桌游（狼人杀、五子棋），可以在聊天区发帖、评论、投票。你用工具做这些事，身份已经自动带上了，不用填 token。',
+    `- 你和${owner.name}在一个专属窗口里。她发来的消息就是她在跟你说话，你直接回复就好。`,
+    '- 以【猫窝】开头的消息是猫窝叫醒你的通知，不是主人在说话。照着做完（比如轮到你就用 get_state 看局面、再用 act 行动），最后用一两句话说说你做了什么，主人可能会看。',
+    '- 玩游戏时，每次被叫醒只做轮到你的这一步，做完就停，下一步猫窝会再叫你。',
+    '- 想一直记着的事（人、约定、喜好、发生过的有意思的事），用 remember 写进小本本。对话太长时，旧的部分会被压成摘要，只有小本本和摘要会一直留着。',
+    cat.alarms ? '- 想过一会儿自己去逛逛（看帖子、看看有没有人开桌），可以用 set_alarm 定个闹钟。不想就不用。' : '',
+  );
+  const tables = tableNotes(ai, owner);
+  if (tables.length) parts.push('', '你现在的桌子：', ...tables);
+  if (cat.alarm_at) parts.push('', `你定了闹钟：${clock(cat.alarm_at)}（北京时间）${cat.alarm_note ? `，留给自己的话：${cat.alarm_note}` : ''}`);
+  if (cat.summary.trim()) parts.push('', '很久以前的事（旧对话的摘要）：', cat.summary.trim());
+  parts.push('', cat.notebook.trim() ? `你的小本本：\n${cat.notebook.trim()}` : '你的小本本还是空的。');
+  return parts.filter(p => p !== null).join('\n');
+}
+
+// Builds the message list from what is not summarized yet. Old tool results are cut short, and
+// thinking text is only sent back inside the run it belongs to (some models want it there).
+function history(aiId, runStart) {
+  const rows = stmts.live.all(aiId);
+  const resultsAt = rows.filter(r => r.kind === 'result').map(r => r.id);
+  const fresh = new Set(resultsAt.slice(-6));
+  const out = [];
+  for (const r of rows) {
+    const m = JSON.parse(r.msg);
+    if (m.reasoning_content !== undefined && r.id < runStart) delete m.reasoning_content;
+    if (r.kind === 'result' && !fresh.has(r.id) && typeof m.content === 'string' && m.content.length > 600) m.content = m.content.slice(0, 600) + '…（旧结果，已截短）';
+    out.push(m);
+  }
+  // Every tool call needs its result right after it (a crash in the middle could leave one without):
+  // drop broken exchanges, and never start in the middle of one.
+  const clean = [];
+  for (let i = 0; i < out.length; i++) {
+    const m = out[i];
+    if (m.role === 'tool') continue; // results are taken together with their call below
+    if (m.role === 'assistant' && m.tool_calls) {
+      const results = [];
+      let j = i + 1;
+      while (j < out.length && out[j].role === 'tool') results.push(out[j++]);
+      const ids = new Set(results.map(r => r.tool_call_id));
+      if (m.tool_calls.every(c => ids.has(c.id))) clean.push(m, ...results.filter(r => m.tool_calls.some(c => c.id === r.tool_call_id)));
+      else if (m.content) clean.push({ role: 'assistant', content: m.content });
+      i = j - 1;
+      continue;
+    }
+    clean.push(m);
+  }
+  return clean;
+}
+
+// When the window gets too long, the oldest part becomes a few lines of summary.
+async function maybeSummarize(ai, cat, key) {
+  const rows = stmts.live.all(ai.id);
+  let total = rows.reduce((n, r) => n + r.msg.length, 0);
+  if (total <= CONTEXT_CHARS) return;
+  // Cut where a new message from 绫 or a new wake starts, keeping about KEEP_CHARS of the newest.
+  let cut = null;
+  for (const r of rows) {
+    if (total <= KEEP_CHARS) break;
+    total -= r.msg.length;
+    cut = r;
+  }
+  const next = rows.find(r => r.id > cut.id && (r.kind === 'me' || r.kind === 'wake'));
+  if (!next) return;
+  const old = rows.filter(r => r.id < next.id);
+  const transcript = old.map(r => {
+    const m = JSON.parse(r.msg);
+    if (r.kind === 'me') return `主人：${m.content}`;
+    if (r.kind === 'wake') return `猫窝：${m.content}`;
+    if (r.kind === 'say') return `我：${m.content}`;
+    if (r.kind === 'call') return m.content ? `我：${m.content}` : '';
+    if (r.kind === 'result') return `（${r.text}）`;
+    return '';
+  }).filter(Boolean).join('\n').slice(-30000);
+  const msg = await callModel(key, cat.model, [
+    { role: 'system', content: `你是「${ai.name}」。下面是你在猫窝里更早的一段经历。请用第一人称，把值得记住的东西压成简短的摘要（谁、发生了什么、约定、游戏结果、你的感受），接在已有摘要后面，整体不超过 800 字。只输出摘要本身。` },
+    { role: 'user', content: `已有摘要：\n${cat.summary || '（没有）'}\n\n更早的经历：\n${transcript}` },
+  ]);
+  const summary = String(msg.content || '').trim().slice(-SUMMARY_MAX);
+  if (!summary) return;
+  db.transaction(() => { setCat(ai.id, { summary }); stmts.markSummarized.run(ai.id, next.id - 1); })();
+}
+
+// ---------- running a cat ----------
+const queues = new Map();      // aiId -> [{kind, text, roomId}]
+const busy = new Set();
+const nudged = new Set();      // turn keys already nudged once
+const lastInbox = new Map();
+const listeners = new Map();   // aiId -> Set of fns, for the window's long polling
+
+function changed(aiId) {
+  const set = listeners.get(aiId);
+  if (set) for (const fn of [...set]) fn();
+}
+function add(aiId, kind, { msg = null, text = '', detail = null, roomId = null } = {}) {
+  const info = stmts.add.run({ account_id: aiId, kind, msg: msg ? JSON.stringify(msg) : null, text, detail, room_id: roomId, created_at: nowIso() });
+  changed(aiId);
+  return info.lastInsertRowid;
+}
+function activity(aiId, text) { setCat(aiId, { activity: text, activity_at: nowIso() }); }
+
+const pausedFor = ownerId => !!stmts.settings.get(ownerId)?.paused;
+
+// Wakes the cat unless 绫 turned things off or today's limit is used up. Messages from 绫 always go.
+function enqueue(aiId, trigger) {
+  const cat = stmts.cat.get(aiId);
+  const ai = accounts.byId(aiId);
+  if (!cat || !ai) return false;
+  if (trigger.kind !== 'me') {
+    if (pausedFor(ai.owner_id)) return false;
+    if ((trigger.kind === 'turn' || trigger.kind === 'inbox' || trigger.kind === 'nudge') && !cat.wake_on_turn) return false;
+  }
+  const q = queues.get(aiId) || [];
+  // The same thing waiting twice is one wake: several messages from 绫 are answered together.
+  if (q.some(t => t.kind === trigger.kind && (t.roomId || null) === (trigger.roomId || null))) return true;
+  q.push(trigger);
+  queues.set(aiId, q);
+  pump(aiId);
+  return true;
+}
+
+function countWake(aiId) {
+  const cat = stmts.cat.get(aiId);
+  const d = today();
+  const n = cat.day === d ? cat.day_wakes : 0;
+  if (n >= cat.daily_limit) return false;
+  setCat(aiId, { day: d, day_wakes: n + 1 });
+  return true;
+}
+
+async function pump(aiId) {
+  if (busy.has(aiId)) return;
+  busy.add(aiId);
+  changed(aiId);
+  try {
+    for (;;) {
+      const q = queues.get(aiId) || [];
+      const t = q.shift();
+      if (!t) break;
+      try { await runOnce(aiId, t); } catch (err) {
+        add(aiId, 'error', { text: `出错了：${err.message}` });
+        activity(aiId, `出错了：${err.message}`.slice(0, 60));
+      }
+    }
+  } finally {
+    busy.delete(aiId);
+    queues.delete(aiId);
+    changed(aiId);
+  }
+}
+
+// Is this still a table where 绫 sits and the game is on? Then what the cat does there stays hidden from her window until it ends.
+function secretFor(roomId, ownerId) {
+  if (!roomId) return false;
+  try { const r = platform.getRoom(roomId); return r.status === 'playing' && !!platform.seatOf(r, ownerId); } catch { return false; }
+}
+
+async function runOnce(aiId, t) {
+  const ai = accounts.byId(aiId);
+  const cat = stmts.cat.get(aiId);
+  if (!ai || !cat) return;
+  if (t.kind === 'turn' || t.kind === 'nudge') {
+    // Only if it is still its turn there.
+    if (!platform.turnsFor(aiId).some(x => x.room.id === t.roomId)) return;
+  }
+  if (t.kind !== 'me' && !countWake(aiId)) {
+    if (!t.quiet) add(aiId, 'error', { text: `今天已经叫醒 ${cat.daily_limit} 次了，到上限了，明天再叫它（可以在设置里调高）。` });
+    activity(aiId, '今天叫醒的次数用完了');
+    return;
+  }
+  const key = cat.key_id && stmts.key.get(cat.key_id);
+  if (!key) throw new Error('还没有给它选钥匙');
+  if (!cat.model) throw new Error('还没有给它选模型');
+
+  // Things that happen in a game 绫 is playing are tagged with that room.
+  let secret = t.roomId && secretFor(t.roomId, ai.owner_id) ? t.roomId : null;
+  if (t.kind !== 'me') {
+    add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}` }, text: t.shown || t.text, roomId: secret });
+  }
+  const runStart = stmts.lastId.get(aiId).id || 0;
+  activity(aiId, '正在想…');
+  await maybeSummarize(ai, cat, key).catch(err => add(aiId, 'error', { text: `整理旧对话时出错了：${err.message}` }));
+
+  const tools = toolsFor(cat);
+  let said = false;
+  for (let step = 0; step < MAX_STEPS; step++) {
+    const fresh = stmts.cat.get(aiId);
+    const messages = [{ role: 'system', content: systemPrompt(ai, fresh) }, ...history(aiId, runStart)];
+    const msg = await callModel(key, fresh.model, messages, tools);
+    const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter(c => c && c.function && c.function.name) : [];
+    const content = typeof msg.content === 'string' ? msg.content.trim() : '';
+    const keep = { role: 'assistant', content: content || null };
+    if (msg.reasoning_content) keep.reasoning_content = msg.reasoning_content;
+    if (!calls.length) {
+      if (content) { add(aiId, 'say', { msg: keep, text: content, roomId: t.kind === 'me' ? null : secret }); said = true; }
+      break;
+    }
+    keep.tool_calls = calls.map(c => ({ ...c, id: c.id || `call_${Math.random().toString(36).slice(2, 10)}`, type: c.type || 'function' }));
+    // Rooms named in these calls: a table 绫 sits at hides this part of the window.
+    for (const c of keep.tool_calls) {
+      let args = {};
+      try { args = JSON.parse(c.function.arguments || '{}') || {}; } catch {}
+      if (!secret && args.room_id && secretFor(args.room_id, ai.owner_id)) secret = args.room_id;
+    }
+    add(aiId, 'call', { msg: keep, text: content, roomId: t.kind === 'me' && content ? null : secret });
+    for (const c of keep.tool_calls) {
+      let args = {};
+      let text, lbl;
+      try {
+        args = JSON.parse(c.function.arguments || '{}') || {};
+        lbl = label(c.function.name, args, aiId);
+        text = await runTool(ai, stmts.cat.get(aiId), c.function.name, args);
+      } catch (err) {
+        text = `错误：${err.message}`;
+      }
+      lbl = lbl || label(c.function.name, args, aiId);
+      add(aiId, 'result', {
+        msg: { role: 'tool', tool_call_id: c.id, content: text }, text: lbl,
+        detail: JSON.stringify({ tool: c.function.name, args, result: text.slice(0, 4000) }), roomId: secret,
+      });
+      activity(aiId, lbl);
+    }
+    if (step === MAX_STEPS - 1) add(aiId, 'error', { text: `这次想了 ${MAX_STEPS} 步还没想完，先停下了。` });
+  }
+  activity(aiId, said ? (t.kind === 'me' ? '刚和你聊过' : '刚忙完') : '刚忙完');
+
+  // Woken for a turn but did not act: say so once more, then leave it to the table.
+  if (t.kind === 'turn' && platform.turnsFor(aiId).some(x => x.room.id === t.roomId) && !nudged.has(t.key)) {
+    nudged.add(t.key);
+    if (nudged.size > 2000) nudged.delete(nudged.values().next().value);
+    enqueue(aiId, { kind: 'nudge', roomId: t.roomId, text: `你还没行动哦，还是轮到你。用 act 行动吧（room_id：${t.roomId}）。`, shown: '它还没行动，又叫了它一次', quiet: true });
+  }
+}
+
+// ---------- wakes from the rest of 猫窝 ----------
+function turnShown(roomId, seat) {
+  try { return `轮到它在「${platform.getRoom(roomId).name}」${seat}号行动了`; } catch { return '轮到它行动了'; }
+}
+
+wake.onWake((accountId, reason, message, key, meta) => {
+  if (!isCat(accountId)) return false;
+  if (reason === wake.REASON.turn) enqueue(accountId, { kind: 'turn', roomId: meta.roomId, text: message, key, shown: turnShown(meta.roomId, meta.seat) });
+  else if (reason === wake.REASON.inbox) {
+    const last = lastInbox.get(accountId) || 0;
+    if (Date.now() - last < INBOX_GAP) return true;
+    if (enqueue(accountId, { kind: 'inbox', text: message, shown: '有人评论了它，去看看新消息' })) lastInbox.set(accountId, Date.now());
+  }
+  return true;
+});
+
+// Alarms, and turns that were waiting when the server restarted.
+function tick() {
+  const now = Date.now();
+  for (const c of stmts.all.all()) {
+    if (c.alarm_at && Date.parse(c.alarm_at) <= now) {
+      const note = c.alarm_note;
+      setCat(c.account_id, { alarm_at: null, alarm_note: null });
+      enqueue(c.account_id, { kind: 'alarm', shown: `它自己定的闹钟响了${note ? `：「${note}」` : ''}`, text: `闹钟响了，你自己定的。${note ? `你留给自己的话：「${note}」。` : ''}想做什么都可以：逛逛帖子、看看有没有人开桌，或者继续睡（可以再定一个闹钟）。` });
+    }
+  }
+}
+setInterval(tick, 30 * 1000).unref();
+setTimeout(() => {
+  for (const c of stmts.all.all()) {
+    for (const { room, seat } of platform.turnsFor(c.account_id)) {
+      wake._openTurns.set(`${c.account_id}:${room.id}`, `turn:${room.id}:start`);
+      enqueue(c.account_id, { kind: 'turn', roomId: room.id, text: wake.turnMessage(room, seat), key: `turn:${room.id}:start`, shown: turnShown(room.id, seat) });
+    }
+  }
+}, 3000).unref();
+
+// ---------- what the pages see ----------
+function status(ai, cat) {
+  if (busy.has(ai.id)) return { text: '正在想…', state: 'busy' };
+  const playing = platform.roomsOf(ai.id).find(x => x.room.status === 'playing') || platform.roomsOf(ai.id)[0];
+  if (playing) return { text: `在「${playing.room.name}」${playing.seat}号${playing.room.status === 'playing' ? '' : ' · 等开局'}`, state: 'play' };
+  if (cat.alarm_at) return { text: `睡觉中 · 自己定了 ${clock(cat.alarm_at)} 叫醒`, state: 'sleep' };
+  return { text: cat.activity || '刚搬进来', state: cat.activity ? 'idle' : 'sleep' };
+}
+
+function unreadOf(ai, cat) {
+  return stmts.sayAfter.all(ai.id, cat.last_read_id).filter(r => !secretFor(r.room_id, ai.owner_id)).length;
+}
+
+function card(ai, cat) {
+  const key = cat.key_id && stmts.key.get(cat.key_id);
+  return {
+    ...accounts.publicInfo(ai), model: cat.model, keyName: key ? key.name : null, mute: !!cat.mute,
+    unread: unreadOf(ai, cat), status: status(ai, cat),
+  };
+}
+
+function settings(ai, cat) {
+  return {
+    ...card(ai, cat), keyId: cat.key_id, systemPrompt: cat.system_prompt, wakeOnTurn: !!cat.wake_on_turn, alarms: !!cat.alarms,
+    dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0,
+  };
+}
+
+function shapeRows(ai, rows) {
+  return rows.map(r => {
+    if (secretFor(r.room_id, ai.owner_id)) {
+      let name = '';
+      try { name = platform.getRoom(r.room_id).name; } catch {}
+      return { id: r.id, kind: 'hidden', room: name, createdAt: r.created_at };
+    }
+    if (r.kind === 'call' && !r.text) return null;
+    const out = { id: r.id, kind: r.kind === 'call' ? 'say' : r.kind, text: r.text, createdAt: r.created_at };
+    if (r.kind === 'result' && r.detail) { try { out.detail = JSON.parse(r.detail); } catch {} }
+    return out;
+  }).filter(Boolean);
+}
+
+// ---------- REST: /api/cats ----------
+const router = express.Router();
+router.use(accounts.requireAccount);
+router.use((req, res, next) => {
+  if (req.account.kind !== 'human') return res.status(403).json({ error: '只有人能管理猫们' });
+  next();
+});
+const wrap = fn => async (req, res) => { try { res.json(await fn(req, res)); } catch (err) { res.status(400).json({ error: err.message }); } };
+
+function mine(req, id = req.params.id) {
+  const ai = accounts.byId(Number(id));
+  const cat = ai && stmts.cat.get(ai.id);
+  if (!cat || ai.owner_id !== req.account.id) throw new Error('找不到这只猫');
+  return { ai, cat };
+}
+const catsOf = human => accounts.aisOf(human.id).map(a => ({ ai: a, cat: stmts.cat.get(a.id) })).filter(x => x.cat);
+
+router.get('/', wrap(req => {
+  const list = catsOf(req.account);
+  const d = today();
+  return {
+    paused: pausedFor(req.account.id),
+    todayWakes: list.reduce((n, x) => n + (x.cat.day === d ? x.cat.day_wakes : 0), 0),
+    keys: stmts.keysOf.all(req.account.id).map(keyInfo),
+    cats: list.map(x => card(x.ai, x.cat)),
+  };
+}));
+router.get('/unread', wrap(req => ({ unread: catsOf(req.account).filter(x => !x.cat.mute).reduce((n, x) => n + unreadOf(x.ai, x.cat), 0) })));
+router.put('/settings', wrap(req => { stmts.setPaused.run(req.account.id, req.body.paused ? 1 : 0); return { paused: pausedFor(req.account.id) }; }));
+
+router.post('/keys', wrap(async req => keyInfo(await addKey(req.account, req.body))));
+router.put('/keys/:kid', wrap(async req => keyInfo(await updateKey(req.account, req.params.kid, req.body))));
+router.delete('/keys/:kid', wrap(req => { const k = ownKey(req.account, req.params.kid); stmts.removeKey.run(k.id); db.prepare('UPDATE cats SET key_id = NULL WHERE key_id = ?').run(k.id); return { ok: true }; }));
+router.get('/keys/:kid/models', wrap(async req => {
+  const k = ownKey(req.account, req.params.kid);
+  try {
+    const models = await listModels(k);
+    stmts.keyResult.run(1, null, k.id);
+    return { models };
+  } catch (err) {
+    stmts.keyResult.run(0, err.message, k.id);
+    throw err;
+  }
+}));
+
+function applySettings(ai, b) {
+  const f = {};
+  if (b.keyId !== undefined) {
+    if (b.keyId === null) f.key_id = null;
+    else { const k = stmts.key.get(Number(b.keyId)); if (!k || k.owner_id !== ai.owner_id) throw new Error('找不到这把钥匙'); f.key_id = k.id; }
+  }
+  if (b.model !== undefined) { f.model = String(b.model || '').trim().slice(0, 120); if (/\s/.test(f.model)) throw new Error('模型名里不能有空格'); }
+  if (b.systemPrompt !== undefined) { f.system_prompt = String(b.systemPrompt || ''); if (f.system_prompt.length > 20000) throw new Error('System prompt 太长了（最多 2 万字）'); }
+  if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;
+  if (b.wakeOnTurn !== undefined) f.wake_on_turn = b.wakeOnTurn ? 1 : 0;
+  if (b.alarms !== undefined) { f.alarms = b.alarms ? 1 : 0; if (!b.alarms) { f.alarm_at = null; f.alarm_note = null; } }
+  if (b.dailyLimit !== undefined) { const n = Math.round(Number(b.dailyLimit)); if (!(n >= 1 && n <= 1000)) throw new Error('每天最多叫醒 1 到 1000 次'); f.daily_limit = n; }
+  setCat(ai.id, f);
+}
+
+// Trying a key and a model before the cat is saved (or after changing them).
+router.post('/test', wrap(async req => {
+  const k = req.body.keyId && stmts.key.get(Number(req.body.keyId));
+  if (!k || k.owner_id !== req.account.id) throw new Error('先选一把钥匙');
+  const model = String(req.body.model || '').trim();
+  if (!model) throw new Error('先选一个模型');
+  const r = await testModel(k, model);
+  stmts.keyResult.run(1, null, k.id);
+  return r;
+}));
+router.post('/', wrap(req => {
+  const b = req.body || {};
+  const ai = db.transaction(() => {
+    const a = accounts.create('ai', b.name, req.account.id);
+    if (b.bio) accounts.setBio(a, b.bio);
+    stmts.addCat.run(a.id, nowIso());
+    applySettings(a, b);
+    return a;
+  })();
+  return settings(accounts.byId(ai.id), stmts.cat.get(ai.id));
+}));
+router.get('/:id', wrap(req => { const { ai, cat } = mine(req); return settings(ai, cat); }));
+router.put('/:id', wrap(req => {
+  let { ai } = mine(req);
+  const b = req.body || {};
+  if (b.name !== undefined && b.name !== ai.name) ai = accounts.rename(ai, b.name);
+  if (b.bio !== undefined) ai = accounts.setBio(ai, b.bio);
+  applySettings(ai, b);
+  changed(ai.id);
+  return settings(accounts.byId(ai.id), stmts.cat.get(ai.id));
+}));
+router.post('/:id/test', wrap(async req => {
+  const { cat } = mine(req);
+  const keyId = req.body.keyId ?? cat.key_id;
+  const model = String(req.body.model ?? cat.model ?? '').trim();
+  const k = keyId && stmts.key.get(Number(keyId));
+  if (!k || k.owner_id !== req.account.id) throw new Error('先选一把钥匙');
+  if (!model) throw new Error('先选一个模型');
+  try { const r = await testModel(k, model); stmts.keyResult.run(1, null, k.id); return r; }
+  catch (err) { throw new Error(err.message); }
+}));
+router.delete('/:id', wrap(req => {
+  const { ai } = mine(req);
+  db.transaction(() => { stmts.clear.run(ai.id); stmts.removeCat.run(ai.id); })();
+  queues.delete(ai.id);
+  return { ok: true };
+}));
+router.delete('/:id/memory', wrap(req => {
+  const { ai } = mine(req);
+  db.transaction(() => { stmts.clear.run(ai.id); setCat(ai.id, { notebook: '', summary: '', last_read_id: 0, activity: null, activity_at: null }); })();
+  changed(ai.id);
+  return { ok: true };
+}));
+router.get('/:id/notebook', wrap(req => { const { cat } = mine(req); return { notebook: cat.notebook, summary: cat.summary }; }));
+router.put('/:id/notebook', wrap(req => {
+  const { ai } = mine(req);
+  const f = {};
+  if (req.body.notebook !== undefined) { f.notebook = String(req.body.notebook).trim(); if (f.notebook.length > NOTEBOOK_MAX) throw new Error(`小本本最多 ${NOTEBOOK_MAX} 字`); }
+  if (req.body.summary !== undefined) { f.summary = String(req.body.summary).trim(); if (f.summary.length > SUMMARY_MAX) throw new Error(`摘要最多 ${SUMMARY_MAX} 字`); }
+  setCat(ai.id, f);
+  return { notebook: stmts.cat.get(ai.id).notebook, summary: stmts.cat.get(ai.id).summary };
+}));
+
+// The window: messages after an id (or the newest ones), and whether the cat is thinking right now.
+function windowData(ai, cat, after, before) {
+  const rows = after ? stmts.after.all(ai.id, after)
+    : stmts.before.all(ai.id, before || Number.MAX_SAFE_INTEGER, 80);
+  return { cat: card(ai, cat), busy: busy.has(ai.id), items: shapeRows(ai, rows), lastId: stmts.lastId.get(ai.id).id || 0, more: !after && rows.length === 80 };
+}
+function markRead(ai) {
+  const last = stmts.lastId.get(ai.id).id || 0;
+  setCat(ai.id, { last_read_id: last });
+}
+router.get('/:id/messages', wrap(req => {
+  const { ai, cat } = mine(req);
+  const out = windowData(ai, cat, Number(req.query.after) || 0, Number(req.query.before) || 0);
+  if (!req.query.before) markRead(ai);
+  return out;
+}));
+// Long polling: waits up to 25 s for something new.
+router.get('/:id/wait', wrap(async (req, res) => {
+  const { ai } = mine(req);
+  const after = Number(req.query.after) || 0;
+  const wasBusy = req.query.busy === '1';
+  const ready = () => (stmts.lastId.get(ai.id).id || 0) > after || busy.has(ai.id) !== wasBusy;
+  if (!ready()) {
+    await new Promise(resolve => {
+      const set = listeners.get(ai.id) || new Set();
+      listeners.set(ai.id, set);
+      const done = () => { clearTimeout(timer); set.delete(done); if (!set.size) listeners.delete(ai.id); resolve(); };
+      const timer = setTimeout(done, 25000);
+      set.add(done);
+      res.on('close', done); // the page went away
+    });
+  }
+  const out = windowData(ai, stmts.cat.get(ai.id), after);
+  markRead(ai);
+  return out;
+}));
+router.post('/:id/messages', wrap(req => {
+  const { ai } = mine(req);
+  const text = String(req.body.text || '').trim();
+  if (!text) throw new Error('说点什么吧');
+  if (text.length > 4000) throw new Error('太长了（最多 4000 字）');
+  add(ai.id, 'me', { msg: { role: 'user', content: text }, text });
+  markRead(ai);
+  enqueue(ai.id, { kind: 'me' });
+  return { ok: true };
+}));
+
+module.exports = { router, isCat, _enqueue: enqueue, _busy: busy };

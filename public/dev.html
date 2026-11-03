@@ -11,7 +11,7 @@
 <link rel="icon" href="/img/favicon.png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 
-<title>开发中 · 猫窝</title>
+<title>Bug 本 · 猫窝</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
@@ -48,6 +48,7 @@
   .bug .note { margin-top: 8px; font-size: 13px; color: var(--ok-text); }
   .paws { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 28px 0 0 60px; color: var(--accent-line); opacity: .7; }
   .paws span:nth-child(2) { margin-left: 46px; } .paws span:nth-child(3) { margin-left: 100px; opacity: .6; }
+  main.wrap { padding-bottom: 24px; }
   .floor { position: relative; height: 112px; margin: 18px -16px 0; }
   .floor .blanket { left: 0; bottom: 0; width: 56%; max-width: 280px; }
   .floor .books { right: 6px; bottom: 4px; width: 34%; max-width: 170px; }
@@ -55,6 +56,7 @@
 </head>
 <body>
 <main class="wrap">
+  <a class="icon-btn" id="back" href="/me" aria-label="返回" style="position: absolute; left: 0; top: 10px; z-index: 2;"></a>
   <div class="top" aria-hidden="true">
     <img class="deco shelf" src="/img/art/shelf.webp" alt="">
     <img class="deco cloth" src="/img/art/blanket.webp" alt="">
@@ -86,7 +88,8 @@
 <script>
 const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
-Maowo.tabbar('dev');
+$('#back').innerHTML = icon('back', 22);
+Maowo.backTo($('#back'), '/me');
 $('#bug-icon').innerHTML = icon('bug', 36, 1.5);
 $('#chev').innerHTML = icon('chevronRight', 22, 2);
 ['#p1', '#p2', '#p3'].forEach((p, i) => { $(p).innerHTML = icon('paw', 22 - i * 3, 1.6); });

@@ -157,6 +157,10 @@ function render(d) {
         <div class="body" style="border-left: none; padding-left: 4px;"><div class="t" style="font-size: 19px;">存档</div><div class="d">重要的笔记和文件，可以一键导出备份</div></div>${chev}
       </a>`;
   }
+  html += `<a class="setting" href="/dev">
+      <div class="ic"><img src="/img/art/toolbox.webp" alt=""></div>
+      <div class="body" style="border-left: none; padding-left: 4px;"><div class="t" style="font-size: 19px;">Bug 本</div><div class="d">哪里不对劲、想要什么新东西，写下来</div></div>${chev}
+    </a>`;
   html += `<img class="art sleeping" src="/img/art/cat-sleep.webp" alt="">
     <button class="logout" id="logout">在这台设备上退出</button>`;
   if (!Maowo.setHtml($('#content'), html)) return;
@@ -236,8 +240,9 @@ function showAi(a) {
     <label class="field">token</label>
     <div class="addr"><div class="v mono">${esc(a.token.slice(0, 3))}••••••••${esc(a.token.slice(-4))}</div><button class="btn sm" id="ai-token">复制</button></div>
     <div class="small muted" style="margin-top: 8px; line-height: 1.6;">AI 聊久了忘了自己的 token，复制给它就行。头像只在网页上显示，AI 那边收不到图片，不费它的 token。</div>
-    <div class="wake" id="wake"><h3>${icon('bell', 18, 1.8)}唤醒桥</h3><div class="small muted">读取中…</div></div>`);
-  drawWake(panel, a);
+    ${a.isCat ? `<a class="btn primary block" href="/cats/${a.id}" style="margin-top: 22px;">${icon('paw', 18, 1.8)}它住在猫窝里，打开窗口</a>`
+      : `<div class="wake" id="wake"><h3>${icon('bell', 18, 1.8)}唤醒桥</h3><div class="small muted">读取中…</div></div>`}`);
+  if (!a.isCat) drawWake(panel, a);
   panel.querySelector('#ai-token').onclick = () => Maowo.copy(a.token, `${a.name} 的 token 已复制`);
   panel.querySelector('#ai-pic').onclick = () => Maowo.pickAvatar(a.id).then(() => { panel.close(); load(); }, () => {});
   const clear = panel.querySelector('#ai-pic-clear');

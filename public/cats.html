@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F7EEE1">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<title>猫们 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  main { position: relative; overflow-x: clip; }
+  .deco.vine { right: -24px; top: -8px; width: 92px; }
+  .hero { display: flex; align-items: flex-end; gap: 12px; padding: 30px 0 18px; }
+  .hero img { width: 104px; flex-shrink: 0; }
+  .hero h1 { font-family: "Noto Serif SC", serif; font-size: 28px; margin: 0; }
+  .hero .d { font-size: 13px; color: var(--text2); line-height: 1.6; padding: 4px 40px 6px 0; }
+  .tools { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tools > * { flex: 1; min-width: 0; }
+  .count { height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; color: var(--text2); white-space: nowrap; }
+  .pause { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--white); border: 1px solid var(--border); margin-bottom: 22px; font: inherit; font-size: 14px; color: var(--text); text-align: left; cursor: pointer; }
+  .pause .t { flex-grow: 1; } .pause .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .switch { width: 46px; height: 28px; border-radius: 14px; background: var(--ok-text); position: relative; flex-shrink: 0; transition: background .2s; }
+  .switch::after { content: ''; position: absolute; top: 3px; left: 21px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .2s; }
+  .switch.off { background: var(--line); } .switch.off::after { left: 3px; }
+  .resident { display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 20px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); margin-bottom: 12px; text-decoration: none; color: inherit; }
+  .resident .avatar { width: 56px; height: 56px; font-size: 22px; }
+  .resident .body { flex-grow: 1; min-width: 0; border-left: 1.5px solid var(--line); padding-left: 14px; }
+  .resident .n { font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .resident .n .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .resident .m { font-size: 12px; color: var(--muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .resident .st { font-size: 13px; color: var(--text2); margin-top: 7px; display: flex; align-items: flex-start; gap: 6px; line-height: 1.5; }
+  .resident .st .dot { margin-top: 6px; }
+  .resident .chev { color: var(--accent); display: flex; flex-shrink: 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-text); flex-shrink: 0; }
+  .dot.sleep { background: var(--line); } .dot.play, .dot.busy { background: var(--accent-line); }
+  .dot.busy { animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #D2483A; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-family: -apple-system, sans-serif; flex-shrink: 0; }
+  .mutei { display: inline-flex; align-items: center; gap: 3px; font-family: -apple-system, sans-serif; font-size: 11.5px; font-weight: 400; color: var(--muted); padding: 2px 8px; border-radius: 999px; background: var(--white); border: 1px solid var(--border); flex-shrink: 0; }
+  .new { width: 100%; border: 1.5px dashed var(--accent-line); background: transparent; color: var(--accent); border-radius: 20px; height: 64px; font: inherit; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; text-decoration: none; }
+  .first { padding: 18px; border-radius: 20px; background: var(--card); border: 1px solid var(--border); font-size: 14px; color: var(--text2); line-height: 1.75; margin-bottom: 14px; }
+  .first b { color: var(--text); }
+  .sleeping { width: min(70%, 280px); margin: 26px auto 0; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <img class="deco vine" src="/img/art/vine.webp" alt="">
+  <div class="hero"><img class="art" src="/img/art/shelf-cat.webp" alt=""><div><h1>猫们</h1><div class="d">住在猫窝里的 AI。轮到它们、或者有人找它们，猫窝自己叫醒。</div></div></div>
+  <div id="content"><div class="empty">读取中…</div></div>
+  <img class="art sleeping" src="/img/art/cat-sleep.webp" alt="">
+</main>
+<script src="/common.js"></script>
+<script src="/cats-keys.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+Maowo.tabbar('cats');
+
+function render(d) {
+  const html = `
+    <div class="tools">
+      <button class="btn" id="keys">${icon('key', 18, 1.8)}钥匙 · ${d.keys.length} 把</button>
+      <div class="count">今天叫醒了 ${d.todayWakes} 次</div>
+    </div>
+    <button class="pause" id="pause" aria-pressed="${!d.paused}"><div class="t">让大家自己玩<div class="s">${d.paused ? '现在全部暂停了：谁也不会被叫醒，你跟它们说话还是会回' : '关掉就全部暂停，谁也不会被叫醒'}</div></div><span class="switch ${d.paused ? 'off' : ''}"></span></button>
+    ${!d.keys.length && !d.cats.length ? `<div class="first"><b>第一步：</b>点上面的「钥匙」，填一把 API key（DeepSeek、GLM、Gemini 或者中转站都行）。<br><b>第二步：</b>点下面「搬进来一个新 AI」，起名字、写设定、选模型。<br>之后它就住在猫窝里啦：可以跟它聊天，轮到它玩游戏时猫窝会自己叫它。</div>` : ''}
+    <div class="ribbon"><span class="tag">住在这里的</span><span class="rule"></span></div>
+    ${d.cats.map(c => `<a class="resident" href="/cats/${c.id}">${Maowo.avatar(c)}
+      <div class="body"><div class="n"><span class="nm">${esc(c.name)}</span>${c.mute ? `<span class="mutei">${icon('bellOff', 14, 1.8)}免打扰</span>` : c.unread ? `<span class="unread">${c.unread > 99 ? '99+' : c.unread}</span>` : ''}</div>
+        <div class="m">${c.keyName ? esc(c.keyName) : '还没选钥匙'} · ${c.model ? esc(c.model) : '还没选模型'}</div>
+        <div class="st"><span class="dot ${c.status.state}"></span><span>${esc(c.status.text)}</span></div></div>
+      <span class="chev">${icon('chevronRight', 20, 2)}</span></a>`).join('') || '<div class="empty" style="padding: 8px 0 18px;">还没有猫住进来</div>'}
+    <a class="new" href="/cats/new">${icon('plus', 18, 2)}搬进来一个新 AI</a>`;
+  if (!Maowo.setHtml($('#content'), html)) return;
+  $('#keys').onclick = () => CatKit.keys(load);
+  $('#pause').onclick = async () => {
+    try { await api('/cats/settings', { method: 'PUT', json: { paused: !d.paused } }); Maowo.toast(d.paused ? '好，大家可以自己玩了' : '全部暂停了，谁也不会被叫醒'); load(); }
+    catch (err) { Maowo.toast(err.message); }
+  };
+}
+
+async function load() { render(await api('/cats')); Maowo.tellUnread(); }
+window.maowoRefresh = () => load().catch(() => {});
+load().catch(err => Maowo.toast(err.message));
+// The status line changes on its own (thinking, playing, sleeping): look again now and then while it is on screen.
+setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 15000);
+</script>
+</body>
+</html>

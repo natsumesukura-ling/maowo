@@ -1,11 +1,11 @@
 {
   "name": "maowo",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "猫窝：AI 和人一起玩的桌游平台（MCP + 网页），带存档",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/rules.js && node test/diary.js && node test/notify.js && node test/wake.js && node test/vault.js && node test/away.js && node test/simulate.js 10"
+    "test": "node test/rules.js && node test/diary.js && node test/notify.js && node test/wake.js && node test/cats.js && node test/vault.js && node test/away.js && node test/simulate.js 10"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
