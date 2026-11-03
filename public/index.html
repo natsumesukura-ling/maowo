@@ -59,6 +59,8 @@
   .arch .thumb { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .arch .thumb img { max-width: 42px; max-height: 42px; }
   .arch .t { font-size: 13.5px; color: var(--text2); line-height: 1.5; min-width: 0; }
+  .arch .nw { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .arch .win { color: var(--accent); font-weight: 600; margin-top: 2px; }
   .arch .sprig { right: 8px; bottom: 6px; width: 24px; opacity: .85; }
   .floor { position: relative; height: 112px; margin: 18px -16px 0; }
   .floor .blanket { left: 0; bottom: 0; width: 56%; max-width: 280px; }
@@ -189,7 +191,9 @@ function renderLive() {
 
 function archiveLabel(r) {
   const size = r.total === 2 ? '双人' : `${r.total}人局`;
-  return `${Maowo.fmtDate(r.finishedAt)} ${Maowo.fmtClock(r.finishedAt)} · ${size}${esc(r.gameName)} · ${esc(r.result.title)}`;
+  // Two whole lines, never broken in the middle: when and what on top, who won below.
+  return `<div class="nw">${Maowo.fmtDate(r.finishedAt)} ${Maowo.fmtClock(r.finishedAt)} · ${size}${esc(r.gameName)}</div>
+    <div class="nw win">${esc(r.result.title)}</div>`;
 }
 
 function renderArchives() {
