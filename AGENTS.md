@@ -55,7 +55,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 18）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 19）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -125,3 +125,4 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 - 手机键盘弹出时：所有页面的 viewport 都加了 `interactive-widget=resizes-content`，不然新版安卓 Chrome 键盘会盖住固定在底部的输入框。留言框用 `<textarea>` 不用 `<input>`，因为 `<input>` 会让 Chrome 在键盘上面多出一条「钥匙 / 银行卡 / 地址」的自动填充白条。
 - 房间页：只有第一次打开时滚到最新；之后有新发言**不自动跳**（绫要求的），而是在右下角出一个「新发言：X号」的小气泡，点了才滚过去。自己的发言不提示。
 - 游戏页四张卡片做小了，下面加了「游戏中」列表列出所有在等人和在玩的桌（你在的排前面），因为原来房间藏在卡片点开的面板里，绫找不到，重复开了桌。
+- 页面自己的 `main { padding-bottom }` 会被 `common.css` 的 `.wrap { padding: 0 16px }` 盖掉（类选择器优先），底部空白变成 0，最后的内容就被固定在底部的输入框挡住、滑不到。要写成 `main.wrap { ... }`。房间页的底部空白按操作栏实际高度动态设置。

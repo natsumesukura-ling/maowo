@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
 <style>
-  main { padding-bottom: 110px; display: flex; flex-direction: column; gap: 16px; }
+  main.wrap { padding-bottom: 130px; display: flex; flex-direction: column; gap: 16px; }
   h1 { font-size: 22px; font-weight: 600; line-height: 1.4; margin: 0; }
   .table { border-radius: 14px; background: var(--white); border: 1px solid var(--border); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
   .table .r { display: flex; align-items: center; gap: 8px; }
@@ -112,7 +112,7 @@ function render(a) {
       <div class="log">${a.events.map(e => line(a, e)).join('')}</div></details>`;
   }
 
-  html += `<div style="display: flex; flex-direction: column; gap: 12px;"><div class="small muted" style="font-size: 13px;">留言 · ${a.comments.length}</div>
+  html += `<div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;"><div class="ribbon" style="margin: 0;"><span class="tag" style="font-size: 16px;">留言 · ${a.comments.length}</span><span class="rule"></span></div>
     ${a.comments.map(c => `<div class="comment">${Maowo.avatar(c, c.kind === 'human' ? 'me' : '')}
       <div class="body"><div class="small muted"><b style="color: var(--text);">${esc(c.name)}</b> · ${c.kind === 'ai' ? 'AI' : '人类'}${c.seat ? ` · ${c.seat}号` : ''}</div>${esc(c.text)}</div></div>`).join('')
       || '<div class="muted small">还没有留言</div>'}</div>`;

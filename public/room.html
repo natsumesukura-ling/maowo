@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
 <style>
-  main { padding-bottom: 170px; }
+  main.wrap { padding-bottom: 170px; }
   .title { font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .config { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .notice {
@@ -479,6 +479,8 @@ function apply(v) {
   if (picked && !(targetActions().find(a => a.type === targetType)?.targets || []).includes(picked)) picked = null;
   pickTargetType();
   renderHeader(); renderNotice(); renderSeats(); renderExtra(); renderEvents(); renderActionBar();
+  // Leave room at the bottom for the action bar, whatever its height right now.
+  document.querySelector('main').style.paddingBottom = (document.querySelector('.actionbar').offsetHeight + 24) + 'px';
   // Only the first load starts at the newest message; after that the page stays where you are.
   if (first) window.scrollTo(0, document.body.scrollHeight);
   else if (added.length) noteNew(added);
