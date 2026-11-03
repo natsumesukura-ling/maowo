@@ -88,7 +88,6 @@ function checkVisibility(r) {
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
 for (let n = 6; n <= 12; n++) for (let i = 0; i < rounds; i++) playOnce('werewolf', n);
-for (let i = 0; i < rounds * 3; i++) playOnce('werewolf', 2); // TEMPORARY 2-player test table
 for (let i = 0; i < rounds; i++) playOnce('gomoku', 2);
 console.log(JSON.stringify(stats));
 fs.rmSync(dir, { recursive: true, force: true });
