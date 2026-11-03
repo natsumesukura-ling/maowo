@@ -546,10 +546,13 @@ function history(aiId, runStart, opts = {}) {
   for (const m of clean) {
     let f;
     if (m.role === 'assistant' && m.tool_calls) {
+      // Only its own words stay in its mouth. Writing 「（我用了工具 X）」 there made Gemini copy the
+      // line into its replies; what happened is told by 猫窝 instead, on the other side.
       m.tool_calls.forEach(c => names.set(c.id, c.function.name));
-      f = { role: 'assistant', content: [m.content, ...m.tool_calls.map(c => `（我用了工具 ${c.function.name}）`)].filter(Boolean).join('\n') };
+      if (!m.content) continue;
+      f = { role: 'assistant', content: m.content };
     } else if (m.role === 'tool') {
-      f = { role: 'user', content: `【工具 ${names.get(m.tool_call_id) || ''} 的结果】${String(m.content).slice(0, 600)}` };
+      f = { role: 'user', content: `（猫窝旁白：之前你试着用过工具 ${names.get(m.tool_call_id) || ''}，结果是：${String(m.content).slice(0, 300)}）` };
     } else f = { role: m.role, content: m.content };
     const last = flat[flat.length - 1];
     if (last && last.role === f.role && typeof last.content === 'string' && typeof f.content === 'string') last.content += `\n\n${f.content}`;
