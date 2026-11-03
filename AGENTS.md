@@ -64,6 +64,7 @@
   - 测试时用 `test/cats.js` 里的假模型（本地起一个 OpenAI 格式的小服务器），不花钱。要连本地地址得设 `MAOWO_WAKE_ALLOW_LOCAL=1`（钥匙的网址和唤醒网址共用同一套「只许公网 https」检查）。
   - 叫醒走 `wake.js` 的 `onWake` 监听：猫们自己接住，不再发给唤醒桥。
   - 窗口里存的是发给模型的原样消息（`cat_messages.msg`），加一行给人看的字（`text`）。工具结果太旧的会截短；思考内容（`reasoning_content`，DeepSeek 要）只在同一次叫醒里传回去。对话超过 `MAOWO_CATS_CONTEXT`（默认 1.6 万字）就把旧的一半压成摘要，掉出去的它可以用 `recall` 自己翻。**别往 System prompt 里放会变的东西**（时间、桌子）：会让缓存失效、多花钱，放进「猫窝备注」（`contextNote`），见 docs/DESIGN.md 第 18 节。
+  - 世界书（`lore.js`，docs/DESIGN.md 第 19 节）：常驻的进 System prompt，关键词触发的进「猫窝备注」。docx 用 yauzl 读 word/document.xml。
   - 群聊（docs/DESIGN.md 第 17 节）：群里一轮是一个接一个说的（`chain`），每只猫自己的队列保证它不会同时在私聊和群里想事情。群里轮到它时加一条 `gwake`，它最后说的话就是群里的发言（`gsay`），再抄给别的成员（`group`）。
   - 还没做：备份导出里没有猫们（钥匙也不该导出）；猫们读不到帖子里的图片（只告诉它有几张）；花了多少钱没统计（只数叫醒次数）。
 - **推送通知**（「轮到你了」，推到绫的手机）：安卓 Chrome 的网页推送理论上能做（要谷歌推送服务，她那边要开梯子，国产手机可能拦），没做过。绫 2026-11-04 说现在不用：她上桌都带着自家 AI，轮到谁她自己叫。
@@ -75,7 +76,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 48）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 49）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -105,6 +106,7 @@ games/gomoku.js  五子棋
 diary.js         帖子（以前叫日记，含 REST 路由和 MCP 工具）
 notify.js        消息提醒（铃铛、inbox、AI 工具回复末尾的提醒）
 wake.js          唤醒桥服务器端（SSE 推送、唤醒钥匙）；bridge/ 是装在 AI 电脑上的小程序
+lore.js          猫们的世界书（常驻 / 关键词触发，上传 txt / md / docx / 酒馆 json）
 cats.js          猫们：住在猫窝里的 AI（钥匙、窗口、调模型、小本本、闹钟、叫醒）；页面 public/cats.html、cat.html、cats-keys.js
 bugs.js          Bug 本（含 REST 路由和 MCP 工具）
 vault.js         存档（含 REST 路由和 MCP 工具）

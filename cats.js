@@ -6,6 +6,7 @@ const notify = require('./notify');
 const games = require('./games');
 const wake = require('./wake');
 const mcp = require('./mcp');
+const lore = require('./lore');
 
 // ============================================================
 // 猫们：住在猫窝里的 AI。
@@ -417,6 +418,8 @@ function systemPrompt(ai, cat) {
   if (groups.length) {
     parts.push('', `你在这些群聊里（和${owner.name}、别的猫一起）：${groups.map(g => `「${g.name}」`).join('、')}。以【群聊「…」】开头的消息是群里的人说的话，你都看得到；在群里轮到你时猫窝会告诉你。`);
   }
+  const book = lore.alwaysText(ai.id);
+  if (book) parts.push('', '世界书（主人给你的设定资料，一直有效）：', book);
   if (cat.summary.trim()) parts.push('', '很久以前的事（旧对话的摘要）：', cat.summary.trim());
   parts.push('', cat.notebook.trim() ? `你的小本本：\n${cat.notebook.trim()}` : '你的小本本还是空的。');
   return parts.filter(p => p !== null).join('\n');
@@ -425,13 +428,18 @@ function systemPrompt(ai, cat) {
 // What is true right now, added to the end of each new message (and stored with it, so the message
 // list never changes afterwards).
 const NOTE_RE = /\n\n（猫窝备注：[\s\S]*）$/;
-function contextNote(ai, cat) {
+function contextNote(ai, cat, scan = '') {
   const owner = accounts.byId(ai.owner_id);
   const bits = [`现在是北京时间 ${beijing()}。`];
   const tables = tableNotes(ai, owner);
   if (tables.length) bits.push(`你现在的桌子：\n${tables.join('\n')}`);
   if (tables.some(l => l.includes('正在')) && stmts.groupsOfCat.all(ai.id).length) bits.push('还没结束的游戏里的秘密（身份、夜里的信息、你的打算）不要在群里说，群里可能有同桌的人。');
   if (cat.alarm_at) bits.push(`你定了闹钟：${clock(cat.alarm_at)}${cat.alarm_note ? `，留给自己的话：${cat.alarm_note}` : ''}。`);
+  // 世界书 entries whose keywords come up in this message or the last few, unless still in the window.
+  const live = stmts.live.all(ai.id).map(r => { try { return String(JSON.parse(r.msg).content || ''); } catch { return ''; } });
+  const recent = live.slice(-4).map(c => c.replace(NOTE_RE, '')).join('\n');
+  const book = lore.triggeredText(ai.id, `${scan}\n${recent}`, live.join('\n'));
+  if (book) bits.push(`聊到了世界书里的这些（主人给你的设定资料）：\n${book}`);
   return `\n\n（猫窝备注：${bits.join('\n')}）`;
 }
 
@@ -613,9 +621,9 @@ async function runOnce(aiId, t) {
   let secret = t.roomId && secretFor(t.roomId, ai.owner_id) ? t.roomId : null;
   const gid = group ? group.id : null;
   if (group) {
-    add(aiId, 'gwake', { msg: { role: 'user', content: `【猫窝】${groupPrompt(group, ai)}${contextNote(ai, cat)}` }, groupId: gid, detail: JSON.stringify({ group: group.name }) });
+    add(aiId, 'gwake', { msg: { role: 'user', content: `【猫窝】${groupPrompt(group, ai)}${contextNote(ai, cat, '')}` }, groupId: gid, detail: JSON.stringify({ group: group.name }) });
   } else if (t.kind !== 'me') {
-    add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}${contextNote(ai, cat)}` }, text: t.shown || t.text, roomId: secret });
+    add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}${contextNote(ai, cat, t.text)}` }, text: t.shown || t.text, roomId: secret });
   }
   const runStart = stmts.lastId.get(aiId).id || 0;
   activity(aiId, '正在想…');
@@ -854,7 +862,7 @@ function card(ai, cat) {
 function settings(ai, cat) {
   return {
     ...card(ai, cat), keyId: cat.key_id, systemPrompt: cat.system_prompt, wakeOnTurn: !!cat.wake_on_turn, alarms: !!cat.alarms,
-    dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0,
+    dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id),
   };
 }
 
@@ -1122,7 +1130,7 @@ router.post('/:id/test', wrap(async req => {
 }));
 router.delete('/:id', wrap(req => {
   const { ai } = mine(req);
-  db.transaction(() => { stmts.clear.run(ai.id); stmts.removeCat.run(ai.id); stmts.removeMemberEverywhere.run(ai.id); })();
+  db.transaction(() => { stmts.clear.run(ai.id); stmts.removeCat.run(ai.id); stmts.removeMemberEverywhere.run(ai.id); lore.removeAll(ai.id); })();
   queues.delete(ai.id);
   return { ok: true };
 }));
@@ -1183,7 +1191,7 @@ router.post('/:id/messages', wrap(req => {
   const text = String(req.body.text || '').trim();
   if (!text) throw new Error('说点什么吧');
   if (text.length > 4000) throw new Error('太长了（最多 4000 字）');
-  add(ai.id, 'me', { msg: { role: 'user', content: text + contextNote(ai, stmts.cat.get(ai.id)) }, text });
+  add(ai.id, 'me', { msg: { role: 'user', content: text + contextNote(ai, stmts.cat.get(ai.id), text) }, text });
   markRead(ai);
   enqueue(ai.id, { kind: 'me' });
   return { ok: true };

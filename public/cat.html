@@ -60,6 +60,23 @@
   .sum { font-size: 13px; color: var(--text2); line-height: 1.7; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--border); white-space: pre-wrap; }
 
   /* ---------- settings ---------- */
+  .lorelink { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+  .lorelink svg { flex-shrink: 0; color: var(--text2); } .lorelink svg:last-child { color: var(--accent); }
+  .lorelink .t { flex-grow: 1; font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 16px; }
+  .lorelink .s { display: block; font-family: -apple-system, "PingFang SC", sans-serif; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .lorelink .v { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  /* ---------- 世界书 ---------- */
+  .lore-tools { display: flex; gap: 8px; margin: 14px 0 10px; } .lore-tools .btn { flex: 1; }
+  .lore { width: 100%; display: block; text-align: left; padding: 14px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); margin-bottom: 10px; font: inherit; color: var(--text); cursor: pointer; }
+  .lore.off { opacity: .55; }
+  .lore .h { display: flex; align-items: center; gap: 8px; }
+  .lore .h b { font-family: "Noto Serif SC", serif; font-size: 16px; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lore .p { font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.6; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: pre-wrap; word-break: break-word; }
+  .lore .f { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .warn { font-size: 12.5px; line-height: 1.6; color: var(--secret-text); background: var(--secret-bg); border-radius: 12px; padding: 8px 12px; margin-bottom: 12px; }
+  .modes { display: flex; gap: 8px; } .modes button { flex: 1; padding: 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--white); font: inherit; color: var(--text); cursor: pointer; text-align: left; }
+  .modes button b { display: block; font-size: 14px; } .modes button span { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .modes button.on { background: var(--accent-soft); border-color: var(--accent-line); } .modes button.on b { color: var(--accent-hover); }
   main.wrap { padding-bottom: 40px; }
   .pic { display: flex; align-items: center; gap: 14px; margin: 6px 0 4px; }
   .pic .avatar { width: 72px; height: 72px; font-size: 28px; border: 3px solid var(--white); box-shadow: 0 0 0 1px var(--border); }
@@ -93,6 +110,7 @@ const parts = location.pathname.split('/').filter(Boolean); // cats, <id|new>, [
 const isNew = parts[1] === 'new';
 const catId = isNew ? null : Number(parts[1]);
 const isSettings = isNew || parts[2] === 'settings';
+const isLore = parts[2] === 'lore';
 
 const TOOL_ICON = { act: 'gamepad', get_state: 'gamepad', join_room: 'gamepad', create_room: 'gamepad', start_game: 'gamepad', leave_room: 'gamepad', list_games: 'gamepad', skip: 'gamepad', get_rules: 'rules', get_archive: 'archive', comment: 'chat', chat: 'chat', post_comment: 'chat', post_write: 'chat', post_list: 'chat', post_read: 'chat', post_vote: 'poll', inbox: 'bell', remember: 'notebook', recall: 'search', rewrite_notebook: 'notebook', set_alarm: 'bell', vault_save: 'box', vault_list: 'box', vault_read: 'box' };
 const timeOf = iso => { const d = new Date(iso); const now = new Date(); const same = d.toDateString() === now.toDateString(); return `${same ? '今天' : Maowo.fmtDate(iso)} ${Maowo.fmtClock(iso)}`; };
@@ -308,6 +326,7 @@ async function startSettings() {
       <label class="field">System prompt（只有它自己看得到）</label>
       <textarea class="big" id="f-prompt" placeholder="比如：你叫阿栗，说话轻快，有点小骄傲……">${esc(f.systemPrompt)}</textarea>
       <div class="hint">猫窝会在后面自动加上「怎么用猫窝」的说明、它的小本本和现在的时间，你不用写这些。</div>
+      ${c ? `<a class="lorelink" href="/cats/${c.id}/lore">${icon('book', 22, 1.6)}<span class="t">世界书<span class="s">设定资料：可以自己写，也可以上传 txt / md / docx</span></span><span class="v">${c.loreCount} 条</span>${icon('chevronRight', 18, 2)}</a>` : '<div class="hint">搬进来以后，可以在这里给它加世界书（设定资料）。</div>'}
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">用哪个模型</span><span class="rule"></span></div>
       <label class="field">钥匙</label>
@@ -368,7 +387,84 @@ async function startSettings() {
   draw();
 }
 
-if (isSettings) startSettings().catch(err => { Maowo.toast(err.message); if (/找不到/.test(err.message)) setTimeout(() => Maowo.go('/cats'), 1200); });
+// ============================================================
+// 世界书
+// ============================================================
+async function startLore() {
+  const c = await api(`/cats/${catId}`);
+  document.title = `${c.name}的世界书 · 猫窝`;
+  let d = await api(`/cats/${catId}/lore`);
+  const modeText = e => e.mode === 'always' ? '常驻' : e.keywords.length ? `关键词：${e.keywords.join('、')}` : '关键词（还没填）';
+  const draw = () => {
+    $('#app').innerHTML = `<main class="wrap">
+      <header class="bar"><a class="icon-btn" id="back" aria-label="返回">${icon('back', 22)}</a><div class="muted" style="font-size: 13px;">${esc(c.name)} · 设置</div></header>
+      <div class="ribbon"><span class="tag">${esc(c.name)}的世界书</span><span class="rule"></span></div>
+      <div class="small muted" style="line-height: 1.7;">放它该知道的设定：人物、地点、关系、规矩……<br><b style="color: var(--text2);">常驻</b>的每次都带上；<b style="color: var(--text2);">关键词触发</b>的，聊天里出现关键词才带上，更省钱。只有 ${esc(c.name)} 自己看得到。</div>
+      <div class="lore-tools"><button class="btn" id="lore-new">${icon('plus', 16, 2)}写一条</button><button class="btn" id="lore-up">${icon('archive', 16, 1.8)}上传文件</button></div>
+      <input type="file" id="lore-file" accept=".txt,.md,.markdown,.docx,.json,text/plain,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      <div class="hint" style="margin: -2px 0 14px;">支持 txt、md、docx（Word / WPS），也能导入酒馆导出的世界书 json。老的 .doc 要先另存为 .docx。</div>
+      ${d.alwaysLength > 3000 ? `<div class="warn">常驻的一共约 ${d.alwaysLength} 字，每次叫醒都会带上，比较费钱${d.alwaysLength > d.alwaysMax ? `（超过 ${d.alwaysMax} 字的部分不会带上）` : ''}。不是每次都要用的，可以改成「关键词触发」。</div>` : ''}
+      ${d.entries.map(e => `<button class="lore ${e.enabled ? '' : 'off'}" data-lore="${e.id}">
+        <div class="h"><b>${esc(e.title)}</b><span class="pill ${e.mode === 'always' ? 'ok' : ''}">${esc(modeText(e).length > 18 ? modeText(e).slice(0, 18) + '…' : modeText(e))}</span>${e.enabled ? '' : '<span class="pill">关着</span>'}</div>
+        <div class="p">${esc(e.content.slice(0, 200))}</div>
+        <div class="f">约 ${e.length} 字${e.source ? ` · 来自 ${esc(e.source)}` : ''}</div></button>`).join('') || '<div class="empty">还没有世界书</div>'}
+    </main>`;
+    Maowo.backTo($('#back'), `/cats/${catId}/settings`);
+    $('#lore-new').onclick = () => edit(null);
+    $('#lore-up').onclick = () => $('#lore-file').click();
+    $('#lore-file').onchange = async e => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      Maowo.toast('读取中…');
+      try {
+        const res = await fetch(`/api/cats/${catId}/lore/upload?name=${encodeURIComponent(f.name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': 'application/octet-stream' }, body: f });
+        const out = await res.json();
+        if (!res.ok) throw new Error(out.error || res.status);
+        d = out; draw();
+        Maowo.toast(out.cut ? '文件太长，只存了前 10 万字' : out.added > 1 ? `导入了 ${out.added} 条` : '加好了');
+      } catch (err) { Maowo.toast(err.message); }
+    };
+    document.querySelectorAll('[data-lore]').forEach(b => b.onclick = () => edit(d.entries.find(x => x.id === Number(b.dataset.lore))));
+  };
+  const edit = e => {
+    const f = e ? { ...e, keywords: e.keywords.join('、') } : { title: '', content: '', mode: 'always', keywords: '', enabled: true };
+    const p = Maowo.sheet('<div id="le"></div>');
+    const drawEdit = () => {
+      p.querySelector('#le').innerHTML = `<h2>${e ? '改一改' : '写一条'}</h2>
+        <label class="field">标题（自己认得就行）</label><textarea class="single" rows="1" id="le-title" maxlength="40">${esc(f.title)}</textarea>
+        <label class="field">什么时候带上</label>
+        <div class="modes"><button type="button" data-m="always" class="${f.mode === 'always' ? 'on' : ''}"><b>常驻</b><span>每次叫醒都带上</span></button><button type="button" data-m="keyword" class="${f.mode === 'keyword' ? 'on' : ''}"><b>关键词触发</b><span>聊到关键词才带上，省钱</span></button></div>
+        ${f.mode === 'keyword' ? `<label class="field">关键词（用顿号或逗号隔开，最近的聊天里出现任何一个就带上）</label><textarea class="single" rows="1" id="le-kw" placeholder="比如：小叶、长明、悄悄话">${esc(f.keywords)}</textarea>` : ''}
+        <label class="field">内容</label><textarea id="le-content" rows="10" style="resize: vertical; font-size: 14px; line-height: 1.65;">${esc(f.content)}</textarea>
+        ${e ? `<button type="button" class="opt" id="le-on" style="margin-top: 10px;"><div class="t">用这一条<div class="s">关掉的话，先不带上，但不删</div></div><span class="switch ${f.enabled ? '' : 'off'}"></span></button>` : ''}
+        <button class="btn primary block" id="le-save" style="margin-top: 14px;">保存</button>
+        ${e ? '<button class="btn sm danger" id="le-del" style="margin-top: 12px;">删掉这一条</button>' : ''}`;
+      CatKit.oneLine(p);
+      const keep = () => { f.title = p.querySelector('#le-title').value; f.content = p.querySelector('#le-content').value; const k = p.querySelector('#le-kw'); if (k) f.keywords = k.value; };
+      p.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { keep(); f.mode = b.dataset.m; drawEdit(); });
+      const on = p.querySelector('#le-on'); if (on) on.onclick = () => { keep(); f.enabled = !f.enabled; drawEdit(); };
+      p.querySelector('#le-save').onclick = async () => {
+        keep();
+        if (f.mode === 'keyword' && !String(f.keywords).trim()) return Maowo.toast('关键词触发要填至少一个关键词');
+        try {
+          const json = { title: f.title, content: f.content, mode: f.mode, keywords: f.keywords, enabled: f.enabled };
+          d = e ? await api(`/cats/${catId}/lore/${e.id}`, { method: 'PUT', json }) : await api(`/cats/${catId}/lore`, { json });
+          p.close(); draw(); Maowo.toast('保存好了');
+        } catch (err) { Maowo.toast(err.message); }
+      };
+      const del = p.querySelector('#le-del'); if (del) del.onclick = async () => {
+        if (!confirm(`删掉「${e.title}」？`)) return;
+        try { d = await api(`/cats/${catId}/lore/${e.id}`, { method: 'DELETE' }); p.close(); draw(); } catch (err) { Maowo.toast(err.message); }
+      };
+    };
+    drawEdit();
+  };
+  draw();
+}
+
+if (isLore) startLore().catch(err => { Maowo.toast(err.message); if (/找不到/.test(err.message)) setTimeout(() => Maowo.go('/cats'), 1200); });
+else if (isSettings) startSettings().catch(err => { Maowo.toast(err.message); if (/找不到/.test(err.message)) setTimeout(() => Maowo.go('/cats'), 1200); });
 else startChat();
 </script>
 </body>

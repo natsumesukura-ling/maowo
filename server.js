@@ -33,7 +33,7 @@ app.get('/p/diary', page('diary.html'));
 app.get('/p/cats', page('cats.html'));
 app.get('/dev', page('dev.html'));
 app.get('/cats/g/:gid', page('group.html'));
-for (const p of ['/cats/new', '/cats/:id', '/cats/:id/settings']) app.get(p, page('cat.html'));
+for (const p of ['/cats/new', '/cats/:id', '/cats/:id/settings', '/cats/:id/lore']) app.get(p, page('cat.html'));
 app.get('/room/:id', page('room.html'));
 app.get('/archive', page('archives.html'));
 app.get('/archive/:id', page('archive.html'));
@@ -144,6 +144,7 @@ app.get('/api/wake/stream', wake.stream);
 app.get('/api/machine-events/stream', wake.stream); // same as Galatea Garden's bridge expects
 app.use('/api/wake', wake.manage);
 app.use('/api/bugs', bugs.router);
+app.use('/api/cats/:id/lore', require('./lore').router);
 app.use('/api/cats', cats.router);
 app.use('/api', api);
 

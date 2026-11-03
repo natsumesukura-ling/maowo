@@ -131,7 +131,8 @@ const ok = name => console.log('ok', name);
     const b1 = seen[seen.length - 1];
     await sleep(1100);
     await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '缓存' } });
-    await until(async () => (await api(OWNER, `/cats/${cat.id}/messages`)).items.filter(i => i.kind === 'say').length === 2 && !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'cache reply');
+    const before = (await api(OWNER, `/cats/${cat.id}/messages`)).items.filter(i => i.kind === 'say').length;
+    await until(async () => { const d = await api(OWNER, `/cats/${cat.id}/messages`); return d.items.filter(i => i.kind === 'say').length > before - 1 && !d.busy && seen.at(-1).messages.at(-1).content.startsWith('缓存'); }, 'cache reply');
     const b2 = seen[seen.length - 1];
     assert.strictEqual(JSON.stringify(b2.messages.slice(0, b1.messages.length)), JSON.stringify(b1.messages), 'same start');
     assert(!b2.messages[0].content.includes('北京时间'), 'no clock in the system prompt');
@@ -144,6 +145,59 @@ const ok = name => console.log('ok', name);
   await until(async () => (await api(OWNER, `/cats/${cat.id}/messages`)).items.filter(i => i.kind === 'say').length === 3, 'second reply');
   assert(!seen[seen.length - 1].messages.some(m => m.reasoning_content), 'old reasoning not resent');
   ok('old thinking text is not sent again');
+
+  // 世界书: 常驻 in the system prompt, keyword entries in the note of the message that mentions them.
+  {
+    const idle = async () => until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
+    const say = async text => { await api(OWNER, `/cats/${cat.id}/messages`, { json: { text } }); await until(async () => seen.at(-1).messages.at(-1).content.startsWith(text), 'asked ' + text); await idle(); return seen.at(-1); };
+    await api(OWNER, `/cats/${cat.id}/lore`, { json: { title: '世界观', content: '猫窝在东京的一台小服务器上。' } });
+    let lb = await api(OWNER, `/cats/${cat.id}/lore`, { json: { title: '长明', content: '长明是小叶家的 AI。', mode: 'keyword', keywords: '长明、小叶' } });
+    assert.strictEqual(lb.entries.length, 2);
+    await assert.rejects(api(OWNER, `/cats/${cat.id}/lore`, { json: { title: '', content: 'x' } }), /标题/);
+    let b = await say('今天天气好');
+    assert(b.messages[0].content.includes('【世界书：世界观】\n猫窝在东京的一台小服务器上。'), '常驻 in the system prompt');
+    assert(!JSON.stringify(b.messages).includes('【世界书：长明】'), 'keyword entry not brought up yet');
+    b = await say('你认识长明吗');
+    assert(b.messages.at(-1).content.includes('【世界书：长明】\n长明是小叶家的 AI。'), 'keyword entry in the note');
+    b = await say('他人怎么样');
+    assert(!b.messages.at(-1).content.includes('【世界书：长明】'), 'not repeated while still in the window');
+    assert.strictEqual(JSON.stringify(b.messages).split('【世界书：长明】').length, 2, 'exactly once in the window');
+    ok('世界书: 常驻 always there, keyword entries once when mentioned');
+
+    // A real .docx (a zip with word/document.xml).
+    const yazl = require('yazl');
+    const zip = new yazl.ZipFile();
+    zip.addBuffer(Buffer.from('<?xml version="1.0"?><w:document><w:body><w:p><w:r><w:t>第一段 A&amp;B</w:t></w:r><w:r><w:tab/><w:t xml:space="preserve">尾巴</w:t></w:r></w:p><w:p><w:r><w:t>第二段</w:t></w:r></w:p></w:body></w:document>'), 'word/document.xml');
+    zip.end();
+    const docx = await new Promise(r => { const parts = []; zip.outputStream.on('data', d => parts.push(d)); zip.outputStream.on('end', () => r(Buffer.concat(parts))); });
+    const up = async (name, body) => {
+      const res = await fetch(`${URL_}/api/cats/${cat.id}/lore/upload?name=${encodeURIComponent(name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + OWNER, 'Content-Type': 'application/octet-stream' }, body });
+      const out = await res.json(); if (!res.ok) throw new Error(out.error); return out;
+    };
+    lb = await up('人物设定.docx', docx);
+    const d1 = lb.entries.find(e => e.title === '人物设定');
+    assert.strictEqual(d1.content, '第一段 A&B\t尾巴\n第二段');
+    assert.strictEqual(d1.source, '人物设定.docx');
+    lb = await up('notes.txt', Buffer.from('\uFEFF一些笔记'));
+    assert.strictEqual(lb.entries.find(e => e.title === 'notes').content, '一些笔记');
+    lb = await up('酒馆.json', Buffer.from(JSON.stringify({ entries: { 0: { key: ['星野'], content: '星野是 K 的朋友。', comment: '星野', constant: false }, 1: { key: [], content: '总设定内容', comment: '总设定', constant: true, disable: true } } })));
+    assert.strictEqual(lb.added, 2);
+    const hx = lb.entries.find(e => e.title === '星野'), zs = lb.entries.find(e => e.title === '总设定');
+    assert(hx.mode === 'keyword' && hx.keywords[0] === '星野' && zs.mode === 'always' && !zs.enabled);
+    await assert.rejects(up('old.doc', Buffer.from('x')), /另存为/);
+    await assert.rejects(up('pic.png', Buffer.from('x')), /只支持/);
+    await assert.rejects(up('bad.docx', Buffer.from('not a zip')), /打不开/);
+    ok('uploads: docx (paragraphs, tabs, &amp;), txt, Tavern json; .doc and others refused');
+
+    lb = await api(OWNER, `/cats/${cat.id}/lore/${zs.id}`, { method: 'PUT', json: { enabled: true, content: '总设定改过了' } });
+    assert(lb.entries.find(e => e.id === zs.id).enabled);
+    lb = await api(OWNER, `/cats/${cat.id}/lore/${zs.id}`, { method: 'DELETE' });
+    assert(!lb.entries.some(e => e.id === zs.id));
+    const friend0 = await api(OWNER, '/friends', { json: { name: '路人' } });
+    await assert.rejects(api(friend0.token, `/cats/${cat.id}/lore`), /找不到/);
+    assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).loreCount, lb.entries.length);
+    ok('世界书 entries can be changed, turned off, deleted; only the owner sees them');
+  }
 
   // Notebook through the remember tool; the notebook is in the next prompt.
   await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '记住绫喜欢草莓' } });
