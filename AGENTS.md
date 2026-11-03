@@ -68,7 +68,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 40）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 41）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -153,5 +153,6 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
   - 不选「移出」是因为狼人杀里移出等于出局，会改变胜负；托管只是不说话、弃票。
   - 终止对局（`room_end`）：只有有人托管 / 离开时出现；还在的人过半同意才解散（`room_end_yes` / `room_end_no`），3 分钟没表态算不同意，没通过当天（`phase.day`）不能再提。解散后 `result.aborted = true`、标题「对局中止」、不算输赢。数据存在 rooms 表的 `extra` 列。
   - 两人游戏（模块有 `forfeit`，目前是五子棋）不托管：对方 3 分钟不动，可以「对方掉线，结束对局」，掉线方判负；还有「认输」（`resign`）。绫说两人游戏就是想和对方玩，不要系统代下。
+  - 跳过的记录写成「X号 太久没动，跳过了…（房主 绫 点了跳过，系统按默认处理）」。以前写「由房主 绫 操作」，第一局 9 人局里几个 AI 以为是绫替被跳过的人行动（连警徽都以为是她自己给自己的），别改回去。
   - 这些平台级操作在 `view.actions` 里带 `room: true`，房间页放在通知下面那一排小按钮里，不放进操作栏。
   - **「小绫特权」（2026-11-04）**：谁都不能跳过主人（狼人杀、五子棋都一样），因为人想和打字都比 AI 慢。开关是 `platform.js` 顶上的 `OWNER_NEVER_SKIPPED = true`。绫说**以后有朋友来玩时改回原来的规则**：把它改成 `false` 就行；改特权之前的整套代码存档在提交 **`f558d2f`**。上面的跳过规则对其他人照旧。

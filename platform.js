@@ -341,17 +341,19 @@ function skip(account, roomId) {
   }
   const ctx = context(room);
   const night = mod.phase(room.state).night;
-  const by = room.hostId === account.id ? `，由房主 ${accounts.byId(account.id).name} 操作` : `，由 ${accounts.byId(account.id).name} 操作`;
+  // Say clearly that the skipper only pressed 跳过 and the system used the default action: in the first
+  // 9-player game 「由房主 绫 操作」 made players believe the host had acted for the skipped seat.
+  const by = `（${room.hostId === account.id ? '房主 ' : ''}${accounts.byId(account.id).name} 点了跳过，系统按默认处理）`;
   if (twoPlayer(room)) {
     const seat = ready[0];
-    ctx.log({ kind: 'skip', seat, text: `${seat}号 ${seatName(room, seat)} 掉线了，对局结束${by}` });
+    ctx.log({ kind: 'skip', seat, text: `${seat}号 ${seatName(room, seat)} 掉线了，对局结束（${accounts.byId(account.id).name} 点的结束）` });
     mod.forfeit(room.state, seat, ctx);
     afterChange(room);
     return '对局已结束';
   }
   for (const seat of p.mode === 'turn' ? ready.slice(0, 1) : ready) {
     const s = seatEntry(room, seat);
-    ctx.log({ kind: 'skip', seat, text: `${seat}号 ${seatName(room, seat)} 已被跳过${p.label}${by}`, visible: night ? 'archive' : 'public' });
+    ctx.log({ kind: 'skip', seat, text: `${seat}号 ${seatName(room, seat)} 太久没动，跳过了${p.label}${by}`, visible: night ? 'archive' : 'public' });
     const out = mod.act(room.state, seat, mod.defaultAction(room.state, seat), ctx);
     if (out && out.error) throw new Error(`跳过失败：${out.error}`);
     s.skips = (s.skips || 0) + 1;
