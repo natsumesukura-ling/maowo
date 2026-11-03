@@ -20,6 +20,7 @@
   .hero .d { font-size: 13px; color: var(--text2); line-height: 1.6; padding: 4px 40px 6px 0; }
   .tools { display: flex; gap: 8px; margin-bottom: 14px; }
   .tools > * { flex: 1; min-width: 0; }
+  .resident .st > span:last-child { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .count { height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; color: var(--text2); white-space: nowrap; }
   .pause { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--white); border: 1px solid var(--border); margin-bottom: 22px; font: inherit; font-size: 14px; color: var(--text); text-align: left; cursor: pointer; }
   .pause .t { flex-grow: 1; } .pause .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -41,6 +42,24 @@
   @keyframes blink { 50% { opacity: .3; } }
   .unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #D2483A; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-family: -apple-system, sans-serif; flex-shrink: 0; }
   .mutei { display: inline-flex; align-items: center; gap: 3px; font-family: -apple-system, sans-serif; font-size: 11.5px; font-weight: 400; color: var(--muted); padding: 2px 8px; border-radius: 999px; background: var(--white); border: 1px solid var(--border); flex-shrink: 0; }
+  .gstack { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+  .resident .gstack .avatar { position: absolute; width: 32px; height: 32px; font-size: 13px; border: 2px solid var(--card); }
+  .gstack .avatar:nth-child(1) { left: 0; top: 0; } .gstack .avatar:nth-child(2) { right: 0; top: 6px; } .gstack .avatar:nth-child(3) { left: 10px; bottom: 0; }
+  .gstack .avatar:only-child { left: 8px; top: 8px; width: 40px; height: 40px; }
+  /* long press (2 s) to move a card */
+  .resident { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; position: relative; transition: transform .18s, box-shadow .18s; }
+  .resident::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 2px; background: var(--accent-line); transform: scaleX(0); transform-origin: left; opacity: 0; }
+  .resident.pressing::after { opacity: .8; transform: scaleX(1); transition: transform 1.7s linear, opacity .2s; }
+  .resident.dragging { z-index: 5; transition: none; box-shadow: 0 10px 28px rgba(120, 80, 40, .22); background: var(--white); }
+  .resident.shift { transition: transform .18s; }
+  .hint2 { font-size: 12px; color: var(--muted); text-align: center; margin: -2px 0 12px; }
+  .adds { display: flex; gap: 10px; }
+  .adds .new { flex: 1; }
+  .pickcat { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--white); font: inherit; color: var(--text); margin-bottom: 8px; cursor: pointer; text-align: left; }
+  .pickcat .avatar { width: 40px; height: 40px; }
+  .pickcat .ck { margin-left: auto; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--line); display: flex; align-items: center; justify-content: center; color: #fff; }
+  .pickcat.on { border-color: var(--accent-line); background: var(--accent-soft); }
+  .pickcat.on .ck { background: var(--accent); border-color: var(--accent); }
   .new { width: 100%; border: 1.5px dashed var(--accent-line); background: transparent; color: var(--accent); border-radius: 20px; height: 64px; font: inherit; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; text-decoration: none; }
   .first { padding: 18px; border-radius: 20px; background: var(--card); border: 1px solid var(--border); font-size: 14px; color: var(--text2); line-height: 1.75; margin-bottom: 14px; }
   .first b { color: var(--text); }
@@ -61,7 +80,29 @@ const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
 Maowo.tabbar('cats');
 
+const QUIET = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5H11l-4.5 3.5V17h-2A1.5 1.5 0 0 1 3 15.5V6"/><path d="M3 3l18 18"/></svg>';
+const badge = x => x.mute ? `<span class="mutei">${icon('bellOff', 14, 1.8)}免打扰</span>` : x.unread ? `<span class="unread">${x.unread > 99 ? '99+' : x.unread}</span>` : '';
+
+function catCard(c) {
+  return `<a class="resident" data-key="c:${c.id}" href="/cats/${c.id}">${Maowo.avatar(c)}
+    <div class="body"><div class="n"><span class="nm">${esc(c.name)}</span>${badge(c)}</div>
+      <div class="m">${c.keyName ? esc(c.keyName) : '还没选钥匙'} · ${c.model ? esc(c.model) : '还没选模型'}</div>
+      <div class="st"><span class="dot ${c.status.state}"></span><span>${esc(c.status.text)}</span></div></div>
+    <span class="chev">${icon('chevronRight', 20, 2)}</span></a>`;
+}
+function groupCard(g) {
+  const ms = g.members.filter(m => m.isCat);
+  return `<a class="resident" data-key="g:${g.id}" href="/cats/g/${g.id}"><span class="gstack">${ms.slice(0, 3).map(m => Maowo.avatar(m)).join('')}</span>
+    <div class="body"><div class="n"><span class="nm">${esc(g.name)}</span>${badge(g)}</div>
+      <div class="m">群聊 · ${esc(ms.map(m => m.name).join('、') || '还没有猫')}</div>
+      <div class="st"><span>${g.last ? `${esc(g.last.name)}：${esc(g.last.text.length > 40 ? g.last.text.slice(0, 40) + '…' : g.last.text)}` : '还没人说话'}</span></div></div>
+    <span class="chev">${icon('chevronRight', 20, 2)}</span></a>`;
+}
+
+let data = null;
 function render(d) {
+  data = d;
+  if (dragging) return; // do not redraw under a finger
   const html = `
     <div class="tools">
       <button class="btn" id="keys">${icon('key', 18, 1.8)}钥匙 · ${d.keys.length} 把</button>
@@ -70,18 +111,119 @@ function render(d) {
     <button class="pause" id="pause" aria-pressed="${!d.paused}"><div class="t">让大家自己玩<div class="s">${d.paused ? '现在全部暂停了：谁也不会被叫醒，你跟它们说话还是会回' : '关掉就全部暂停，谁也不会被叫醒'}</div></div><span class="switch ${d.paused ? 'off' : ''}"></span></button>
     ${!d.keys.length && !d.cats.length ? `<div class="first"><b>第一步：</b>点上面的「钥匙」，填一把 API key（DeepSeek、GLM、Gemini 或者中转站都行）。<br><b>第二步：</b>点下面「搬进来一个新 AI」，起名字、写设定、选模型。<br>之后它就住在猫窝里啦：可以跟它聊天，轮到它玩游戏时猫窝会自己叫它。</div>` : ''}
     <div class="ribbon"><span class="tag">住在这里的</span><span class="rule"></span></div>
-    ${d.cats.map(c => `<a class="resident" href="/cats/${c.id}">${Maowo.avatar(c)}
-      <div class="body"><div class="n"><span class="nm">${esc(c.name)}</span>${c.mute ? `<span class="mutei">${icon('bellOff', 14, 1.8)}免打扰</span>` : c.unread ? `<span class="unread">${c.unread > 99 ? '99+' : c.unread}</span>` : ''}</div>
-        <div class="m">${c.keyName ? esc(c.keyName) : '还没选钥匙'} · ${c.model ? esc(c.model) : '还没选模型'}</div>
-        <div class="st"><span class="dot ${c.status.state}"></span><span>${esc(c.status.text)}</span></div></div>
-      <span class="chev">${icon('chevronRight', 20, 2)}</span></a>`).join('') || '<div class="empty" style="padding: 8px 0 18px;">还没有猫住进来</div>'}
-    <a class="new" href="/cats/new">${icon('plus', 18, 2)}搬进来一个新 AI</a>`;
+    <div id="list">${d.items.map(x => x.type === 'group' ? groupCard(x) : catCard(x)).join('')}</div>
+    ${d.items.length > 1 ? '<div class="hint2">按住一张卡片 2 秒，可以拖动换位置</div>' : d.items.length ? '' : '<div class="empty" style="padding: 8px 0 18px;">还没有猫住进来</div>'}
+    <div class="adds"><a class="new" href="/cats/new">${icon('plus', 18, 2)}搬进来一个新 AI</a>${d.cats.length ? `<button class="new" id="newgroup">${icon('plus', 18, 2)}拉一个群</button>` : ''}</div>`;
   if (!Maowo.setHtml($('#content'), html)) return;
   $('#keys').onclick = () => CatKit.keys(load);
   $('#pause').onclick = async () => {
     try { await api('/cats/settings', { method: 'PUT', json: { paused: !d.paused } }); Maowo.toast(d.paused ? '好，大家可以自己玩了' : '全部暂停了，谁也不会被叫醒'); load(); }
     catch (err) { Maowo.toast(err.message); }
   };
+  const ng = $('#newgroup'); if (ng) ng.onclick = newGroup;
+  document.querySelectorAll('#list .resident').forEach(armDrag);
+}
+
+function newGroup() {
+  const chosen = new Set();
+  const p = Maowo.sheet(`<h2>拉一个群</h2>
+    <label class="field">群名</label><textarea class="single" rows="1" id="ng-name" maxlength="20" placeholder="比如：周五夜谈"></textarea>
+    <label class="field">拉谁进来</label>
+    ${data.cats.map(c => `<button type="button" class="pickcat" data-pick="${c.id}">${Maowo.avatar(c)}<span style="flex-grow: 1; font-weight: 600;">${esc(c.name)}</span><span class="ck">${icon('check', 14, 2.4)}</span></button>`).join('')}
+    <button class="btn primary block" id="ng-ok" style="margin-top: 8px;">建群</button>
+    <div class="small muted" style="margin-top: 10px; line-height: 1.6;">每只猫进群还是它自己：用它自己的模型和设定，带着它原来的记忆。群里说的话也会记进它自己的记忆里。</div>`);
+  CatKit.oneLine(p);
+  p.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+    const id = Number(b.dataset.pick);
+    chosen.has(id) ? chosen.delete(id) : chosen.add(id);
+    b.classList.toggle('on', chosen.has(id));
+  });
+  p.querySelector('#ng-ok').onclick = async () => {
+    try { const g = await api('/cats/groups', { json: { name: p.querySelector('#ng-name').value, members: [...chosen] } }); p.close(); Maowo.go(`/cats/g/${g.id}`); }
+    catch (err) { Maowo.toast(err.message); }
+  };
+}
+
+// ---------- long press (2 s) and drag to reorder ----------
+let dragging = null, justDragged = false;
+const HOLD_MS = 2000;
+function armDrag(card) {
+  let timer = null, startY = 0, startX = 0, pid = null;
+  const cancel = () => { clearTimeout(timer); timer = null; card.classList.remove('pressing'); };
+  card.addEventListener('contextmenu', e => e.preventDefault());
+  card.setAttribute('draggable', 'false');
+  card.addEventListener('dragstart', e => e.preventDefault()); // the browser's own 「drag a link」
+  card.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || dragging) return;
+    startY = e.clientY; startX = e.clientX; pid = e.pointerId;
+    card.classList.add('pressing');
+    timer = setTimeout(() => { timer = null; card.classList.remove('pressing'); startDrag(card, pid, startY); }, HOLD_MS);
+  });
+  card.addEventListener('pointermove', e => {
+    if (timer && (Math.abs(e.clientY - startY) > 10 || Math.abs(e.clientX - startX) > 10)) cancel(); // a scroll, not a press
+  });
+  card.addEventListener('pointerup', cancel);
+  card.addEventListener('pointercancel', cancel);
+  card.addEventListener('click', e => { if (justDragged) { e.preventDefault(); e.stopPropagation(); } }, true);
+}
+
+function startDrag(card, pid, startY) {
+  const list = $('#list');
+  const cards = [...list.children];
+  const from = cards.indexOf(card);
+  const rects = cards.map(c => c.getBoundingClientRect());
+  const step = rects.length > 1 ? rects[1].top - rects[0].top : rects[0].height + 12;
+  let to = from, lastY = startY, scrollTimer = null;
+  dragging = card;
+  card.classList.add('dragging');
+  cards.forEach(c => { if (c !== card) c.classList.add('shift'); });
+  try { navigator.vibrate && navigator.vibrate(25); } catch {}
+  try { card.setPointerCapture(pid); } catch {}
+  const startScroll = document.scrollingElement.scrollTop;
+  const place = () => {
+    const dy = lastY - startY + (document.scrollingElement.scrollTop - startScroll);
+    card.style.transform = `translateY(${dy}px) scale(1.02)`;
+    to = Math.max(0, Math.min(cards.length - 1, from + Math.round(dy / step)));
+    cards.forEach((c, i) => {
+      if (c === card) return;
+      let shift = 0;
+      if (from < to && i > from && i <= to) shift = -step;
+      if (from > to && i < from && i >= to) shift = step;
+      c.style.transform = shift ? `translateY(${shift}px)` : '';
+    });
+  };
+  const move = e => { if (e.pointerId !== pid) return; lastY = e.clientY; place(); };
+  // Near the top or bottom edge, the page scrolls along.
+  scrollTimer = setInterval(() => {
+    const h = window.innerHeight;
+    const v = lastY < 80 ? -8 : lastY > h - 110 ? 8 : 0;
+    if (v) { document.scrollingElement.scrollTop += v; place(); }
+  }, 16);
+  const noScroll = e => e.preventDefault();
+  document.addEventListener('touchmove', noScroll, { passive: false });
+  const end = async e => {
+    if (e.pointerId !== pid) return;
+    card.removeEventListener('pointermove', move);
+    card.removeEventListener('pointerup', end);
+    card.removeEventListener('pointercancel', end);
+    document.removeEventListener('touchmove', noScroll);
+    clearInterval(scrollTimer);
+    cards.forEach(c => { c.style.transform = ''; c.classList.remove('shift', 'dragging'); });
+    if (to !== from) {
+      const ref = to > from ? cards[to].nextSibling : cards[to];
+      list.insertBefore(card, ref);
+    }
+    dragging = null;
+    justDragged = true; setTimeout(() => { justDragged = false; }, 400);
+    if (to !== from) {
+      const order = [...list.children].map(c => c.dataset.key);
+      data.items.sort((a, b) => order.indexOf(`${a.type === 'group' ? 'g' : 'c'}:${a.id}`) - order.indexOf(`${b.type === 'group' ? 'g' : 'c'}:${b.id}`));
+      try { await api('/cats/order', { method: 'PUT', json: { items: order } }); } catch (err) { Maowo.toast(err.message); }
+    }
+  };
+  card.addEventListener('pointermove', move);
+  card.addEventListener('pointerup', end);
+  card.addEventListener('pointercancel', end);
 }
 
 async function load() { render(await api('/cats')); Maowo.tellUnread(); }

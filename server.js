@@ -32,6 +32,7 @@ app.get('/p/me', page('me.html'));
 app.get('/p/diary', page('diary.html'));
 app.get('/p/cats', page('cats.html'));
 app.get('/dev', page('dev.html'));
+app.get('/cats/g/:gid', page('group.html'));
 for (const p of ['/cats/new', '/cats/:id', '/cats/:id/settings']) app.get(p, page('cat.html'));
 app.get('/room/:id', page('room.html'));
 app.get('/archive', page('archives.html'));

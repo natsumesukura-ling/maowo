@@ -64,7 +64,42 @@ db.exec(`
   );
 `);
 
+// 群聊：几只猫和主人在一个群里。群里的每句话都抄一份进每只成员自己的记忆（cat_messages.group_id 标着是哪个群），
+// 所以在私聊里也接得上。主人说一句，每只猫最多回一次；想让谁再说，主人点它的头像。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cat_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'natural',
+    max_speak INTEGER NOT NULL DEFAULT 2,
+    mute INTEGER NOT NULL DEFAULT 0,
+    last_read_id INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS cat_group_members (
+    group_id INTEGER NOT NULL,
+    account_id INTEGER NOT NULL,
+    quiet INTEGER NOT NULL DEFAULT 0,
+    joined_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, account_id)
+  );
+  CREATE TABLE IF NOT EXISTS cat_group_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    author_id INTEGER,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_cat_group_messages ON cat_group_messages(group_id, id);
+`);
+for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT']]) {
+  try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
+}
+
 // kind: me（主人说的）、say（猫说的）、wake（猫窝叫醒它的那句话）、call（它决定用工具）、result（工具的结果）、error（出错了，不给模型看）
+//       group（群里别人说的话）、gwake（群里轮到它说）、gsay（它在群里说的话）——这三种带 group_id，私聊窗口里折成一行
 
 const stmts = {
   keysOf: db.prepare('SELECT * FROM llm_keys WHERE owner_id = ? ORDER BY id'),
@@ -76,7 +111,7 @@ const stmts = {
   all: db.prepare('SELECT * FROM cats'),
   addCat: db.prepare('INSERT INTO cats (account_id, created_at) VALUES (?, ?)'),
   removeCat: db.prepare('DELETE FROM cats WHERE account_id = ?'),
-  add: db.prepare('INSERT INTO cat_messages (account_id, kind, msg, text, detail, room_id, created_at) VALUES (@account_id, @kind, @msg, @text, @detail, @room_id, @created_at)'),
+  add: db.prepare('INSERT INTO cat_messages (account_id, kind, msg, text, detail, room_id, group_id, created_at) VALUES (@account_id, @kind, @msg, @text, @detail, @room_id, @group_id, @created_at)'),
   live: db.prepare('SELECT * FROM cat_messages WHERE account_id = ? AND summarized = 0 AND msg IS NOT NULL ORDER BY id'),
   after: db.prepare('SELECT * FROM cat_messages WHERE account_id = ? AND id > ? ORDER BY id LIMIT 300'),
   before: db.prepare('SELECT * FROM (SELECT * FROM cat_messages WHERE account_id = ? AND id < ? ORDER BY id DESC LIMIT ?) ORDER BY id'),
@@ -86,6 +121,27 @@ const stmts = {
   clear: db.prepare('DELETE FROM cat_messages WHERE account_id = ?'),
   settings: db.prepare('SELECT * FROM cat_settings WHERE owner_id = ?'),
   setPaused: db.prepare('INSERT INTO cat_settings (owner_id, paused) VALUES (?, ?) ON CONFLICT(owner_id) DO UPDATE SET paused = excluded.paused'),
+  setOrder: db.prepare('INSERT INTO cat_settings (owner_id, order_json) VALUES (?, ?) ON CONFLICT(owner_id) DO UPDATE SET order_json = excluded.order_json'),
+  group: db.prepare('SELECT * FROM cat_groups WHERE id = ?'),
+  groupsOf: db.prepare('SELECT * FROM cat_groups WHERE owner_id = ? ORDER BY id'),
+  addGroup: db.prepare('INSERT INTO cat_groups (owner_id, name, created_at) VALUES (?, ?, ?)'),
+  removeGroup: db.prepare('DELETE FROM cat_groups WHERE id = ?'),
+  members: db.prepare('SELECT * FROM cat_group_members WHERE group_id = ? ORDER BY joined_at, account_id'),
+  groupsOfCat: db.prepare('SELECT g.* FROM cat_groups g JOIN cat_group_members m ON m.group_id = g.id WHERE m.account_id = ? ORDER BY g.id'),
+  addMember: db.prepare('INSERT OR IGNORE INTO cat_group_members (group_id, account_id, joined_at) VALUES (?, ?, ?)'),
+  removeMember: db.prepare('DELETE FROM cat_group_members WHERE group_id = ? AND account_id = ?'),
+  removeMemberEverywhere: db.prepare('DELETE FROM cat_group_members WHERE account_id = ?'),
+  removeMembers: db.prepare('DELETE FROM cat_group_members WHERE group_id = ?'),
+  setQuiet: db.prepare('UPDATE cat_group_members SET quiet = ? WHERE group_id = ? AND account_id = ?'),
+  gAdd: db.prepare('INSERT INTO cat_group_messages (group_id, author_id, kind, text, created_at) VALUES (?, ?, ?, ?, ?)'),
+  gAfter: db.prepare('SELECT * FROM cat_group_messages WHERE group_id = ? AND id > ? ORDER BY id LIMIT 300'),
+  gBefore: db.prepare('SELECT * FROM (SELECT * FROM cat_group_messages WHERE group_id = ? AND id < ? ORDER BY id DESC LIMIT ?) ORDER BY id'),
+  gLast: db.prepare('SELECT * FROM cat_group_messages WHERE group_id = ? ORDER BY id DESC LIMIT 1'),
+  gLastSay: db.prepare("SELECT * FROM cat_group_messages WHERE group_id = ? AND kind IN ('me', 'say') ORDER BY id DESC LIMIT 1"),
+  gLastMe: db.prepare("SELECT MAX(id) AS id FROM cat_group_messages WHERE group_id = ? AND kind = 'me'"),
+  gUnread: db.prepare("SELECT COUNT(*) AS n FROM cat_group_messages WHERE group_id = ? AND kind = 'say' AND id > ?"),
+  gClear: db.prepare('DELETE FROM cat_group_messages WHERE group_id = ?'),
+  gLastSpoke: db.prepare("SELECT author_id, MAX(id) AS id FROM cat_group_messages WHERE group_id = ? AND kind = 'say' GROUP BY author_id"),
 };
 const setCat = (id, fields) => {
   const cols = Object.keys(fields);
@@ -326,6 +382,11 @@ function systemPrompt(ai, cat) {
   );
   const tables = tableNotes(ai, owner);
   if (tables.length) parts.push('', '你现在的桌子：', ...tables);
+  const groups = stmts.groupsOfCat.all(ai.id);
+  if (groups.length) {
+    parts.push('', `你在这些群聊里（和${owner.name}、别的猫一起）：${groups.map(g => `「${g.name}」`).join('、')}。以【群聊「…」】开头的消息是群里的人说的话，你都看得到；在群里轮到你时猫窝会告诉你。`);
+    if (tables.some(l => l.includes('正在'))) parts.push('还没结束的游戏里的秘密（身份、夜里的信息、你的打算）不要在群里说，群里可能有同桌的人。');
+  }
   if (cat.alarm_at) parts.push('', `你定了闹钟：${clock(cat.alarm_at)}（北京时间）${cat.alarm_note ? `，留给自己的话：${cat.alarm_note}` : ''}`);
   if (cat.summary.trim()) parts.push('', '很久以前的事（旧对话的摘要）：', cat.summary.trim());
   parts.push('', cat.notebook.trim() ? `你的小本本：\n${cat.notebook.trim()}` : '你的小本本还是空的。');
@@ -402,6 +463,7 @@ async function maybeSummarize(ai, cat, key) {
 // ---------- running a cat ----------
 const queues = new Map();      // aiId -> [{kind, text, roomId}]
 const busy = new Set();
+const running = new Map();     // aiId -> the trigger it is working on
 const nudged = new Set();      // turn keys already nudged once
 const lastInbox = new Map();
 const listeners = new Map();   // aiId -> Set of fns, for the window's long polling
@@ -410,8 +472,8 @@ function changed(aiId) {
   const set = listeners.get(aiId);
   if (set) for (const fn of [...set]) fn();
 }
-function add(aiId, kind, { msg = null, text = '', detail = null, roomId = null } = {}) {
-  const info = stmts.add.run({ account_id: aiId, kind, msg: msg ? JSON.stringify(msg) : null, text, detail, room_id: roomId, created_at: nowIso() });
+function add(aiId, kind, { msg = null, text = '', detail = null, roomId = null, groupId = null } = {}) {
+  const info = stmts.add.run({ account_id: aiId, kind, msg: msg ? JSON.stringify(msg) : null, text, detail, room_id: roomId, group_id: groupId, created_at: nowIso() });
   changed(aiId);
   return info.lastInsertRowid;
 }
@@ -424,13 +486,14 @@ function enqueue(aiId, trigger) {
   const cat = stmts.cat.get(aiId);
   const ai = accounts.byId(aiId);
   if (!cat || !ai) return false;
-  if (trigger.kind !== 'me') {
+  // 绫 talking (in its window or in a group) always goes; everything else obeys the switches.
+  if (trigger.kind !== 'me' && trigger.kind !== 'group') {
     if (pausedFor(ai.owner_id)) return false;
     if ((trigger.kind === 'turn' || trigger.kind === 'inbox' || trigger.kind === 'nudge') && !cat.wake_on_turn) return false;
   }
   const q = queues.get(aiId) || [];
   // The same thing waiting twice is one wake: several messages from 绫 are answered together.
-  if (q.some(t => t.kind === trigger.kind && (t.roomId || null) === (trigger.roomId || null))) return true;
+  if (trigger.kind !== 'group' && q.some(t => t.kind === trigger.kind && (t.roomId || null) === (trigger.roomId || null))) return true;
   q.push(trigger);
   queues.set(aiId, q);
   pump(aiId);
@@ -455,13 +518,20 @@ async function pump(aiId) {
       const q = queues.get(aiId) || [];
       const t = q.shift();
       if (!t) break;
+      running.set(aiId, t);
+      changed(aiId);
+      if (t.groupId) gChanged(t.groupId);
       try { await runOnce(aiId, t); } catch (err) {
-        add(aiId, 'error', { text: `出错了：${err.message}` });
+        add(aiId, 'error', { text: `出错了：${err.message}`, groupId: t.groupId || null });
         activity(aiId, `出错了：${err.message}`.slice(0, 60));
+        if (t.groupId) postGroup(t.groupId, aiId, 'error', `${accounts.byId(aiId)?.name || ''} 出错了：${err.message}`);
       }
+      running.delete(aiId);
+      if (t.done) t.done();
     }
   } finally {
     busy.delete(aiId);
+    for (const t of queues.get(aiId) || []) if (t.done) t.done();
     queues.delete(aiId);
     changed(aiId);
   }
@@ -481,7 +551,9 @@ async function runOnce(aiId, t) {
     // Only if it is still its turn there.
     if (!platform.turnsFor(aiId).some(x => x.room.id === t.roomId)) return;
   }
-  if (t.kind !== 'me' && !countWake(aiId)) {
+  const group = t.groupId ? stmts.group.get(t.groupId) : null;
+  if (t.groupId && (!group || !stmts.members.all(group.id).some(m => m.account_id === aiId))) return;
+  if (t.kind !== 'me' && t.kind !== 'group' && !countWake(aiId)) {
     if (!t.quiet) add(aiId, 'error', { text: `今天已经叫醒 ${cat.daily_limit} 次了，到上限了，明天再叫它（可以在设置里调高）。` });
     activity(aiId, '今天叫醒的次数用完了');
     return;
@@ -492,7 +564,10 @@ async function runOnce(aiId, t) {
 
   // Things that happen in a game 绫 is playing are tagged with that room.
   let secret = t.roomId && secretFor(t.roomId, ai.owner_id) ? t.roomId : null;
-  if (t.kind !== 'me') {
+  const gid = group ? group.id : null;
+  if (group) {
+    add(aiId, 'gwake', { msg: { role: 'user', content: `【猫窝】${groupPrompt(group, ai)}` }, groupId: gid, detail: JSON.stringify({ group: group.name }) });
+  } else if (t.kind !== 'me') {
     add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}` }, text: t.shown || t.text, roomId: secret });
   }
   const runStart = stmts.lastId.get(aiId).id || 0;
@@ -510,7 +585,12 @@ async function runOnce(aiId, t) {
     const keep = { role: 'assistant', content: content || null };
     if (msg.reasoning_content) keep.reasoning_content = msg.reasoning_content;
     if (!calls.length) {
-      if (content) { add(aiId, 'say', { msg: keep, text: content, roomId: t.kind === 'me' ? null : secret }); said = true; }
+      if (group) {
+        // What it says last goes to the group; 「（不说话）」 means it lets this one pass.
+        const quiet = !content || /^[（(]?\s*不说话\s*[)）]?[。.]?$/.test(content);
+        add(aiId, 'gsay', { msg: { ...keep, content: content || '（不说话）' }, text: quiet ? '' : content, groupId: gid, detail: JSON.stringify({ group: group.name }) });
+        if (!quiet) { postGroup(gid, aiId, 'say', content); said = true; }
+      } else if (content) { add(aiId, 'say', { msg: keep, text: content, roomId: t.kind === 'me' ? null : secret }); said = true; }
       break;
     }
     keep.tool_calls = calls.map(c => ({ ...c, id: c.id || `call_${Math.random().toString(36).slice(2, 10)}`, type: c.type || 'function' }));
@@ -520,7 +600,7 @@ async function runOnce(aiId, t) {
       try { args = JSON.parse(c.function.arguments || '{}') || {}; } catch {}
       if (!secret && args.room_id && secretFor(args.room_id, ai.owner_id)) secret = args.room_id;
     }
-    add(aiId, 'call', { msg: keep, text: content, roomId: t.kind === 'me' && content ? null : secret });
+    add(aiId, 'call', { msg: keep, text: group ? '' : content, roomId: t.kind === 'me' && content ? null : secret, groupId: gid });
     for (const c of keep.tool_calls) {
       let args = {};
       let text, lbl;
@@ -534,13 +614,13 @@ async function runOnce(aiId, t) {
       lbl = lbl || label(c.function.name, args, aiId);
       add(aiId, 'result', {
         msg: { role: 'tool', tool_call_id: c.id, content: text }, text: lbl,
-        detail: JSON.stringify({ tool: c.function.name, args, result: text.slice(0, 4000) }), roomId: secret,
+        detail: JSON.stringify({ tool: c.function.name, args, result: text.slice(0, 4000) }), roomId: secret, groupId: gid,
       });
       activity(aiId, lbl);
     }
-    if (step === MAX_STEPS - 1) add(aiId, 'error', { text: `这次想了 ${MAX_STEPS} 步还没想完，先停下了。` });
+    if (step === MAX_STEPS - 1) add(aiId, 'error', { text: `这次想了 ${MAX_STEPS} 步还没想完，先停下了。`, groupId: gid });
   }
-  activity(aiId, said ? (t.kind === 'me' ? '刚和你聊过' : '刚忙完') : '刚忙完');
+  activity(aiId, group ? `刚在群「${group.name}」里${said ? '说了话' : '看了看'}` : said ? (t.kind === 'me' ? '刚和你聊过' : '刚忙完') : '刚忙完');
 
   // Woken for a turn but did not act: say so once more, then leave it to the table.
   if (t.kind === 'turn' && platform.turnsFor(aiId).some(x => x.room.id === t.roomId) && !nudged.has(t.key)) {
@@ -587,6 +667,122 @@ setTimeout(() => {
   }
 }, 3000).unref();
 
+
+// ============================================================
+// 群聊
+// ============================================================
+const gListeners = new Map(); // groupId -> Set of fns
+const gQueued = new Map();    // groupId -> [aiId] waiting for their turn to speak
+const gChains = new Map();    // groupId -> promise: rounds in one group happen one after another
+
+function gChanged(gid) {
+  const set = gListeners.get(gid);
+  if (set) for (const fn of [...set]) fn();
+}
+
+function groupPrompt(g, ai) {
+  const owner = accounts.byId(g.owner_id);
+  const names = stmts.members.all(g.id).map(m => accounts.byId(m.account_id)?.name).filter(Boolean);
+  return `现在在群聊「${g.name}」里轮到你说话了。群里有：${owner.name}（主人）、${names.map(n => (n === ai.name ? `${n}（你）` : n)).join('、')}。` +
+    `上面以【群聊「${g.name}」】开头的就是群里的消息。你最后直接说的话会发到群里：像在群里聊天一样，自然、简短，说你自己的话，不要替别人说。` +
+    '想用工具也可以。这次不想说话，就只回「（不说话）」。';
+}
+
+// A line in the group. What 绫 and the cats say is also copied into every other member's own memory.
+function postGroup(gid, authorId, kind, text) {
+  const g = stmts.group.get(gid);
+  if (!g) return null;
+  const info = stmts.gAdd.run(gid, authorId || null, kind, text, nowIso());
+  if (kind === 'me' || kind === 'say') {
+    const author = authorId ? accounts.byId(authorId) : null;
+    const line = `【群聊「${g.name}」】${author ? author.name : '有人'}：${text}`;
+    for (const m of stmts.members.all(gid)) {
+      if (m.account_id === authorId) continue;
+      add(m.account_id, 'group', { msg: { role: 'user', content: line }, groupId: gid, detail: JSON.stringify({ group: g.name }) });
+    }
+  }
+  gChanged(gid);
+  return info.lastInsertRowid;
+}
+
+function chain(gid, fn) {
+  const next = (gChains.get(gid) || Promise.resolve()).then(fn).catch(err => console.error('group round', err));
+  gChains.set(gid, next);
+  next.then(() => { if (gChains.get(gid) === next) gChains.delete(gid); });
+  return next;
+}
+
+// One cat says one thing in the group (or lets it pass). Resolves when it is done.
+function speak(gid, aiId) {
+  return new Promise(resolve => {
+    const list = gQueued.get(gid) || [];
+    list.push(aiId);
+    gQueued.set(gid, list);
+    gChanged(gid);
+    const finish = () => {
+      const l = gQueued.get(gid) || [];
+      const i = l.indexOf(aiId);
+      if (i >= 0) l.splice(i, 1);
+      if (!l.length) gQueued.delete(gid);
+      gChanged(gid);
+      resolve();
+    };
+    if (!enqueue(aiId, { kind: 'group', groupId: gid, done: finish })) finish();
+  });
+}
+
+const memberCats = g => stmts.members.all(g.id).map(m => ({ ...m, ai: accounts.byId(m.account_id) })).filter(m => m.ai && isCat(m.ai.id));
+
+// Who answers 绫's message: the ones she @-ed; otherwise by the group's mode.
+function whoSpeaks(g, text) {
+  const members = memberCats(g);
+  const named = members.filter(m => text.includes('@' + m.ai.name));
+  if (named.length) return named.map(m => m.ai.id);
+  if (g.mode === 'call') return [];
+  const talkers = members.filter(m => !m.quiet);
+  if (g.mode === 'all') return talkers.map(m => m.ai.id);
+  // 自然聊天: the ones whose name she used first, then the ones who have not spoken for longest.
+  const last = new Map(stmts.gLastSpoke.all(g.id).map(r => [r.author_id, r.id]));
+  return talkers.map(m => ({ id: m.ai.id, named: text.includes(m.ai.name) ? 1 : 0, last: last.get(m.ai.id) || 0, r: Math.random() }))
+    .sort((a, b) => b.named - a.named || a.last - b.last || a.r - b.r)
+    .slice(0, Math.max(1, g.max_speak)).map(x => x.id);
+}
+
+function ownerSays(g, text) {
+  postGroup(g.id, g.owner_id, 'me', text);
+  const ids = whoSpeaks(g, text);
+  if (!ids.length) return;
+  chain(g.id, async () => {
+    for (const id of ids) await speak(g.id, id);
+    if (stmts.group.get(g.id)) postGroup(g.id, null, 'round', '这一轮说完啦');
+  });
+}
+
+function groupCard(g) {
+  const last = stmts.gLastSay.get(g.id);
+  const lastAuthor = last && last.author_id ? accounts.byId(last.author_id) : null;
+  return {
+    type: 'group', id: g.id, name: g.name, mode: g.mode, maxSpeak: g.max_speak, mute: !!g.mute,
+    members: stmts.members.all(g.id).map(m => { const a = accounts.byId(m.account_id); return a && { ...accounts.publicInfo(a), quiet: !!m.quiet, isCat: isCat(a.id) }; }).filter(Boolean),
+    last: last ? { name: lastAuthor ? lastAuthor.name : '', text: last.text, at: last.created_at } : null,
+    unread: stmts.gUnread.get(g.id, g.last_read_id).n, createdAt: g.created_at,
+  };
+}
+
+function groupWindow(g, after, before) {
+  const rows = after ? stmts.gAfter.all(g.id, after) : stmts.gBefore.all(g.id, before || Number.MAX_SAFE_INTEGER, 80);
+  const lastMe = stmts.gLastMe.get(g.id).id || 0;
+  const spoke = [...new Set(db.prepare("SELECT author_id FROM cat_group_messages WHERE group_id = ? AND kind = 'say' AND id > ?").all(g.id, lastMe).map(r => r.author_id))];
+  const queued = gQueued.get(g.id) || [];
+  return {
+    group: groupCard(g),
+    items: rows.map(r => { const a = r.author_id ? accounts.byId(r.author_id) : null; return { id: r.id, kind: r.kind, text: r.text, author: a ? accounts.publicInfo(a) : null, createdAt: r.created_at }; }),
+    lastId: (stmts.gLast.get(g.id) || {}).id || 0, more: !after && rows.length === 80,
+    speaking: queued.filter(id => running.get(id)?.groupId === g.id), waiting: queued.filter(id => running.get(id)?.groupId !== g.id), spoke,
+    sig: gSig(g.id),
+  };
+}
+
 // ---------- what the pages see ----------
 function status(ai, cat) {
   if (busy.has(ai.id)) return { text: '正在想…', state: 'busy' };
@@ -616,16 +812,29 @@ function settings(ai, cat) {
 }
 
 function shapeRows(ai, rows) {
-  return rows.map(r => {
+  // Group talk is folded: a run of rows from one group becomes one line 「在群里聊了 N 句」.
+  const out = [];
+  for (const r of rows) {
+    if (!r.group_id) { out.push(r); continue; }
+    const last = out[out.length - 1];
+    const lines = (r.kind === 'group' || (r.kind === 'gsay' && r.text)) ? 1 : 0;
+    if (last && last.fold && last.groupId === r.group_id) { last.count += lines; last.lastId = r.id; continue; }
+    let name = '';
+    try { name = JSON.parse(r.detail || '{}').group || ''; } catch {}
+    const g = stmts.group.get(r.group_id);
+    out.push({ fold: true, groupId: r.group_id, name: g ? g.name : name, gone: !g, count: lines, id: r.id, lastId: r.id, created_at: r.created_at });
+  }
+  return out.map(r => {
+    if (r.fold) return r.count ? { id: r.id, kind: 'group', groupId: r.gone ? null : r.groupId, group: r.name, count: r.count, createdAt: r.created_at } : null;
     if (secretFor(r.room_id, ai.owner_id)) {
       let name = '';
       try { name = platform.getRoom(r.room_id).name; } catch {}
       return { id: r.id, kind: 'hidden', room: name, createdAt: r.created_at };
     }
     if (r.kind === 'call' && !r.text) return null;
-    const out = { id: r.id, kind: r.kind === 'call' ? 'say' : r.kind, text: r.text, createdAt: r.created_at };
-    if (r.kind === 'result' && r.detail) { try { out.detail = JSON.parse(r.detail); } catch {} }
-    return out;
+    const item = { id: r.id, kind: r.kind === 'call' ? 'say' : r.kind, text: r.text, createdAt: r.created_at };
+    if (r.kind === 'result' && r.detail) { try { item.detail = JSON.parse(r.detail); } catch {} }
+    return item;
   }).filter(Boolean);
 }
 
@@ -646,17 +855,151 @@ function mine(req, id = req.params.id) {
 }
 const catsOf = human => accounts.aisOf(human.id).map(a => ({ ai: a, cat: stmts.cat.get(a.id) })).filter(x => x.cat);
 
+// Cats and groups in one list, in the order 绫 dragged them into (new ones go at the end).
+function ordered(human, cats, groups) {
+  let order = [];
+  try { order = JSON.parse(stmts.settings.get(human.id)?.order_json || '[]'); } catch {}
+  const pos = new Map(order.map((k, i) => [k, i]));
+  const all = [...cats.map(c => ({ key: `c:${c.id}`, item: { type: 'cat', ...c }, at: c.createdAt })), ...groups.map(g => ({ key: `g:${g.id}`, item: g, at: g.createdAt }))];
+  return all.sort((a, b) => (pos.has(a.key) ? pos.get(a.key) : 1e9) - (pos.has(b.key) ? pos.get(b.key) : 1e9) || String(a.at).localeCompare(String(b.at))).map(x => x.item);
+}
 router.get('/', wrap(req => {
   const list = catsOf(req.account);
   const d = today();
+  const cats = list.map(x => ({ ...card(x.ai, x.cat), createdAt: x.cat.created_at }));
+  const groups = stmts.groupsOf.all(req.account.id).map(groupCard);
   return {
     paused: pausedFor(req.account.id),
     todayWakes: list.reduce((n, x) => n + (x.cat.day === d ? x.cat.day_wakes : 0), 0),
     keys: stmts.keysOf.all(req.account.id).map(keyInfo),
-    cats: list.map(x => card(x.ai, x.cat)),
+    cats, groups, items: ordered(req.account, cats, groups),
   };
 }));
-router.get('/unread', wrap(req => ({ unread: catsOf(req.account).filter(x => !x.cat.mute).reduce((n, x) => n + unreadOf(x.ai, x.cat), 0) })));
+router.get('/unread', wrap(req => ({
+  unread: catsOf(req.account).filter(x => !x.cat.mute).reduce((n, x) => n + unreadOf(x.ai, x.cat), 0)
+    + stmts.groupsOf.all(req.account.id).filter(g => !g.mute).reduce((n, g) => n + stmts.gUnread.get(g.id, g.last_read_id).n, 0),
+})));
+router.put('/order', wrap(req => {
+  const items = Array.isArray(req.body.items) ? req.body.items.map(String).filter(k => /^[cg]:\d+$/.test(k)).slice(0, 500) : [];
+  stmts.setOrder.run(req.account.id, JSON.stringify(items));
+  return { ok: true };
+}));
+
+// ---------- groups ----------
+function myGroup(req, id = req.params.gid) {
+  const g = stmts.group.get(Number(id));
+  if (!g || g.owner_id !== req.account.id) throw new Error('找不到这个群');
+  return g;
+}
+function cleanGroupName(name) {
+  const n = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!n) throw new Error('给群起个名字吧');
+  if (n.length > 20) throw new Error('群名最多 20 个字');
+  return n;
+}
+function ownCat(req, id) {
+  const ai = accounts.byId(Number(id));
+  if (!ai || ai.owner_id !== req.account.id || !isCat(ai.id)) throw new Error('只能拉自己家的猫进群');
+  return ai;
+}
+router.post('/groups', wrap(req => {
+  const name = cleanGroupName(req.body.name);
+  const ids = [...new Set((req.body.members || []).map(Number))];
+  if (!ids.length) throw new Error('至少拉一只猫进群');
+  const cats = ids.map(id => ownCat(req, id));
+  const gid = db.transaction(() => {
+    const id = stmts.addGroup.run(req.account.id, name, nowIso()).lastInsertRowid;
+    for (const c of cats) stmts.addMember.run(id, c.id, nowIso());
+    return id;
+  })();
+  return groupCard(stmts.group.get(gid));
+}));
+router.get('/groups/:gid', wrap(req => groupCard(myGroup(req))));
+router.put('/groups/:gid', wrap(req => {
+  const g = myGroup(req);
+  const b = req.body || {};
+  const f = {};
+  if (b.name !== undefined) f.name = cleanGroupName(b.name);
+  if (b.mode !== undefined) { if (!['natural', 'all', 'call'].includes(b.mode)) throw new Error('没有这种接话方式'); f.mode = b.mode; }
+  if (b.maxSpeak !== undefined) { const n = Math.round(Number(b.maxSpeak)); if (!(n >= 1 && n <= 10)) throw new Error('一轮最多 1 到 10 只'); f.max_speak = n; }
+  if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;
+  const cols = Object.keys(f);
+  if (cols.length) db.prepare(`UPDATE cat_groups SET ${cols.map(c => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({ ...f, id: g.id });
+  gChanged(g.id);
+  return groupCard(stmts.group.get(g.id));
+}));
+router.delete('/groups/:gid', wrap(req => {
+  const g = myGroup(req);
+  db.transaction(() => { stmts.gClear.run(g.id); stmts.removeMembers.run(g.id); stmts.removeGroup.run(g.id); })();
+  gChanged(g.id);
+  return { ok: true };
+}));
+router.post('/groups/:gid/members', wrap(req => {
+  const g = myGroup(req);
+  const ai = ownCat(req, req.body.id);
+  stmts.addMember.run(g.id, ai.id, nowIso());
+  postGroup(g.id, null, 'system', `${ai.name} 进群了`);
+  return groupCard(g);
+}));
+router.put('/groups/:gid/members/:id', wrap(req => {
+  const g = myGroup(req);
+  stmts.setQuiet.run(req.body.quiet ? 1 : 0, g.id, Number(req.params.id));
+  gChanged(g.id);
+  return groupCard(g);
+}));
+router.delete('/groups/:gid/members/:id', wrap(req => {
+  const g = myGroup(req);
+  const ai = accounts.byId(Number(req.params.id));
+  stmts.removeMember.run(g.id, Number(req.params.id));
+  if (ai) postGroup(g.id, null, 'system', `${ai.name} 离开了群`);
+  return groupCard(g);
+}));
+const markGroupRead = g => db.prepare('UPDATE cat_groups SET last_read_id = ? WHERE id = ?').run((stmts.gLast.get(g.id) || {}).id || 0, g.id);
+router.get('/groups/:gid/messages', wrap(req => {
+  const g = myGroup(req);
+  const out = groupWindow(g, Number(req.query.after) || 0, Number(req.query.before) || 0);
+  if (!req.query.before) markGroupRead(g);
+  return out;
+}));
+// Long polling: answers when a line is added or who is talking changes (the page passes the last `sig`).
+const gSig = gid => JSON.stringify([(stmts.gLast.get(gid) || {}).id || 0, (gQueued.get(gid) || []).map(id => [id, running.get(id)?.groupId === gid])]);
+router.get('/groups/:gid/wait', wrap(async (req, res) => {
+  const g = myGroup(req);
+  const after = Number(req.query.after) || 0;
+  if (gSig(g.id) === String(req.query.sig || '')) {
+    await new Promise(resolve => {
+      const set = gListeners.get(g.id) || new Set();
+      gListeners.set(g.id, set);
+      const done = () => { clearTimeout(timer); set.delete(done); if (!set.size) gListeners.delete(g.id); resolve(); };
+      const timer = setTimeout(done, 25000);
+      set.add(done);
+      res.on('close', done);
+    });
+  }
+  const fresh = stmts.group.get(g.id);
+  if (!fresh) throw new Error('找不到这个群');
+  const out = groupWindow(fresh, after);
+  markGroupRead(fresh);
+  return out;
+}));
+router.post('/groups/:gid/messages', wrap(req => {
+  const g = myGroup(req);
+  const text = String(req.body.text || '').trim();
+  if (!text) throw new Error('说点什么吧');
+  if (text.length > 4000) throw new Error('太长了（最多 4000 字）');
+  ownerSays(g, text);
+  markGroupRead(g);
+  return { ok: true };
+}));
+// Tapping a cat's picture: it says one more thing now (after whoever is already talking).
+router.post('/groups/:gid/speak', wrap(req => {
+  const g = myGroup(req);
+  const ai = accounts.byId(Number(req.body.id));
+  if (!ai || !stmts.members.all(g.id).some(m => m.account_id === ai.id)) throw new Error('它不在这个群里');
+  if ((gQueued.get(g.id) || []).includes(ai.id)) return { ok: true, already: true };
+  chain(g.id, () => speak(g.id, ai.id));
+  return { ok: true };
+}));
 router.put('/settings', wrap(req => { stmts.setPaused.run(req.account.id, req.body.paused ? 1 : 0); return { paused: pausedFor(req.account.id) }; }));
 
 router.post('/keys', wrap(async req => keyInfo(await addKey(req.account, req.body))));
@@ -732,7 +1075,7 @@ router.post('/:id/test', wrap(async req => {
 }));
 router.delete('/:id', wrap(req => {
   const { ai } = mine(req);
-  db.transaction(() => { stmts.clear.run(ai.id); stmts.removeCat.run(ai.id); })();
+  db.transaction(() => { stmts.clear.run(ai.id); stmts.removeCat.run(ai.id); stmts.removeMemberEverywhere.run(ai.id); })();
   queues.delete(ai.id);
   return { ok: true };
 }));

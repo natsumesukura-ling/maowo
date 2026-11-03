@@ -21,6 +21,12 @@ function reply(body) {
   if (!body.tools) return { role: 'assistant', content: sys.includes('压成简短的摘要') ? '摘要：主人和我聊了很多次天。' : '嗯' };
   if (mode === 'broken') return { role: 'assistant', content: '我不会用工具' };
   if (last.role === 'user' && last.content === '请调用 ping 工具。') return call('ping', { word: '喵' });
+  if (last.role === 'user' && last.content.startsWith('【猫窝】现在在群聊')) {
+    const me = (sys.match(/你是「(.+?)」/) || [])[1];
+    const lastLine = [...msgs].reverse().find(m => m.role === 'user' && m.content.startsWith('【群聊'));
+    if (lastLine && lastLine.content.includes('安静') && me === '阿栗') return { role: 'assistant', content: '（不说话）' };
+    return { role: 'assistant', content: `${me}来啦` };
+  }
   if (last.role === 'user') {
     const c = last.content;
     const room = (c.match(/room_id：(\w+)/) || [])[1];
@@ -198,6 +204,81 @@ const ok = name => console.log('ok', name);
   await api(OWNER, `/cats/${cat2.id}`, { method: 'PUT', json: { mute: true } });
   assert.strictEqual((await api(OWNER, '/cats/unread')).unread, 0);
   ok('muted cats do not light the red dot');
+
+  // ---------- groups ----------
+  {
+    const gw = async () => api(OWNER, `/cats/groups/${g.id}/messages`);
+    const settle = async (n, what) => until(async () => { const d = await gw(); return !d.speaking.length && !d.waiting.length && d.items.filter(i => i.kind === 'say').length === n && d; }, what);
+    var g = await api(OWNER, '/cats/groups', { json: { name: '周五夜谈', members: [cat.id, cat2.id] } });
+    await assert.rejects(api(OWNER, '/cats/groups', { json: { name: 'x', members: [9999] } }), /自己家的猫/);
+    let list = await api(OWNER, '/cats');
+    assert(list.items.some(i => i.type === 'group' && i.id === g.id) && list.items.some(i => i.type === 'cat'));
+    await api(OWNER, '/cats/order', { method: 'PUT', json: { items: [`g:${g.id}`, `c:${cat2.id}`, `c:${cat.id}`] } });
+    list = await api(OWNER, '/cats');
+    assert.deepStrictEqual(list.items.map(i => `${i.type[0]}:${i.id}`), [`g:${g.id}`, `c:${cat2.id}`, `c:${cat.id}`]);
+    ok('groups sit in the same list, in the order 绫 dragged them');
+
+    const n0 = seen.length;
+    await api(OWNER, `/cats/groups/${g.id}/messages`, { json: { text: '今晚谁来' } });
+    let d = await settle(2, 'both answer');
+    assert.deepStrictEqual(d.items.map(i => i.kind), ['me', 'say', 'say', 'round']);
+    assert.deepStrictEqual(d.spoke.sort(), [cat.id, cat2.id].sort());
+    const first = d.items[1].author.name, second = d.items[2].author.name;
+    assert.strictEqual(d.items[1].text, `${first}来啦`);
+    const secondBody = seen.slice(n0).find(b => b.messages[0].content.includes(`你是「${second}」`) && b.messages.at(-1).content.startsWith('【猫窝】现在在群聊'));
+    assert(secondBody.messages.some(m => m.content === `【群聊「周五夜谈」】${first}：${first}来啦`), 'the second sees the first');
+    assert(secondBody.messages.some(m => m.content === '【群聊「周五夜谈」】主人：今晚谁来'));
+    assert(secondBody.messages[0].content.includes('你在这些群聊里'));
+    ok('自然聊天: each answers once, later ones see earlier ones, round line at the end');
+
+    let w = await api(OWNER, `/cats/${cat.id}/messages`);
+    const fold = w.items.filter(i => i.kind === 'group').at(-1);
+    assert(fold && fold.groupId === g.id && fold.count === 3 && fold.group === '周五夜谈', JSON.stringify(fold));
+    assert(!w.items.some(i => i.text && i.text.includes('来啦')), 'group lines folded in the private window');
+    await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '刚才群里说什么' } });
+    await until(async () => seen.at(-1).messages.at(-1).content === '刚才群里说什么', 'private');
+    assert(seen.at(-1).messages.some(m => m.content === '【群聊「周五夜谈」】主人：今晚谁来'), 'private run remembers the group');
+    await until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
+    ok('private window folds the group into one line and still remembers it');
+
+    await api(OWNER, `/cats/groups/${g.id}`, { method: 'PUT', json: { mode: 'call' } });
+    await api(OWNER, `/cats/groups/${g.id}/messages`, { json: { text: 'hi' } });
+    await sleep(500);
+    d = await settle(2, 'nobody answers in 只点名');
+    await api(OWNER, `/cats/groups/${g.id}/messages`, { json: { text: '@年糕 你呢' } });
+    d = await settle(3, '年糕 answers');
+    assert.strictEqual(d.items.filter(i => i.kind === 'say').at(-1).author.name, '年糕');
+    ok('只点名: only the @-ed cat answers');
+
+    await api(OWNER, `/cats/groups/${g.id}`, { method: 'PUT', json: { mode: 'natural' } });
+    await api(OWNER, `/cats/groups/${g.id}/members/${cat.id}`, { method: 'PUT', json: { quiet: true } });
+    await api(OWNER, `/cats/groups/${g.id}/messages`, { json: { text: '大家好' } });
+    d = await settle(4, 'only the talker');
+    assert.strictEqual(d.items.filter(i => i.kind === 'say').at(-1).author.name, '年糕');
+    await api(OWNER, `/cats/groups/${g.id}/speak`, { json: { id: cat.id } });
+    d = await settle(5, 'tap');
+    assert.strictEqual(d.items.filter(i => i.kind === 'say').at(-1).author.name, '阿栗');
+    ok('先不说话 members only listen; tapping one makes it speak');
+
+    await api(OWNER, `/cats/groups/${g.id}/messages`, { json: { text: '@阿栗 安静一下' } });
+    await sleep(300);
+    d = await settle(5, 'passes');
+    ok('「（不说话）」 lets a turn pass');
+
+    // unread and mute
+    await api(OWNER, `/cats/groups/${g.id}/speak`, { json: { id: cat2.id } });
+    await until(async () => (await api(OWNER, '/cats')).groups[0].unread === 1, 'group unread');
+    const u = (await api(OWNER, '/cats/unread')).unread;
+    await api(OWNER, `/cats/groups/${g.id}`, { method: 'PUT', json: { mute: true } });
+    assert.strictEqual((await api(OWNER, '/cats/unread')).unread, u - 1);
+    ok('group replies light the red dot unless the group is muted');
+
+    await api(OWNER, `/cats/groups/${g.id}`, { method: 'DELETE' });
+    w = await api(OWNER, `/cats/${cat.id}/messages`);
+    assert(w.items.some(i => i.kind === 'group' && i.groupId === null && i.group === '周五夜谈'));
+    await assert.rejects(api(OWNER, `/cats/groups/${g.id}/messages`), /找不到/);
+    ok('dissolving keeps what the cats remember');
+  }
 
   // Summaries: the window was long enough (MAOWO_CATS_CONTEXT=6000) to fold old talk.
   for (let i = 0; i < 6; i++) {

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F7EEE1">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<title>群聊 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  body { overflow: hidden; }
+  #app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  .top { padding: 0 12px 0 8px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+  .top header { display: flex; align-items: center; gap: 2px; padding: 8px 0; max-width: 560px; margin: 0 auto; }
+  .who { flex-grow: 1; min-width: 0; padding-left: 2px; }
+  .who .n { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who .m { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+  .who .m > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+  .stack { display: flex; flex-shrink: 0; }
+  .stack .avatar { width: 22px; height: 22px; font-size: 10px; border: 2px solid var(--bg); margin-left: -7px; }
+  .stack .avatar:first-child { margin-left: 0; }
+  .icon-btn.on { background: var(--accent-soft); color: var(--accent); }
+  #feed { flex-grow: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #feed .in { max-width: 560px; margin: 0 auto; padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 12px; }
+  .stamp { align-self: center; font-size: 11.5px; color: var(--muted); }
+  .line { display: flex; gap: 8px; align-items: flex-start; max-width: 88%; }
+  .line .avatar { width: 34px; height: 34px; font-size: 14px; flex-shrink: 0; }
+  .line .nm { font-size: 11.5px; color: var(--muted); margin: 0 0 3px 4px; }
+  .b { padding: 9px 13px; border-radius: 18px; font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .b.say { background: var(--card); border: 1px solid var(--border); border-top-left-radius: 6px; }
+  .b.me { align-self: flex-end; background: var(--accent-soft); border-bottom-right-radius: 6px; max-width: 80%; }
+  .round { align-self: stretch; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); text-align: center; }
+  .round::before, .round::after { content: ''; flex: 1; height: 1px; background: var(--border); min-width: 12px; }
+  .sys { align-self: center; font-size: 12px; color: var(--muted); }
+  .err { align-self: center; max-width: 92%; font-size: 12.5px; color: var(--danger); background: var(--secret-bg); padding: 8px 12px; border-radius: 12px; line-height: 1.6; text-align: center; }
+  .typing { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+  .typing .avatar { width: 34px; height: 34px; font-size: 14px; }
+  .typing i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); margin: 0 1.5px; animation: blink 1.2s infinite; vertical-align: middle; }
+  .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+  .next { font-size: 12px; color: var(--muted); padding-left: 42px; margin-top: -6px; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .bottom { border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; padding: 8px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .bottom .wrapb { max-width: 560px; margin: 0 auto; }
+  .chips { display: flex; gap: 8px; margin-bottom: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { display: flex; align-items: center; gap: 6px; padding: 4px 12px 4px 4px; border-radius: 999px; background: var(--white); border: 1px solid var(--border); font: inherit; font-size: 13px; color: var(--text); white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+  .chip .avatar { width: 28px; height: 28px; font-size: 12px; }
+  .chip.quiet { color: var(--muted); }
+  .chip.done { opacity: .5; }
+  .chip.talking { border-color: var(--accent-line); background: var(--accent-soft); }
+  .chip .z { display: flex; color: var(--muted); }
+  .bottom form { display: flex; gap: 8px; align-items: flex-end; }
+  .bottom textarea { resize: none; height: 44px; max-height: 132px; line-height: 1.45; }
+  .bottom .btn { width: 44px; padding: 0; flex-shrink: 0; }
+  .older { align-self: center; }
+  .newchip { position: fixed; right: 16px; bottom: 132px; z-index: 5; display: none; }
+  /* settings panel */
+  .mem { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+  .mem + .mem { border-top: 1px solid var(--border); }
+  .mem .avatar { width: 44px; height: 44px; }
+  .mem .n { flex-grow: 1; min-width: 0; font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 16px; }
+  .mem .n small { display: block; font-family: -apple-system, "PingFang SC", sans-serif; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mem .icon-btn { width: 40px; height: 40px; color: var(--text2); }
+  .mem .icon-btn.off { color: var(--muted); }
+  .setline { width: 100%; display: flex; align-items: center; gap: 10px; padding: 14px 0; border: none; border-top: 1px solid var(--border); background: none; font: inherit; font-size: 15px; color: var(--text); text-align: left; cursor: pointer; }
+  .setline .t { flex-grow: 1; } .setline .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .setline .v { color: var(--muted); font-size: 14px; white-space: nowrap; } .setline .c { color: var(--accent); display: flex; }
+  .num { display: flex; align-items: center; gap: 6px; font-size: 14px; flex-shrink: 0; }
+  .num b { min-width: 24px; text-align: center; }
+  .num .btn { width: 34px; height: 34px; padding: 0; }
+  .addm { color: var(--accent); font-size: 14px; display: inline-flex; align-items: center; gap: 4px; background: none; border: none; font-family: inherit; cursor: pointer; padding: 6px 0; }
+  .modeopt { width: 100%; display: flex; gap: 14px; padding: 14px; border-radius: 16px; margin-bottom: 6px; border: none; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+  .modeopt.on { background: var(--accent-soft); }
+  .modeopt .i { color: var(--text2); display: flex; padding-top: 2px; }
+  .modeopt.on .i, .modeopt.on .t { color: var(--accent-hover); }
+  .modeopt .t { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 16px; }
+  .modeopt .d { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
+  .modeopt .ck { margin-left: auto; color: var(--accent); display: flex; }
+  .pickcat { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--white); font: inherit; color: var(--text); margin-bottom: 8px; cursor: pointer; text-align: left; }
+  .pickcat .avatar { width: 40px; height: 40px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<a class="btn sm soft newchip" id="newchip" href="#">新消息 ↓</a>
+<script src="/common.js"></script>
+<script src="/cats-keys.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+const gid = Number(location.pathname.split('/').filter(Boolean)[2]);
+const QUIET = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5H11l-4.5 3.5V17h-2A1.5 1.5 0 0 1 3 15.5V6"/><path d="M3 3l18 18"/></svg>';
+const quietIcon = n => QUIET.replace(/width="20" height="20"/, `width="${n}" height="${n}"`);
+const MODES = {
+  natural: ['chat', '自然聊天', '你 @ 了谁，谁先回。没 @ 的话，挑几只来接话：名字被提到的、好久没说话的优先。'],
+  all: ['grid', '全员回复', '会自己开口的猫都轮流回一次，后说的能看到前面说的。最热闹，也最费钱。'],
+  call: ['check', '只点名', '谁也不会自己开口。@ 它、或者点它的头像，它才说。最省钱。'],
+};
+const timeOf = iso => { const d = new Date(iso); const same = d.toDateString() === new Date().toDateString(); return `${same ? '今天' : Maowo.fmtDate(iso)} ${Maowo.fmtClock(iso)}`; };
+
+let g = null, items = [], lastId = 0, sig = '', speaking = [], waiting = [], spoke = [], moreBefore = false, firstId = 0;
+const cats = () => g.members.filter(m => m.isCat);
+const nameOf = id => (g.members.find(m => m.id === id) || {}).name || '';
+
+function drawTop() {
+  document.title = `${g.name} · 猫们 · 猫窝`;
+  const ms = cats();
+  $('#who').innerHTML = `<div class="n">${esc(g.name)}</div><div class="m"><span class="stack">${ms.slice(0, 4).map(m => Maowo.avatar(m)).join('')}</span><span>${esc(ms.map(m => m.name).join('、') || '还没有猫')}</span></div>`;
+  const b = $('#mute');
+  b.classList.toggle('on', g.mute);
+  b.innerHTML = icon(g.mute ? 'bellOff' : 'bell', 22, 1.7);
+  b.setAttribute('aria-label', g.mute ? '免打扰（开着）' : '免打扰（关着）');
+  $('#chips').innerHTML = ms.map(m => `<button type="button" class="chip ${m.quiet ? 'quiet' : ''} ${spoke.includes(m.id) && !speaking.includes(m.id) ? 'done' : ''} ${speaking.includes(m.id) ? 'talking' : ''}" data-speak="${m.id}" aria-label="让${esc(m.name)}说一句">${Maowo.avatar(m)}${esc(m.name)}${m.quiet ? `<span class="z">${quietIcon(14)}</span>` : ''}</button>`).join('');
+  document.querySelectorAll('[data-speak]').forEach(b => b.onclick = async () => {
+    try { const r = await api(`/cats/groups/${gid}/speak`, { json: { id: Number(b.dataset.speak) } }); if (r.already) Maowo.toast(`${nameOf(Number(b.dataset.speak))} 已经在排队了`); }
+    catch (err) { Maowo.toast(err.message); }
+  });
+}
+
+function rowHtml(it, prev) {
+  let out = '';
+  if (!prev || Date.parse(it.createdAt) - Date.parse(prev.createdAt) > 10 * 60000) out += `<div class="stamp">${timeOf(it.createdAt)}</div>`;
+  if (it.kind === 'me') return out + `<div class="b me">${esc(it.text)}</div>`;
+  if (it.kind === 'say') return out + `<div class="line">${Maowo.avatar(it.author || { name: '?' })}<div style="min-width: 0;"><div class="nm">${esc(it.author ? it.author.name : '')}</div><div class="b say">${esc(it.text)}</div></div></div>`;
+  if (it.kind === 'round') return out + '<div class="round">这一轮说完啦 · 点下面的头像，让谁再说一句</div>';
+  if (it.kind === 'error') return out + `<div class="err">${esc(it.text)}</div>`;
+  return out + `<div class="sys">${esc(it.text)}</div>`;
+}
+
+function feedHtml() {
+  let html = moreBefore ? '<button class="btn sm older" id="older">看更早的</button>' : '';
+  if (!items.length) html += `<div class="empty">说点什么吧。<br>你 @ 谁，谁就来接话；点下面的头像，它就说一句。</div>`;
+  let prev = null;
+  for (const it of items) { html += rowHtml(it, prev); prev = it; }
+  for (const id of speaking) { const m = g.members.find(x => x.id === id); if (m) html += `<div class="typing">${Maowo.avatar(m)}${esc(m.name)} 正在想 <span><i></i><i></i><i></i></span></div>`; }
+  if (waiting.length) html += `<div class="next">接下来：${esc(waiting.map(nameOf).join('、'))}</div>`;
+  return html;
+}
+
+const feed = () => $('#feed');
+const atBottom = () => { const f = feed(); return f.scrollHeight - f.scrollTop - f.clientHeight < 80; };
+function toBottom() { const f = feed(); f.scrollTop = f.scrollHeight; $('#newchip').style.display = 'none'; }
+function drawFeed({ stick, keepTop } = {}) {
+  const f = feed();
+  const wasBottom = atBottom();
+  const oldHeight = f.scrollHeight, oldTop = f.scrollTop;
+  $('#feed .in').innerHTML = feedHtml();
+  const older = $('#older'); if (older) older.onclick = loadOlder;
+  if (keepTop) f.scrollTop = f.scrollHeight - oldHeight + oldTop;
+  else if (stick || wasBottom) toBottom();
+  else $('#newchip').style.display = 'inline-flex';
+}
+
+function take(d) {
+  g = d.group; speaking = d.speaking; waiting = d.waiting; spoke = d.spoke; sig = d.sig;
+  if (d.lastId) lastId = Math.max(lastId, d.lastId);
+}
+async function reload() {
+  const d = await api(`/cats/groups/${gid}/messages`);
+  items = d.items; moreBefore = d.more; firstId = items.length ? items[0].id : 0; lastId = 0;
+  take(d); drawTop(); drawFeed({ stick: true }); Maowo.tellUnread();
+}
+async function loadOlder() {
+  const d = await api(`/cats/groups/${gid}/messages?before=${firstId}`);
+  items = [...d.items.filter(i => i.id < firstId), ...items];
+  moreBefore = d.more; if (d.items.length) firstId = d.items[0].id;
+  drawFeed({ keepTop: true });
+}
+let polling = false;
+async function poll() {
+  if (polling) return;
+  polling = true;
+  for (;;) {
+    try {
+      const d = await api(`/cats/groups/${gid}/wait?after=${lastId}&sig=${encodeURIComponent(sig)}`);
+      const known = new Set(items.map(i => i.id));
+      for (const it of d.items) if (!known.has(it.id)) items.push(it);
+      take(d); drawTop(); drawFeed(); Maowo.tellUnread();
+    } catch (err) {
+      if (/找不到/.test(err.message)) { Maowo.toast(err.message); setTimeout(() => Maowo.go('/cats'), 1200); return; }
+      await new Promise(r => setTimeout(r, 4000));
+    }
+  }
+}
+
+// ---------- settings ----------
+function showSettings() {
+  const panel = Maowo.sheet('<div id="gs"></div>');
+  const draw = () => {
+    const ms = cats();
+    panel.querySelector('#gs').innerHTML = `<h2>群设置</h2>
+      <label class="field">群名</label>
+      <div style="display: flex; gap: 8px;"><textarea class="single" rows="1" id="gs-name" maxlength="20">${esc(g.name)}</textarea><button class="btn" id="gs-rename">改名</button></div>
+      <div class="section-title" style="margin-top: 18px;"><span>群成员（${ms.length}）</span><button class="addm" id="gs-add">${icon('plus', 15, 2)}拉猫进群</button></div>
+      ${ms.map(m => `<div class="mem">${Maowo.avatar(m)}<div class="n">${esc(m.name)}<small>${m.quiet ? '先不说话：能看到大家聊，点它或 @ 它才开口' : '会自己开口'}</small></div>
+        <button class="icon-btn ${m.quiet ? 'off' : ''}" data-quiet="${m.id}" aria-label="${m.quiet ? '让它自己开口' : '让它先不说话'}">${m.quiet ? quietIcon(22) : icon('chat', 22, 1.7)}</button>
+        <button class="icon-btn" data-kick="${m.id}" aria-label="请出群">${icon('close', 20, 1.8)}</button></div>`).join('') || '<div class="small muted">群里还没有猫</div>'}
+      <button class="setline" id="gs-mode" style="margin-top: 6px;"><span class="t">怎么接话</span><span class="v">${MODES[g.mode][1]}</span><span class="c">${icon('chevronRight', 18, 2)}</span></button>
+      ${g.mode === 'natural' ? `<div class="setline" style="cursor: default;"><span class="t">一轮里最多几只开口<div class="s">没 @ 谁的时候</div></span><div class="num"><button class="btn" id="gs-minus">−</button><b>${g.maxSpeak}</b><button class="btn" id="gs-plus">+</button></div></div>` : ''}
+      <button class="btn sm danger" id="gs-del" style="margin-top: 16px;">解散这个群</button>
+      <div class="small muted" style="margin-top: 8px; line-height: 1.6;">解散后群聊记录会删掉，但猫们记住的事还在它们自己的记忆里。</div>`;
+    CatKit.oneLine(panel);
+    const put = async json => { try { g = await api(`/cats/groups/${gid}`, { method: 'PUT', json }); drawTop(); draw(); } catch (err) { Maowo.toast(err.message); } };
+    panel.querySelector('#gs-rename').onclick = () => put({ name: panel.querySelector('#gs-name').value });
+    panel.querySelectorAll('[data-quiet]').forEach(b => b.onclick = async () => {
+      const m = g.members.find(x => x.id === Number(b.dataset.quiet));
+      try { g = await api(`/cats/groups/${gid}/members/${m.id}`, { method: 'PUT', json: { quiet: !m.quiet } }); drawTop(); draw(); } catch (err) { Maowo.toast(err.message); }
+    });
+    panel.querySelectorAll('[data-kick]').forEach(b => b.onclick = async () => {
+      const m = g.members.find(x => x.id === Number(b.dataset.kick));
+      if (!confirm(`请 ${m.name} 出群？它记得的群聊内容还在它自己的记忆里。`)) return;
+      try { g = await api(`/cats/groups/${gid}/members/${m.id}`, { method: 'DELETE' }); drawTop(); draw(); } catch (err) { Maowo.toast(err.message); }
+    });
+    panel.querySelector('#gs-add').onclick = async () => {
+      const all = (await api('/cats')).cats.filter(c => !g.members.some(m => m.id === c.id));
+      if (!all.length) return Maowo.toast('家里的猫都在群里了');
+      const p = Maowo.sheet(`<h2>拉谁进群</h2><div class="small muted" style="margin-bottom: 12px;">进群以后，它能看到之后群里说的话。</div>
+        ${all.map(c => `<button class="pickcat" data-add="${c.id}">${Maowo.avatar(c)}<span style="flex-grow: 1; font-weight: 600;">${esc(c.name)}</span>${icon('plus', 18, 2)}</button>`).join('')}`);
+      p.querySelectorAll('[data-add]').forEach(b => b.onclick = async () => {
+        try { g = await api(`/cats/groups/${gid}/members`, { json: { id: Number(b.dataset.add) } }); p.close(); drawTop(); draw(); } catch (err) { Maowo.toast(err.message); }
+      });
+    };
+    panel.querySelector('#gs-mode').onclick = () => {
+      const p = Maowo.sheet(`<h2>怎么接话</h2><div class="small muted" style="margin-bottom: 14px; line-height: 1.6;">不管哪种，你说一句之后，每只猫最多回一次，不会自己聊个没完。想让谁再说，就点下面它的头像。</div>
+        ${Object.entries(MODES).map(([k, [i, t, d]]) => `<button class="modeopt ${g.mode === k ? 'on' : ''}" data-mode="${k}"><span class="i">${icon(i, 22, 1.7)}</span><div style="flex: 1;"><div class="t">${t}</div><div class="d">${d}</div></div>${g.mode === k ? `<span class="ck">${icon('check', 20, 2.2)}</span>` : ''}</button>`).join('')}`);
+      p.querySelectorAll('[data-mode]').forEach(b => b.onclick = async () => { p.close(); await put({ mode: b.dataset.mode }); });
+    };
+    const minus = panel.querySelector('#gs-minus'); if (minus) minus.onclick = () => g.maxSpeak > 1 && put({ maxSpeak: g.maxSpeak - 1 });
+    const plus = panel.querySelector('#gs-plus'); if (plus) plus.onclick = () => g.maxSpeak < 10 && put({ maxSpeak: g.maxSpeak + 1 });
+    panel.querySelector('#gs-del').onclick = async () => {
+      if (!confirm(`解散「${g.name}」？群聊记录会删掉，猫们自己记得的不会删。`)) return;
+      try { await api(`/cats/groups/${gid}`, { method: 'DELETE' }); Maowo.go('/cats'); } catch (err) { Maowo.toast(err.message); }
+    };
+  };
+  draw();
+}
+
+// ---------- page ----------
+$('#app').innerHTML = `
+  <div class="top"><header>
+    <a class="icon-btn" id="back" aria-label="返回猫们">${icon('back', 22)}</a>
+    <div class="who" id="who"></div>
+    <button class="icon-btn" id="mute"></button>
+    <button class="icon-btn" id="set" aria-label="群设置">${icon('sliders', 22, 1.7)}</button>
+  </header></div>
+  <div id="feed"><div class="in"></div></div>
+  <div class="bottom"><div class="wrapb">
+    <div class="chips" id="chips"></div>
+    <form id="say"><textarea id="text" rows="1" maxlength="4000" placeholder="说点什么，@名字 可以点名"></textarea><button class="btn primary" type="submit" aria-label="发送">${icon('send', 18, 2)}</button></form>
+  </div></div>`;
+Maowo.backTo($('#back'), '/cats');
+$('#set').onclick = showSettings;
+$('#mute').onclick = async () => {
+  try { g = await api(`/cats/groups/${gid}`, { method: 'PUT', json: { mute: !g.mute } }); drawTop(); Maowo.tellUnread(); Maowo.toast(g.mute ? '开了免打扰：群里说话不出红点，消息照样留着' : '关了免打扰'); }
+  catch (err) { Maowo.toast(err.message); }
+};
+const ta = $('#text');
+const grow = () => { ta.style.height = '44px'; ta.style.height = Math.min(ta.scrollHeight + 2, 132) + 'px'; };
+ta.addEventListener('input', grow);
+try { ta.value = sessionStorage.getItem(`maowo-group-draft-${gid}`) || ''; grow(); } catch {}
+ta.addEventListener('input', () => { try { sessionStorage.setItem(`maowo-group-draft-${gid}`, ta.value); } catch {} });
+$('#say').onsubmit = async e => {
+  e.preventDefault();
+  const text = ta.value.trim();
+  if (!text) return;
+  ta.value = ''; grow();
+  try { sessionStorage.removeItem(`maowo-group-draft-${gid}`); } catch {}
+  try { await api(`/cats/groups/${gid}/messages`, { json: { text } }); }
+  catch (err) { Maowo.toast(err.message); ta.value = text; grow(); }
+};
+$('#newchip').onclick = e => { e.preventDefault(); toBottom(); };
+feed().addEventListener('scroll', () => { if (atBottom()) $('#newchip').style.display = 'none'; });
+reload().then(poll).catch(err => { Maowo.toast(err.message); if (/找不到/.test(err.message)) setTimeout(() => Maowo.go('/cats'), 1200); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) reload().catch(() => {}); });
+</script>
+</body>
+</html>
