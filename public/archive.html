@@ -33,6 +33,8 @@
   .log .sp { margin: 6px 0; }
   .log .sp .who { color: var(--muted); font-size: 12px; }
   .log .night { color: var(--muted); }
+  .log .subhead-log { margin: 12px 0 4px; font-size: 12px; font-weight: 600; color: var(--accent); letter-spacing: .05em; }
+  .log .subhead-log:first-child { margin-top: 2px; }
   .comment { display: flex; gap: 10px; }
   .comment .avatar { width: 32px; height: 32px; font-size: 13px; }
   .comment .body { font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
@@ -72,6 +74,8 @@ $('#send').innerHTML = icon('send', 18, 2);
 
 function line(a, e) {
   const who = e.seat ? `${e.seat}号 ${a.seats[e.seat - 1]?.account?.name || ''}` : '';
+  // Wolf proposals and confirmations are actions, shown like the witch's and seer's lines.
+  if (e.kind === 'wolf' && e.seat && (e.label === '提议' || e.label === '确认')) return `<div class="night">· ${esc(who)} ${esc(e.text)}</div>`;
   if ((e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') && e.seat) {
     return `<div class="sp"><div class="who">${esc(who)} · ${esc(e.label || '发言')}</div>${esc(e.text)}</div>`;
   }
@@ -91,20 +95,39 @@ function render(a) {
     html += `<div class="table">${d.players.map(p => `<div class="r">
       <div class="seat">${p.seat}号</div><div class="nm">${esc(p.name)}${p.sheriff ? ' · 警' : ''}</div>
       <div class="role ${p.wolf ? 'wolf' : ''}">${esc(p.role)}</div><div class="fate">${esc(p.fate)}</div></div>`).join('')}</div>`;
+    // Night N's wolf proposals / confirmations go with that night's witch and seer actions (in the
+    // 第 N 天 section, before dawn); the wolves' private chat gets its own section, split by night.
+    // Wolf lines are logged while day still reads N-1, so the night is taken from 「第 N 夜 · 天黑请闭眼」.
     const byDay = {};
-    const wolf = [];
+    const chat = {};   // night -> wolf chat lines
+    let night = 0;
     for (const e of a.events) {
-      if (e.kind === 'wolf') { wolf.push(e); continue; }
-      (byDay[e.day] = byDay[e.day] || []).push(e);
+      const m = !e.seat && String(e.text).match(/^第 (\d+) 夜 · 天黑请闭眼/);
+      if (m) night = Number(m[1]);
+      if (e.kind === 'wolf') {
+        if (e.seat && e.label === '狼人私聊') (chat[night] = chat[night] || []).push(e);
+        else (byDay[night] = byDay[night] || []).push({ ...e, part: 'night', nightNo: night });
+        continue;
+      }
+      (byDay[e.day] = byDay[e.day] || []).push(e.part === 'night' ? { ...e, nightNo: e.day } : e);
     }
+    const sub = t => `<div class="subhead-log">${esc(t)}</div>`;
     html += '<div style="display: flex; flex-direction: column; gap: 8px;">';
     for (const day of Object.keys(byDay).map(Number).sort((x, y) => x - y)) {
       const title = day === 0 ? '开局' : `第 ${day} 天 · 能力复盘与公开进程`;
+      let body = '', mode = '';
+      for (const e of byDay[day]) {
+        const isNight = day > 0 && (e.part === 'night' || e.nightNo);
+        const want = day === 0 ? '' : isNight ? 'night' : 'day';
+        if (want && want !== mode) { body += sub(want === 'night' ? `第 ${day} 夜` : `第 ${day} 天`); mode = want; }
+        body += line(a, e);
+      }
       html += `<details open><summary><span>${title}</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
-        <div class="log">${byDay[day].map(e => line(a, e)).join('')}</div></details>`;
+        <div class="log">${body}</div></details>`;
     }
-    if (wolf.length) html += `<details open><summary><span>狼人私聊（终局公开）</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
-      <div class="log">${wolf.map(e => line(a, e)).join('')}</div></details>`;
+    const nights = Object.keys(chat).map(Number).sort((x, y) => x - y);
+    if (nights.length) html += `<details open><summary><span>狼人私聊（终局公开）</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+      <div class="log">${nights.map(n => sub(`第 ${n} 夜`) + chat[n].map(e => line(a, e)).join('')).join('')}</div></details>`;
     html += '</div>';
   } else if (d.kind === 'gomoku') {
     const last = d.moves[d.moves.length - 1];
