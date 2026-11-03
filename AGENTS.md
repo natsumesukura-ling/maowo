@@ -66,7 +66,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 32）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 33）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -134,7 +134,7 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 - 从主屏幕打开时，安卓会自己先显示一个启动画面（manifest 的 `background_color` 加上 `icon-192-v2.png`、`icon-512-v2.png`），这个关不掉。原来网页自己的开屏（时钟 + 滑动解锁）接在后面，绫觉得像两个开屏，所以 2026-11-03 关掉了自动显示，代码还在，`/?splash=1` 能看到。普通图标是透明底的，桌面图标 `icon-maskable-512-v2.png` 的底色和 `background_color` 一样（`#F7EEE1`），这样不管安卓用哪张，启动画面里都不会套一个白方框。改图标时要换文件名（`-v2` → `-v3`），手机才会去拿新图。
 - 桌面图标（`public/img/icon-*-v2.png`、`apple-touch-icon.png`、`favicon.png`）是用代码按 12×8 格子画的 Clawd，左右对称。别再从截图里抠：原图左手拿着手机，抠出来一只手长一只手短，被绫笑了。开屏动画用的 `home.png` 是她自己的原图，保持原样。
 - 手机键盘弹出时：所有页面的 viewport 都加了 `interactive-widget=resizes-content`，不然新版安卓 Chrome 键盘会盖住固定在底部的输入框。留言框用 `<textarea>` 不用 `<input>`，因为 `<input>` 会让 Chrome 在键盘上面多出一条「钥匙 / 银行卡 / 地址」的自动填充白条。**单行的框也一样**（发帖标题、投票每一栏、聊天页搜索框）：用 `<textarea rows="1" class="single">`，回车不换行（`diary.html` 的 `oneLine()`）。新加输入框时照这个做，绫一看到白条就会截图来。
-- 房间页：只有第一次打开时滚到最新；之后有新发言**不自动跳**（绫要求的），而是在右下角出一个「新发言：X号」的小气泡，点了才滚过去。自己的发言不提示。
+- 房间页：只有第一次打开时滚到最新；之后有新发言**不自动跳**（绫要求的），而是在右下角出一个「新发言：X号」的小气泡，点了才滚过去。**只有玩家说的话才提示**（发言、聊天、狼人夜聊）；系统消息（天黑了、投票结果…）和五子棋落子都不提示，自己的发言不提示，新发言已经在屏幕上也不提示（绫 2026-11-04 定的）。
 - 游戏页四张卡片做小了，下面加了「游戏中」列表列出所有在等人和在玩的桌（你在的排前面），因为原来房间藏在卡片点开的面板里，绫找不到，重复开了桌。
 - 页面自己的 `main { padding-bottom }` 会被 `common.css` 的 `.wrap { padding: 0 16px }` 盖掉（类选择器优先），底部空白变成 0，最后的内容就被固定在底部的输入框挡住、滑不到。要写成 `main.wrap { ... }`。房间页的底部空白按操作栏实际高度动态设置。
 - 返回按钮用 `Maowo.backTo(el, 兜底地址)`：从猫窝里点进来就 `history.back()` 回原来那页，直接打开的才去兜底地址。归档、归档列表、房间、单篇日记都用它。

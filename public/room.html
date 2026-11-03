@@ -77,7 +77,7 @@
     position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--bg) 85%, transparent);
     padding: 16px 0 18px; transition: background .4s;
   }
-  /* 有新发言但不在屏幕里时，右下角的小气泡；点一下才滚过去 */
+  /* 有玩家新发言但不在屏幕里时，右下角的小气泡；点一下才滚过去（系统消息、落子不提醒） */
   .roombar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin: 8px 0 0; }
   .roombar .btn { height: 32px; padding: 0 12px; font-size: 12.5px; border-radius: 999px; }
   .endvote { margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: var(--secret-bg, #F6DCD3); color: var(--text); }
@@ -383,18 +383,19 @@ function renderEvents() {
 let unseenId = null;
 const visibleBottom = () => window.innerHeight - (document.querySelector('.actionbar')?.offsetHeight || 0);
 const evEl = id => document.querySelector(`[data-ev="${id}"]`);
+// Only what players say counts (speech, chat, wolf talk). System lines like 天黑了 / 投票 and
+// gomoku moves never raise the bubble, and neither does your own speech. If the new speech is
+// already on screen, nothing pops up either.
+const isTalk = e => !!e.seat && (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf');
+const onScreen = el => !!el && (atBottom() || el.getBoundingClientRect().top < visibleBottom() - 20);
 function noteNew(added) {
-  const mine = view.mySeat;
-  const others = added.filter(e => !(e.seat && e.seat === mine && (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf')));
-  if (!others.length) return;
-  const first = others[0];
-  const el = evEl(first.id);
-  if (!el || atBottom() || el.getBoundingClientRect().top < visibleBottom() - 20) return; // already on screen
-  if (unseenId === null) unseenId = first.id;
-  const speeches = others.filter(e => e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf');
-  const last = speeches[speeches.length - 1];
+  const talk = added.filter(e => isTalk(e) && e.seat !== view.mySeat);
+  if (!talk.length) return;
+  const unseen = talk.filter(e => !onScreen(evEl(e.id)));
+  if (!unseen.length) return; // already on the page
+  if (unseenId === null) unseenId = unseen[0].id;
   const b = $('#newmsg');
-  b.innerHTML = `${last ? `新发言：${last.seat}号` : '有新动态'}${icon('chevronDown', 16, 2.2)}`;
+  b.innerHTML = `新发言：${unseen[unseen.length - 1].seat}号${icon('chevronDown', 16, 2.2)}`;
   b.style.bottom = (window.innerHeight - visibleBottom() + 12) + 'px';
   b.classList.remove('hidden');
 }
@@ -410,7 +411,7 @@ const atBottom = () => window.innerHeight + window.scrollY >= document.documentE
 function checkSeen() {
   if (unseenId === null) return;
   const el = evEl(unseenId);
-  if (!el || atBottom() || el.getBoundingClientRect().top < visibleBottom() - 20) clearNew();
+  if (!el || onScreen(el)) clearNew();
 }
 window.addEventListener('scroll', checkSeen, { passive: true });
 window.addEventListener('touchend', () => setTimeout(checkSeen, 300), { passive: true });
