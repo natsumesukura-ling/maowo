@@ -44,6 +44,7 @@
 - **第二版页面（暖纸水彩风）**：2026-11-03 按绫用 ChatGPT 画的示意图重做。底部四个按钮：我的 `/me`、游戏 `/`、日记 `/diary`、开发中 `/dev`。插画是 ChatGPT 画好、绫发来的透明 PNG，处理成 `public/img/art/*.webp`。房间页保留原来的布局和夜晚变暗，只换了颜色。存档入口在「我的」页。
 - **四个主页面共用一个外壳**（`public/shell.html`）：`/`、`/me`、`/diary`、`/dev` 都是外壳，里面用 iframe 装着 `/p/games`、`/p/me`、`/p/diary`、`/p/dev` 四页，点底部按钮只是换哪一页在前面，不重新打开网页（之前每次切换手机浏览器顶上会闪一条绿色加载条，还会空白一下）。页面里的链接和跳转都走整个窗口（`common.js` 在框里自动加 `<base target="_top">`，跳转用 `Maowo.go(url)`，不要直接写 `location.href`）。框里的页面打开弹出面板时，会通知外壳把底部按钮收起来。切回某一页时外壳会调它的 `window.maowoRefresh()` 刷新数据。
 - **Bug 本**：绫在「开发中」页提交的问题存在服务器上。接手时如果能连猫窝的 MCP，先用 `bug_list` 看看有什么待修的；修好后用 `bug_update` 标成 done。导出备份里**还没有**包含 Bug 本。
+- **临时：狼人杀 2 人测试局**（2026-11-03 加的，绫要两个人真玩一下找 bug，**测完她会说删**）：`games/werewolf.js` 里 `CONFIGS[2]`（标了 TEMPORARY）和 `TEST_GODS`、`checkWin` 里的测试分支，`public/index.html` 的 `WEREWOLF_CONFIGS[2]`，`test/simulate.js` 里那行 2 人模拟。1 狼对随机 1 个神（预言家 / 女巫 / 猎人），一方全部出局才结束。删的时候把这几处标了 TEMPORARY 的都删掉。
 - **第一版页面留作备份**：绫要琢磨重新做美化，但新样子不满意可能会换回最初版。第一版页面是提交 `a776bee` 里的 `public/` 目录。重做时不要删它的记录；要换回去，就从这个提交恢复 `public/`（只换页面，不动服务器代码和数据）。
 - **推送通知**（「轮到你了」）：网页版做不了，需要真正的 apk。绫说不是非要 apk。
 
@@ -54,7 +55,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 13）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 14）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。

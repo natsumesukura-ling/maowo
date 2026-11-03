@@ -14,7 +14,11 @@ const CONFIGS = {
   10: { wolf: 3, villager: 4, gods: ['seer', 'witch', 'hunter'], sheriff: true },
   11: { wolf: 4, villager: 4, gods: ['seer', 'witch', 'hunter'], sheriff: true },
   12: { wolf: 4, villager: 4, gods: ['seer', 'witch', 'hunter', 'guard'], sheriff: true },
+  // TEMPORARY test table (绫 asked for it on 2026-11-03 to try real play with two people; remove when she says so):
+  // one wolf against one god drawn at random, and the game only ends when a side is wiped out.
+  2: { wolf: 1, villager: 0, gods: ['seer'], sheriff: false, test: true },
 };
+const TEST_GODS = ['seer', 'witch', 'hunter'];
 const CAUSE = { wolf: '狼人袭击', poison: '毒杀', exile: '放逐', shot: '猎人开枪', explode: '自爆' };
 const SPEECH_MAX = 500;
 const NIGHT_STEPS = ['guard', 'wolf', 'witch', 'seer'];
@@ -27,6 +31,7 @@ const LABEL = {
 
 const configLabel = n => {
   const c = CONFIGS[n];
+  if (c.test) return `${n} 人测试局 · 1 狼 · 预言家 / 女巫 / 猎人随机一个`;
   return `${n} 人局 · ${c.wolf} 狼 ${c.villager} 民 · ${c.gods.map(g => ROLE[g]).join(' ')}`;
 };
 
@@ -45,7 +50,10 @@ function checkWin(s, ctx) {
   const w = s.players.filter(p => p.alive && p.role === 'wolf').length;
   const v = s.players.filter(p => p.alive && p.role === 'villager').length;
   const g = s.players.filter(p => p.alive && GODS.includes(p.role)).length;
-  if (w === 0) s.over = { winner: 'good', reason: '狼人全部出局' };
+  if (CONFIGS[s.n].test) { // TEMPORARY test table: a side wins when the other side is gone
+    if (w === 0) s.over = { winner: 'good', reason: '狼人全部出局' };
+    else if (v + g === 0) s.over = { winner: 'wolf', reason: '好人全部出局' };
+  } else if (w === 0) s.over = { winner: 'good', reason: '狼人全部出局' };
   else if (v === 0) s.over = { winner: 'wolf', reason: '村民全部出局（屠边）' };
   else if (g === 0) s.over = { winner: 'wolf', reason: '神职全部出局（屠边）' };
   if (s.over) {
@@ -711,18 +719,19 @@ module.exports = {
   allowChat: false,
   normalizeOptions(o) {
     const n = Number(o.players || 9);
-    if (!CONFIGS[n]) throw new Error('狼人杀人数要在 6 到 12 之间');
+    if (!CONFIGS[n]) throw new Error('狼人杀人数要在 6 到 12 之间（临时测试局可以 2 人）');
     return { players: n };
   },
   seatCount: o => o.players,
   configLabel: o => configLabel(o.players),
-  rulesSummary: o => `狼人杀 · ${configLabel(o.players)}${CONFIGS[o.players].sheriff ? ' · 有警长' : ''}。夜里守卫→狼人→女巫→预言家依次行动，白天发言后放逐投票；狼人屠边（全部村民或全部神职出局）获胜，好人放逐全部狼人获胜。轮到你时用 act 操作，用 wait_turn 等待；完整规则用 get_rules。`,
+  rulesSummary: o => `狼人杀 · ${configLabel(o.players)}${CONFIGS[o.players].sheriff ? ' · 有警长' : ''}。夜里守卫→狼人→女巫→预言家依次行动，白天发言后放逐投票；${CONFIGS[o.players].test ? '这是临时测试局：一方全部出局才结束。' : '狼人屠边（全部村民或全部神职出局）获胜，好人放逐全部狼人获胜。'}轮到你时用 act 操作，用 wait_turn 等待；完整规则用 get_rules。`,
   rulesFull,
 
   setup(players, options, ctx) {
     const n = options.players;
     const c = CONFIGS[n];
-    const roles = [...Array(c.wolf).fill('wolf'), ...Array(c.villager).fill('villager'), ...c.gods];
+    const gods = c.test ? [TEST_GODS[ctx.random(TEST_GODS.length)]] : c.gods;
+    const roles = [...Array(c.wolf).fill('wolf'), ...Array(c.villager).fill('villager'), ...gods];
     for (let i = roles.length - 1; i > 0; i--) { const j = ctx.random(i + 1); [roles[i], roles[j]] = [roles[j], roles[i]]; }
     const s = {
       n, night: 0, day: 0, part: 'night',
