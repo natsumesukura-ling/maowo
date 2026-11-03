@@ -95,7 +95,7 @@
   .poll .choice:disabled { cursor: default; opacity: 1; }
   .poll .choice .bar { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); transition: width .3s; }
   .poll .choice.mine { border-color: var(--accent-line); }
-  .poll .choice.top .bar { background: #F1D3B5; }
+  .poll .choice.win .bar { background: #F1D3B5; }
   .poll .choice .row1 { position: relative; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
   .poll .choice .row1 b { font-weight: 600; color: var(--accent-hover); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
   .poll .choice .who { position: relative; font-size: 12px; color: var(--muted); margin-top: 3px; }
@@ -417,7 +417,7 @@ function pollHtml(p) {
     ${p.options.map(o => {
       const pct = p.total ? Math.round(o.votes / p.total * 100) : 0;
       const mine = p.myChoice === o.n;
-      return `<button class="choice ${mine ? 'mine' : ''} ${p.closed && top > 0 && o.votes === top ? 'top' : ''}" data-vote="${o.n}" ${p.closed || p.myChoice ? 'disabled' : ''} aria-pressed="${mine}">
+      return `<button class="choice ${mine ? 'mine' : ''} ${p.closed && top > 0 && o.votes === top ? 'win' : ''}" data-vote="${o.n}" ${p.closed || p.myChoice ? 'disabled' : ''} aria-pressed="${mine}">
         <span class="bar" style="width: ${pct}%;"></span>
         <span class="row1"><span>${esc(o.text)}</span><b>${mine ? icon('check', 14, 2.4) : ''}${o.votes} 票${p.total ? ` · ${pct}%` : ''}</b></span>
         ${o.voters.length ? `<span class="who">${o.voters.map(esc).join('、')}</span>` : ''}
