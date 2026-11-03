@@ -386,7 +386,7 @@ function renderActionBar() {
     plains.forEach(a => buttons.push(`<button class="btn ${a.danger ? 'danger' : ''}" data-plain="${a.type}" style="height: 48px; border-radius: 14px;">${esc(a.label)}</button>`));
     if (targets.length) {
       const a = targets.find(x => x.type === targetType);
-      buttons.push(`<button class="btn primary" id="confirm" style="flex-grow: 1; height: 48px; border-radius: 14px;${picked ? '' : ' opacity: .6;'}">${picked ? `${esc(a.label)} ${esc(tag(picked))}` : `${esc(a.label)}：先点上面的头像`}</button>`);
+      buttons.push(`<button class="btn primary" id="confirm" style="flex-grow: 1; height: 48px; border-radius: 14px;${picked ? '' : ' opacity: .6;'}">${picked ? `${esc(a.label)} ${esc(tag(picked))}` : `先选一个座位`}</button>`);
     }
     if (buttons.length) html += `<div class="row" style="margin-bottom: ${texts.length ? 10 : 0}px;">${buttons.join('')}</div>`;
   }
@@ -425,8 +425,7 @@ function renderActionBar() {
   const c = $('#confirm');
   if (c) c.onclick = () => {
     if (!picked) {
-      // Nothing picked yet: say so and make the seats that can be picked wiggle.
-      Maowo.toast('先点上面的头像选人，再点这里确认');
+      // Nothing picked yet: the seats that can be picked wiggle, no words.
       document.querySelectorAll('.seat.pickable').forEach(el => { el.classList.remove('nudge'); void el.offsetWidth; el.classList.add('nudge'); });
       return;
     }
