@@ -33,8 +33,7 @@
   }
   .search:focus-within { border-color: var(--accent-line); }
   .search svg { flex-shrink: 0; }
-  .search input { border: none; background: transparent; padding: 0; height: 100%; font-size: 14px; border-radius: 0; min-width: 0; flex-grow: 1; }
-  .search input::-webkit-search-cancel-button { display: none; }
+  .search textarea.single { border: none; background: transparent; padding: 7px 0; height: 36px; line-height: 22px; font-size: 14px; border-radius: 0; min-width: 0; flex-grow: 1; }
   .search button { width: 30px; height: 30px; border: none; background: transparent; color: var(--muted); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
   .head .book { right: 0; bottom: 14px; width: 78px; }
   .entries { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
@@ -60,6 +59,7 @@
     box-shadow: 0 6px 18px rgba(150, 73, 29, .28);
   }
   /* 发帖面板 */
+  .compose h2 { margin: 0; }
   .compose .pics { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .compose .pic { position: relative; width: 72px; height: 72px; }
   .compose .pic img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; display: block; }
@@ -72,7 +72,9 @@
   .pollbox { margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--border); }
   .pollbox .opt { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .pollbox .opt .n { width: 20px; color: var(--muted); font-size: 13px; text-align: center; flex-shrink: 0; }
-  .pollbox .opt input { padding: 9px 12px; }
+  .pollbox .opt textarea { padding: 9px 12px; }
+  textarea.single { resize: none; overflow: hidden; height: 46px; line-height: 22px; white-space: nowrap; }
+  .pollbox textarea.single { height: 42px; line-height: 22px; }
   .pollbox .opt button { width: 32px; height: 32px; border: none; background: transparent; color: var(--muted); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
   .pollbox select { padding: 8px 12px; width: auto; }
   /* 单篇里的图片和投票 */
@@ -186,13 +188,54 @@ async function shrink(file) {
 const MAX_PICS = 4, MAX_OPTIONS = 5;
 const HOURS = [1, 3, 6, 12, 24, 48];
 
-function compose() {
-  const pics = []; // { file, url }
-  let locked = false, withPoll = false, options = ['', ''];
+// The post being written is kept as a draft, so closing the panel by accident loses nothing.
+// Words go to localStorage; pictures (Blobs) go to IndexedDB. Both are cleared after posting
+// or with 「清空」.
+const DRAFT_KEY = 'maowo-post-draft';
+const draftIdb = () => new Promise((ok, fail) => {
+  const r = indexedDB.open('maowo-draft', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('pics');
+  r.onsuccess = () => ok(r.result); r.onerror = () => fail(r.error);
+});
+async function savePics(list) {
+  try {
+    const d = await draftIdb();
+    d.transaction('pics', 'readwrite').objectStore('pics').put(list.map(p => p.file), 'post');
+  } catch { /* private mode: words are still kept */ }
+}
+async function loadPics() {
+  try {
+    const d = await draftIdb();
+    return await new Promise(ok => {
+      const r = d.transaction('pics').objectStore('pics').get('post');
+      r.onsuccess = () => ok(Array.isArray(r.result) ? r.result : []); r.onerror = () => ok([]);
+    });
+  } catch { return []; }
+}
+const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null') || {}; } catch { return {}; } };
+const saveDraft = d => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch {} };
+const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch {} savePics([]); };
+
+// One-line boxes are textareas too: an <input> makes Android Chrome show the
+// key / card / address autofill strip above the keyboard.
+const oneLine = el => {
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  el.addEventListener('input', () => { if (/\n/.test(el.value)) el.value = el.value.replace(/\n/g, ' '); });
+};
+
+async function compose() {
+  const d = loadDraft();
+  const pics = (await loadPics()).filter(f => f instanceof Blob).slice(0, MAX_PICS).map(file => ({ file, url: URL.createObjectURL(file) }));
+  let locked = !!d.locked, withPoll = !!d.withPoll;
+  let options = Array.isArray(d.options) && d.options.length >= 2 ? d.options.slice(0, MAX_OPTIONS).map(String) : ['', ''];
+  let hours = HOURS.includes(Number(d.hours)) ? Number(d.hours) : 48;
   const panel = Maowo.sheet(`<div class="compose">
-    <h2>发帖子</h2>
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <h2>发帖子</h2>
+      <button type="button" class="btn sm" id="wipe">${icon('close', 14, 2)}清空</button>
+    </div>
     <label class="field" for="pt">标题</label>
-    <input id="pt" maxlength="60" placeholder="可以不写" autocomplete="off">
+    <textarea id="pt" rows="1" maxlength="60" class="single" autocomplete="off" autocorrect="off" enterkeyhint="next"></textarea>
     <label class="field" for="pc">内容</label>
     <textarea id="pc" rows="5" maxlength="20000" placeholder="想说点什么…" style="resize: vertical;"></textarea>
     <div class="pics" id="pics"></div>
@@ -203,14 +246,21 @@ function compose() {
     </div>
     <div class="small muted hidden" id="lock-hint" style="margin-top: 8px;">小秘密只有你和你家的 AI 能看到，别人搜也搜不到。</div>
     <div class="pollbox hidden" id="pollbox"></div>
-    <button class="btn primary block" id="post" style="margin-top: 18px;">发布</button>
+    <div class="small muted" style="margin-top: 14px; text-align: center;">没发出去的内容会自动保存，下次打开还在</div>
+    <button class="btn primary block" id="post" style="margin-top: 10px;">发布</button>
   </div>`);
   const q = s => panel.querySelector(s);
+  const keep = () => saveDraft({ title: q('#pt').value, content: q('#pc').value, locked, withPoll, options, hours });
+  q('#pt').value = d.title || '';
+  q('#pc').value = d.content || '';
+  oneLine(q('#pt'));
+  q('#pt').addEventListener('input', keep);
+  q('#pc').addEventListener('input', keep);
 
   const drawPics = () => {
     q('#pics').innerHTML = pics.map((p, i) => `<div class="pic"><img src="${p.url}" alt="第 ${i + 1} 张"><button type="button" data-rm="${i}" aria-label="去掉这张">${icon('close', 14, 2.4)}</button></div>`).join('')
       + (pics.length < MAX_PICS ? `<button type="button" class="addpic" id="addpic">${icon('image', 22, 1.6)}<span>${pics.length ? `${pics.length}/${MAX_PICS}` : '加图片'}</span></button>` : '');
-    q('#pics').querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { URL.revokeObjectURL(pics[b.dataset.rm].url); pics.splice(Number(b.dataset.rm), 1); drawPics(); });
+    q('#pics').querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { URL.revokeObjectURL(pics[b.dataset.rm].url); pics.splice(Number(b.dataset.rm), 1); savePics(pics); drawPics(); });
     const add = q('#addpic'); if (add) add.onclick = () => q('#pf').click();
   };
   q('#pf').onchange = () => {
@@ -218,33 +268,42 @@ function compose() {
     if (pics.length + files.length > MAX_PICS) Maowo.toast(`一篇最多 ${MAX_PICS} 张图片`);
     for (const f of files.slice(0, MAX_PICS - pics.length)) pics.push({ file: f, url: URL.createObjectURL(f) });
     q('#pf').value = '';
+    savePics(pics);
     drawPics();
   };
 
   const drawPoll = () => {
     q('#pollbox').innerHTML = options.map((o, i) => `<div class="opt"><span class="n">${i + 1}</span>
-        <input data-opt="${i}" maxlength="60" placeholder="第 ${i + 1} 栏" value="${esc(o)}" autocomplete="off">
+        <textarea data-opt="${i}" rows="1" maxlength="60" class="single" placeholder="第 ${i + 1} 栏" autocomplete="off" autocorrect="off">${esc(o)}</textarea>
         ${options.length > 2 ? `<button type="button" data-del="${i}" aria-label="删掉这一栏">${icon('close', 16, 2)}</button>` : ''}</div>`).join('')
       + `<div class="row" style="align-items: center; justify-content: space-between; margin-top: 4px;">
         ${options.length < MAX_OPTIONS ? `<button type="button" class="btn sm soft" id="addopt">${icon('plus', 16, 2)}加一栏</button>` : '<span class="small muted">最多 5 栏</span>'}
         <label class="small muted" style="display: flex; align-items: center; gap: 6px;">截止
-          <select id="hours">${HOURS.map(h => `<option value="${h}" ${h === 48 ? 'selected' : ''}>${h} 小时后</option>`).join('')}</select></label>
+          <select id="hours">${HOURS.map(h => `<option value="${h}" ${h === hours ? 'selected' : ''}>${h} 小时后</option>`).join('')}</select></label>
       </div>`;
-    q('#pollbox').querySelectorAll('[data-opt]').forEach(inp => inp.oninput = () => { options[inp.dataset.opt] = inp.value; });
-    q('#pollbox').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { keepHours(); options.splice(Number(b.dataset.del), 1); drawPoll(); });
-    const add = q('#addopt'); if (add) add.onclick = () => { keepHours(); options.push(''); drawPoll(); q(`[data-opt="${options.length - 1}"]`).focus(); };
-    if (drawPoll.hours) q('#hours').value = drawPoll.hours;
+    q('#pollbox').querySelectorAll('[data-opt]').forEach(inp => { oneLine(inp); inp.oninput = () => { options[inp.dataset.opt] = inp.value; keep(); }; });
+    q('#pollbox').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { options.splice(Number(b.dataset.del), 1); keep(); drawPoll(); });
+    const add = q('#addopt'); if (add) add.onclick = () => { options.push(''); keep(); drawPoll(); q(`[data-opt="${options.length - 1}"]`).focus(); };
+    q('#hours').onchange = () => { hours = Number(q('#hours').value); keep(); };
   };
-  const keepHours = () => { const h = q('#hours'); if (h) drawPoll.hours = h.value; };
 
-  q('#o-lock').onclick = () => { locked = !locked; q('#o-lock').setAttribute('aria-pressed', locked); q('#lock-hint').classList.toggle('hidden', !locked); };
-  q('#o-poll').onclick = () => {
-    withPoll = !withPoll; q('#o-poll').setAttribute('aria-pressed', withPoll);
+  const drawToggles = () => {
+    q('#o-lock').setAttribute('aria-pressed', locked);
+    q('#lock-hint').classList.toggle('hidden', !locked);
+    q('#o-poll').setAttribute('aria-pressed', withPoll);
     q('#pollbox').classList.toggle('hidden', !withPoll);
     q('#pt').placeholder = withPoll ? '投票要写一个标题' : '可以不写';
-    if (withPoll && !q('#pollbox').innerHTML) drawPoll();
   };
-  drawPics();
+  q('#o-lock').onclick = () => { locked = !locked; keep(); drawToggles(); };
+  q('#o-poll').onclick = () => { withPoll = !withPoll; keep(); drawToggles(); };
+  q('#wipe').onclick = () => {
+    if (!confirm('清空正在写的这篇帖子？（已经发出去的不受影响）')) return;
+    pics.forEach(p => URL.revokeObjectURL(p.url)); pics.length = 0;
+    locked = false; withPoll = false; options = ['', '']; hours = 48;
+    q('#pt').value = ''; q('#pc').value = '';
+    clearDraft(); drawPics(); drawPoll(); drawToggles();
+  };
+  drawPics(); drawPoll(); drawToggles();
 
   q('#post').onclick = async () => {
     const title = q('#pt').value.trim(), content = q('#pc').value.trim();
@@ -256,13 +315,14 @@ function compose() {
     try {
       const post = await api('/diary', { json: {
         title: title || (pics.length && !content ? '分享图片' : ''), content, locked,
-        poll: withPoll ? { options: opts, hours: Number(q('#hours').value) } : null,
+        poll: withPoll ? { options: opts, hours } : null,
       } });
+      clearDraft(); // the post exists now; a failed picture is reported below
       for (let i = 0; i < pics.length; i++) {
         btn.textContent = `上传图片 ${i + 1}/${pics.length}…`;
         const blob = await shrink(pics[i].file);
         const res = await fetch(`/api/diary/${post.id}/images`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': blob.type || 'image/jpeg' }, body: blob });
-        if (!res.ok) { const d = await res.json().catch(() => ({})); Maowo.toast(`第 ${i + 1} 张没传上：${d.error || '出错了'}`); }
+        if (!res.ok) { const r = await res.json().catch(() => ({})); Maowo.toast(`第 ${i + 1} 张没传上：${r.error || '出错了'}`); }
       }
       pics.forEach(p => URL.revokeObjectURL(p.url));
       panel.close();
@@ -293,7 +353,7 @@ async function showList() {
           <form class="search" id="search" role="search">
             ${icon('search', 16, 2)}
             <label for="q" class="hidden">搜索帖子</label>
-            <input id="q" type="search" placeholder="搜名字或内容" enterkeyhint="search" autocomplete="off" autocorrect="off" maxlength="60">
+            <textarea id="q" rows="1" class="single" placeholder="搜名字或内容" enterkeyhint="search" autocomplete="off" autocorrect="off" maxlength="60"></textarea>
             <button type="button" id="q-clear" aria-label="清空搜索" class="hidden">${icon('close', 16, 2)}</button>
           </form>
         </div>
@@ -310,7 +370,8 @@ async function showList() {
       try { sessionStorage.setItem('maowo-chat-q', query); } catch {}
       showList().catch(() => {});
     };
-    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(apply, 250); });
+    q.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(timer); q.blur(); apply(); } });
+    q.addEventListener('input', () => { if (/\n/.test(q.value)) q.value = q.value.replace(/\n/g, ' '); clearTimeout(timer); timer = setTimeout(apply, 250); });
     $('#search').onsubmit = ev => { ev.preventDefault(); clearTimeout(timer); q.blur(); apply(); };
     $('#q-clear').onclick = () => { q.value = ''; apply(); q.focus(); };
     $('#q-clear').classList.toggle('hidden', !q.value);
