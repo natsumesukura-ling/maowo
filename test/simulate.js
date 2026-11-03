@@ -29,7 +29,7 @@ function playOnce(game, n) {
     if (Math.random() < 0.05 && r.state.step) {
       if (r.state.step) r.state.step.since -= platform.SILENCE_MS;
       if (r.state.since) r.state.since -= platform.SILENCE_MS;
-      platform.skip(host, room.id); stats.skips++; continue;
+      platform.skip(owner, room.id); stats.skips++; continue;
     }
     let acted = false;
     for (const seat of shuffle(r.seats.map(s => s.seat))) {
@@ -43,8 +43,10 @@ function playOnce(game, n) {
         assert(!v.events.some(e => e.private && /查验/.test(e.text)) || role === 'seer', 'seer result leaked');
         if (v.board.night) assert(!v.pending || v.pending.hidden, 'night pending not hidden');
       }
-      const required = v.actions.filter(a => !a.passive);
-      const optional = v.actions.filter(a => a.passive);
+      // Leaving and ending the game are tested on their own in test/away.js.
+      const gameActions = v.actions.filter(a => !a.room);
+      const required = gameActions.filter(a => !a.passive);
+      const optional = gameActions.filter(a => a.passive && a.type !== 'resign');
       let a = null;
       if (optional.length && Math.random() < 0.03) {
         a = pick(optional);

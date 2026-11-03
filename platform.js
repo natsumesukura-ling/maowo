@@ -8,6 +8,14 @@ const games = require('./games');
 // Game modules only see seats and names; everything about accounts stays here.
 // ============================================================
 const SILENCE_MS = 3 * 60 * 1000;
+const MIN = 60 * 1000;
+// How long a silent player is waited for before they can be skipped, by how many times in a row
+// they have been skipped already. The host (or the owner of that AI) waits less than everyone else.
+// After two skips in a row the seat is 托管: the system acts for it right away.
+const WAIT_HOST = [3 * MIN, 2 * MIN];
+const WAIT_OTHERS = [5 * MIN, 3 * MIN];
+const AWAY_AFTER = 2;
+const END_VOTE_MS = 3 * MIN;
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS rooms (
@@ -48,13 +56,16 @@ db.exec(`
   );
 `);
 
+// Platform data that is not part of a game's state (the termination vote).
+try { db.exec('ALTER TABLE rooms ADD COLUMN extra TEXT'); } catch { /* already there */ }
+
 const stmts = {
   all: db.prepare('SELECT * FROM rooms'),
   upsert: db.prepare(`
-    INSERT INTO rooms (id, game, name, host_id, status, seats, options, state, result, created_at, started_at, finished_at)
-    VALUES (@id, @game, @name, @host_id, @status, @seats, @options, @state, @result, @created_at, @started_at, @finished_at)
+    INSERT INTO rooms (id, game, name, host_id, status, seats, options, state, result, created_at, started_at, finished_at, extra)
+    VALUES (@id, @game, @name, @host_id, @status, @seats, @options, @state, @result, @created_at, @started_at, @finished_at, @extra)
     ON CONFLICT(id) DO UPDATE SET name=@name, host_id=@host_id, status=@status, seats=@seats, options=@options,
-      state=@state, result=@result, started_at=@started_at, finished_at=@finished_at
+      state=@state, result=@result, started_at=@started_at, finished_at=@finished_at, extra=@extra
   `),
   remove: db.prepare('DELETE FROM rooms WHERE id = ?'),
   insertEvent: db.prepare(`INSERT INTO room_events (room_id, ts, day, part, kind, seat, label, text, visible)
@@ -71,6 +82,7 @@ for (const row of stmts.all.all()) {
     seats: JSON.parse(row.seats), options: JSON.parse(row.options), state: row.state ? JSON.parse(row.state) : null,
     result: row.result ? JSON.parse(row.result) : null,
     createdAt: row.created_at, startedAt: row.started_at, finishedAt: row.finished_at,
+    extra: row.extra ? JSON.parse(row.extra) : {},
   });
 }
 
@@ -80,6 +92,7 @@ function save(room) {
     seats: JSON.stringify(room.seats), options: JSON.stringify(room.options),
     state: room.state ? JSON.stringify(room.state) : null, result: room.result ? JSON.stringify(room.result) : null,
     created_at: room.createdAt, started_at: room.startedAt || null, finished_at: room.finishedAt || null,
+    extra: JSON.stringify(room.extra || {}),
   });
 }
 
@@ -210,6 +223,7 @@ function startGame(account, roomId) {
 
 function afterChange(room) {
   const mod = moduleOf(room);
+  if (room.status === 'playing') actForAway(room);
   if (room.status === 'playing') {
     const result = mod.result(room.state);
     if (result) {
@@ -226,7 +240,12 @@ function act(account, roomId, action) {
   if (room.status !== 'playing') throw new Error(room.status === 'waiting' ? '游戏还没开始' : '这局已经结束了');
   const seat = seatOf(room, account.id);
   if (!seat) throw new Error('你不在这一局的座位上');
-  const out = moduleOf(room).act(room.state, seat, action || {}, context(room));
+  action = action || {};
+  if (String(action.type || '').startsWith('room_')) return roomAction(room, seat, action.type);
+  const s = seatEntry(room, seat);
+  if (s.away) comeBack(room, seat);   // acting yourself means you are back
+  s.skips = 0;                          // the skip count only counts skips in a row
+  const out = moduleOf(room).act(room.state, seat, action, context(room));
   if (out && out.error) throw new Error(out.error);
   afterChange(room);
   return out && out.message;
@@ -248,18 +267,34 @@ function chat(account, roomId, text) {
 }
 
 // ---------- skipping ----------
+const seatEntry = (room, seat) => room.seats.find(s => s.seat === seat);
+const isAway = (room, seat) => !!seatEntry(room, seat)?.away;
+// A two-player game ends when one side goes silent, instead of the system playing for them.
+const twoPlayer = room => !!moduleOf(room).forfeit;
+
+// Who may skip `seat`, and after how long. null = not allowed.
+function skipWait(room, viewer, seat) {
+  if (!viewer) return null;
+  const target = accounts.byId(seatEntry(room, seat)?.accountId);
+  const mySeat = seatOf(room, viewer.id);
+  if (mySeat === seat) return null;
+  const strong = room.hostId === viewer.id || (target && target.kind === 'ai' && target.owner_id === viewer.id);
+  const ownsSeatedAi = room.seats.some(s => accounts.byId(s.accountId)?.owner_id === viewer.id);
+  if (!strong && !mySeat && !ownsSeatedAi) return null; // spectators cannot skip
+  if (twoPlayer(room)) return SILENCE_MS;
+  const n = Math.min(seatEntry(room, seat).skips || 0, 1);
+  return (strong ? WAIT_HOST : WAIT_OTHERS)[n];
+}
+
 function skipInfo(room, viewer) {
   if (room.status !== 'playing' || !viewer) return { canSkip: false };
   const p = moduleOf(room).pending(room.state);
   if (!p || !p.seats.length) return { canSkip: false };
   const elapsed = Date.now() - p.since;
-  const isHost = room.hostId === viewer.id;
-  const ownsAiHere = room.seats.some(s => accounts.byId(s.accountId)?.owner_id === viewer.id);
-  // At night the button must not reveal which seats are acting, so it appears for anyone who could skip someone.
-  const relevant = p.hidden
-    ? isHost || ownsAiHere
-    : p.seats.some(seat => isHost || accounts.byId(room.seats.find(s => s.seat === seat).accountId)?.owner_id === viewer.id);
-  return { canSkip: relevant && elapsed >= SILENCE_MS, relevant, waitMs: Math.max(0, SILENCE_MS - elapsed) };
+  const waits = p.seats.map(seat => skipWait(room, viewer, seat)).filter(w => w !== null);
+  if (!waits.length) return { canSkip: false, relevant: false };
+  const need = Math.min(...waits);
+  return { canSkip: elapsed >= need, relevant: true, waitMs: Math.max(0, need - elapsed), endsGame: twoPlayer(room) };
 }
 
 function skip(account, roomId) {
@@ -268,31 +303,175 @@ function skip(account, roomId) {
   const mod = moduleOf(room);
   const p = mod.pending(room.state);
   if (!p || !p.seats.length) throw new Error('现在没有可以跳过的人');
-  if (Date.now() - p.since < SILENCE_MS) throw new Error('静默满 3 分钟后才能跳过');
-  const isHost = room.hostId === account.id;
-  const allowed = p.seats.filter(seat => isHost || accounts.byId(room.seats.find(s => s.seat === seat).accountId)?.owner_id === account.id);
-  if (!allowed.length) {
+  const elapsed = Date.now() - p.since;
+  const waits = p.seats.map(seat => ({ seat, wait: skipWait(room, account, seat) })).filter(x => x.wait !== null);
+  if (!waits.length) {
     if (p.hidden) return '已处理';
-    throw new Error('只能跳过自己名下的 AI；房主可以跳过所有人');
+    throw new Error('只有坐在这一局里的人才能跳过');
+  }
+  const ready = waits.filter(x => elapsed >= x.wait).map(x => x.seat);
+  if (!ready.length) {
+    const left = Math.min(...waits.map(x => x.wait)) - elapsed;
+    throw new Error(`再等 ${Math.ceil(left / 60000)} 分钟才能跳过`);
   }
   const ctx = context(room);
   const night = mod.phase(room.state).night;
-  for (const seat of p.mode === 'turn' ? allowed.slice(0, 1) : allowed) {
-    const name = seatName(room, seat);
-    const by = isHost ? `，由房主 ${accounts.byId(account.id).name} 操作` : '';
-    ctx.log({ kind: 'skip', seat, text: `${seat}号 ${name} 已被跳过${p.label}${by}`, visible: night ? 'archive' : 'public' });
+  const by = room.hostId === account.id ? `，由房主 ${accounts.byId(account.id).name} 操作` : `，由 ${accounts.byId(account.id).name} 操作`;
+  if (twoPlayer(room)) {
+    const seat = ready[0];
+    ctx.log({ kind: 'skip', seat, text: `${seat}号 ${seatName(room, seat)} 掉线了，对局结束${by}` });
+    mod.forfeit(room.state, seat, ctx);
+    afterChange(room);
+    return '对局已结束';
+  }
+  for (const seat of p.mode === 'turn' ? ready.slice(0, 1) : ready) {
+    const s = seatEntry(room, seat);
+    ctx.log({ kind: 'skip', seat, text: `${seat}号 ${seatName(room, seat)} 已被跳过${p.label}${by}`, visible: night ? 'archive' : 'public' });
     const out = mod.act(room.state, seat, mod.defaultAction(room.state, seat), ctx);
     if (out && out.error) throw new Error(`跳过失败：${out.error}`);
+    s.skips = (s.skips || 0) + 1;
+    if (s.skips >= AWAY_AFTER && !s.away) {
+      s.away = 'auto';
+      ctx.log({ kind: 'away', seat, text: `${seat}号 ${seatName(room, seat)} 连续没有回应，之后由系统托管（回来后点「我回来了」）` });
+    }
   }
   afterChange(room);
   return '已跳过';
 }
 
-// ---------- views ----------
+// Seats that are away get the default action as soon as it is their turn: nobody waits for them.
+function actForAway(room) {
+  const mod = moduleOf(room);
+  if (twoPlayer(room)) return;
+  const ctx = context(room);
+  for (let guard = 0; guard < 500 && room.status === 'playing'; guard++) {
+    if (mod.result(room.state)) return;
+    const p = mod.pending(room.state);
+    if (!p || !p.seats.length) return;
+    const seats = (p.mode === 'turn' ? p.seats.slice(0, 1) : p.seats).filter(seat => isAway(room, seat));
+    if (!seats.length) return;
+    const night = mod.phase(room.state).night;
+    for (const seat of seats) {
+      ctx.log({ kind: 'skip', seat, text: `${seat}号 ${seatName(room, seat)} 托管中，自动跳过${p.label}`, visible: night ? 'archive' : 'public' });
+      const out = mod.act(room.state, seat, mod.defaultAction(room.state, seat), ctx);
+      if (out && out.error) return; // never loop on a broken default
+    }
+  }
+}
+
+function comeBack(room, seat) {
+  const s = seatEntry(room, seat);
+  s.away = null; s.skips = 0;
+  context(room).log({ kind: 'away', seat, text: `${seat}号 ${seatName(room, seat)} 回来了` });
+}
+
+// ---------- room actions: leaving, coming back, ending the game together ----------
+const endVote = room => room.extra && room.extra.endVote;
+const dayKey = room => moduleOf(room).phase(room.state).day;
+const voters = room => room.seats.filter(s => s.accountId && !s.away).map(s => s.seat);
+
+// Actions every seat has besides the game's own. Passive ones do not wake AIs in wait_turn.
+function roomActions(room, seat) {
+  if (room.status !== 'playing' || !seat) return [];
+  const mod = moduleOf(room);
+  if (twoPlayer(room)) return [];
+  const out = [];
+  const me = seatEntry(room, seat);
+  const v = endVote(room);
+  if (v && !me.away && v.votes[seat] === undefined) {
+    out.push({ type: 'room_end_yes', label: '同意终止对局（解散游戏）', danger: true, room: true });
+    out.push({ type: 'room_end_no', label: '不同意，继续玩', room: true });
+  }
+  if (me.away) out.push({ type: 'room_back', label: '我回来了', passive: true, room: true });
+  else {
+    out.push({ type: 'room_leave', label: '我先走了（之后系统替你跳过，大家不用等你）', passive: true, danger: true, room: true });
+    const someoneAway = room.seats.some(s => s.away);
+    if (someoneAway && !v && (room.extra?.endFailedDay ?? null) !== dayKey(room)) {
+      out.push({ type: 'room_end', label: '提议终止对局（终止即解散游戏，要还在的人过半同意）', passive: true, danger: true, room: true });
+    }
+  }
+  return out;
+}
+
+function roomAction(room, seat, type) {
+  if (!roomActions(room, seat).some(a => a.type === type)) throw new Error('现在不能这样做');
+  const ctx = context(room);
+  const name = `${seat}号 ${seatName(room, seat)}`;
+  room.extra = room.extra || {};
+  let message;
+  if (type === 'room_leave') {
+    const s = seatEntry(room, seat); s.away = 'left';
+    ctx.log({ kind: 'away', seat, text: `${name} 先走了，之后由系统托管` });
+    message = '已离开，系统会替你跳过。回来后点「我回来了」';
+  } else if (type === 'room_back') {
+    comeBack(room, seat); message = '欢迎回来';
+  } else if (type === 'room_end') {
+    room.extra.endVote = { by: seat, since: Date.now(), day: dayKey(room), votes: { [seat]: true } };
+    const n = voters(room).length;
+    ctx.log({ kind: 'endvote', seat, text: `${name} 提议终止对局（终止即解散游戏）。还在的 ${n} 人里要有 ${Math.floor(n / 2) + 1} 人同意，3 分钟内没表态算不同意` });
+    message = '已发起，等大家表态';
+  } else {
+    endVote(room).votes[seat] = type === 'room_end_yes';
+    ctx.log({ kind: 'endvote', seat, text: `${name} ${type === 'room_end_yes' ? '同意' : '不同意'}终止对局` });
+    message = '已表态';
+  }
+  settleEndVote(room);
+  afterChange(room);
+  return message;
+}
+
+// Decides the termination vote once the outcome is certain, or when time is up.
+function settleEndVote(room) {
+  const v = endVote(room);
+  if (!v || room.status !== 'playing') return false;
+  const eligible = voters(room);
+  const yes = eligible.filter(s => v.votes[s] === true).length;
+  const no = eligible.filter(s => v.votes[s] === false).length;
+  const need = Math.floor(eligible.length / 2) + 1;
+  const timeUp = Date.now() - v.since >= END_VOTE_MS;
+  const ctx = context(room);
+  if (yes >= need) {
+    room.extra.endVote = null;
+    ctx.log({ kind: 'endvote', text: `${yes} 人同意，对局终止，游戏解散。不算输赢` });
+    room.status = 'finished';
+    room.finishedAt = new Date().toISOString();
+    room.result = { title: '对局中止', winner: null, reason: '有人掉线，大家同意终止', aborted: true };
+    return true;
+  }
+  if (eligible.length - no < need || timeUp) {
+    room.extra.endVote = null;
+    room.extra.endFailedDay = v.day;
+    ctx.log({ kind: 'endvote', text: `终止对局没有通过（同意 ${yes} 人，需要 ${need} 人），继续游戏。今天不能再提议` });
+    return true;
+  }
+  return false;
+}
+// Votes left open run out on their own.
+setInterval(() => {
+  for (const room of rooms.values()) if (endVote(room) && settleEndVote(room)) { save(room); notify(room.id); }
+}, 10000).unref();
+
+function endVoteInfo(room, seat) {
+  const v = endVote(room);
+  if (!v || room.status !== 'playing') return null;
+  const eligible = voters(room);
+  return {
+    by: v.by, need: Math.floor(eligible.length / 2) + 1, total: eligible.length,
+    yes: eligible.filter(s => v.votes[s] === true).length, no: eligible.filter(s => v.votes[s] === false).length,
+    mine: seat ? v.votes[seat] ?? null : null, leftMs: Math.max(0, END_VOTE_MS - (Date.now() - v.since)),
+  };
+}
+
+const allActions = (room, seat) => {
+  if (room.status !== 'playing' || !seat) return [];
+  const game = isAway(room, seat) ? [] : moduleOf(room).actions(room.state, seat);
+  return [...game, ...roomActions(room, seat)];
+};
+
 function seatList(room, viewerSeat) {
   return room.seats.map(s => {
     const a = accounts.byId(s.accountId);
-    return { seat: s.seat, account: a ? { id: a.id, name: a.name, kind: a.kind, avatar: a.avatar ? `/avatars/${a.avatar}` : null } : null, me: s.seat === viewerSeat };
+    return { seat: s.seat, account: a ? { id: a.id, name: a.name, kind: a.kind, avatar: a.avatar ? `/avatars/${a.avatar}` : null } : null, me: s.seat === viewerSeat, away: s.away || null };
   });
 }
 
@@ -337,7 +516,8 @@ function view(room, viewer, sinceId = 0) {
     phaseInfo: room.state ? mod.phase(room.state) : null,
     board: room.state ? mod.publicView(room.state, room.status === 'finished') : null,
     me: room.state && seat ? mod.seatView(room.state, seat) : null,
-    actions: playing && seat ? mod.actions(room.state, seat) : [],
+    actions: allActions(room, seat),
+    endVote: endVoteInfo(room, seat),
     pending: playing ? mod.publicPending(room.state) : null,
     skip: skipInfo(room, viewer),
     allowChat: !!mod.allowChat,
@@ -362,7 +542,7 @@ function textView(room, account) {
   const board = room.state ? mod.publicView(room.state, room.status === 'finished') : null;
   for (const s of room.seats) {
     const a = accounts.byId(s.accountId);
-    const extra = board && mod.seatNote ? mod.seatNote(board, s.seat) : '';
+    const extra = [board && mod.seatNote ? mod.seatNote(board, s.seat) : '', s.away === 'left' ? '已离开' : s.away ? '托管中' : ''].filter(Boolean).join(' · ');
     lines.push(`  ${s.seat}号 ${a ? a.name + (a.kind === 'ai' ? '（AI）' : '（人类）') : '空位'}${s.seat === seat ? ' ← 你' : ''}${extra ? ' · ' + extra : ''}`);
   }
   if (room.state) {
@@ -383,7 +563,10 @@ function textView(room, account) {
   if (room.status === 'waiting') {
     lines.push('', `等人中：${room.seats.filter(s => s.accountId).length}/${room.seats.length}。坐满后由房主 ${accounts.byId(room.hostId)?.name} 开始。`);
   } else if (room.status === 'playing' && seat) {
-    const acts = mod.actions(room.state, seat);
+    const ev = endVoteInfo(room, seat);
+    if (ev) lines.push('', `有人提议终止对局：同意 ${ev.yes} / 需要 ${ev.need}（还在的 ${ev.total} 人），不同意 ${ev.no}，还剩 ${Math.ceil(ev.leftMs / 1000)} 秒。`);
+    if (isAway(room, seat)) lines.push('', '你现在是托管状态，系统会替你跳过。想继续玩就用 act，action="room_back"。');
+    const acts = allActions(room, seat);
     lines.push('', acts.length ? '你现在可以做（用 act 工具）：' : '现在不需要你操作。可以调用 wait_turn 等待轮到你。');
     for (const a of acts) lines.push(`  - action="${a.type}"：${a.label}${a.hint ? '（' + a.hint + '）' : ''}`);
   } else if (room.status === 'finished') {
@@ -396,7 +579,7 @@ function textView(room, account) {
 function isMyTurn(room, account) {
   if (room.status !== 'playing') return true;
   const seat = seatOf(room, account.id);
-  return !!seat && moduleOf(room).actions(room.state, seat).some(a => !a.passive);
+  return !!seat && allActions(room, seat).some(a => !a.passive);
 }
 
 // ---------- archives & comments ----------
@@ -436,6 +619,6 @@ function whereIs(accountId) {
 }
 
 module.exports = {
-  SILENCE_MS, getRoom, createRoom, joinRoom, leaveRoom, deleteRoom, startGame, act, chat, skip,
+  SILENCE_MS, WAIT_HOST, WAIT_OTHERS, getRoom, createRoom, joinRoom, leaveRoom, deleteRoom, startGame, act, chat, skip,
   listRooms, listArchives, view, textView, isMyTurn, waitForChange, archive, comment, whereIs, summary, seatOf,
 };

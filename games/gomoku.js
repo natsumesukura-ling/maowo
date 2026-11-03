@@ -6,7 +6,9 @@ const rulesFull = `五子棋规则
 - 1号执黑（●）先手，2号执白（○），轮流在空位落子。
 - 横、竖、斜任意方向先连成五子（或更多）者获胜；棋盘下满无人连五则平局。
 - 没有禁手。
-- 有聊天频道，可以随时聊天，不影响轮次。`;
+- 有聊天频道，可以随时聊天，不影响轮次。
+- 可以随时认输（resign），对方获胜。
+- 轮到的人 3 分钟没落子，对方可以结束对局，掉线的一方判负。`;
 
 // The same rules for people on the web page: no coordinates, those are for the AIs.
 const rulesHuman = rulesFull.split('\n').filter(l => !/row|col/.test(l)).join('\n');
@@ -58,13 +60,19 @@ module.exports = {
     return p && { ...p, text: `${p.seats[0]}号 ${s.players[p.seats[0] - 1].name} 思考中` };
   },
 
-  actions: (s, seat) => (!s.winner && !s.draw && s.turn === seat
-    ? [{ type: 'move', label: '落子', target: 'cell', hint: '带上 row 和 col，0-14' }]
-    : []),
+  actions: (s, seat) => (s.winner || s.draw ? [] : [
+    ...(s.turn === seat ? [{ type: 'move', label: '落子', target: 'cell', hint: '带上 row 和 col，0-14' }] : []),
+    { type: 'resign', label: '认输', passive: true, danger: true },
+  ]),
 
   act(s, seat, action, ctx) {
-    if (action.type !== 'move') return { error: `五子棋只有 move 这个操作` };
     if (s.winner || s.draw) return { error: '对局已经结束了' };
+    if (action.type === 'resign') {
+      s.winner = 3 - seat; s.endReason = `${s.players[seat - 1].name} 认输`;
+      ctx.log({ text: `${seat}号 ${s.players[seat - 1].name} 认输，${3 - seat}号 ${s.players[2 - seat].name} 获胜` });
+      return { message: '已认输' };
+    }
+    if (action.type !== 'move') return { error: `五子棋只有 move（落子）和 resign（认输）这两个操作` };
     if (s.turn !== seat) return { error: `现在轮到 ${s.turn}号 落子` };
     const row = Number(action.row), col = Number(action.col);
     if (!Number.isInteger(row) || !Number.isInteger(col) || !inside(row, col)) return { error: 'row 和 col 要是 0-14 的整数' };
@@ -86,7 +94,14 @@ module.exports = {
     return { message: `已落子 (${row}, ${col})` };
   },
 
-  // Skipped: play next to an existing stone (or the centre), so the game can go on.
+  // A player who goes silent loses: in a two-player game nobody wants to play against the system.
+  forfeit(s, seat, ctx) {
+    if (s.winner || s.draw) return;
+    s.winner = 3 - seat; s.endReason = `${s.players[seat - 1].name} 掉线`;
+    ctx.log({ text: `${3 - seat}号 ${s.players[2 - seat].name} 获胜（对方掉线）` });
+  },
+
+  // Not used by the platform any more (a silent player forfeits); kept for tests and tools.
   defaultAction(s) {
     const empties = [];
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
@@ -114,7 +129,7 @@ module.exports = {
   textPrivate: (s, seat) => `你执${seat === 1 ? '黑 ●' : '白 ○'}。`,
 
   result(s) {
-    if (s.winner) return { title: `${s.players[s.winner - 1].name} 胜`, winner: s.winner, summary: `${s.moves.length} 手` };
+    if (s.winner) return { title: `${s.players[s.winner - 1].name} 胜`, winner: s.winner, summary: `${s.moves.length} 手`, ...(s.endReason ? { reason: s.endReason } : {}) };
     if (s.draw) return { title: '平局', winner: null, summary: `${s.moves.length} 手` };
     return null;
   },

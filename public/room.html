@@ -78,6 +78,11 @@
     padding: 16px 0 18px; transition: background .4s;
   }
   /* 有新发言但不在屏幕里时，右下角的小气泡；点一下才滚过去 */
+  .roombar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin: 8px 0 0; }
+  .roombar .btn { height: 32px; padding: 0 12px; font-size: 12.5px; border-radius: 999px; }
+  .endvote { margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: var(--secret-bg, #F6DCD3); color: var(--text); }
+  body.night .endvote { background: #3A2A24; }
+  .endvote .sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
   .newmsg {
     position: fixed; right: 16px; z-index: 25; display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
     border: none; background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -109,6 +114,7 @@
     <div class="pill" id="phase"></div>
   </header>
   <div id="notice"></div>
+  <div id="roombar"></div>
   <div class="seats" id="seats"></div>
   <div id="extra"></div>
   <div class="events" id="events"></div>
@@ -146,7 +152,9 @@ function pickTargetType() {
   if (!targetType && targets.length) targetType = (targets.find(a => !a.passive) || targets[0]).type;
 }
 const textActions = () => view.actions.filter(a => a.text);
-const plainActions = () => view.actions.filter(a => !a.target && !a.text);
+// Room-level actions (leave, come back, end the game) and resigning live in their own row, not the action bar.
+const isRoomAction = a => a.room || a.type === 'resign';
+const plainActions = () => view.actions.filter(a => !a.target && !a.text && !isRoomAction(a));
 
 // ---------- header & notice ----------
 function renderHeader() {
@@ -195,15 +203,45 @@ function renderNotice() {
   const elapsed = Date.now() - p.since;
   const canSkip = view.skip.relevant;
   const ready = canSkip && Date.now() >= skipAt;
+  const ends = view.skip.endsGame;
+  const skipLabel = ends ? '对方掉线，结束对局' : p.hidden ? '跳过未行动者' : '跳过';
+  const ev = view.endVote;
   box.innerHTML = `<div class="notice ${mine ? 'mine' : ''}"><div class="grow">
       <div>${mine ? '<b>轮到你了</b> · ' : ''}${esc(p.text)}</div>
       <div class="sub" id="silence">已静默 ${Maowo.fmtSilence(elapsed)}</div>
-    </div>${canSkip ? `<button class="btn sm" id="skip" ${ready ? '' : 'disabled'} title="静默满 3 分钟后可以跳过">${p.hidden ? '跳过未行动者' : '跳过'}</button>` : ''}</div>`;
+    </div>${canSkip ? `<button class="btn sm" id="skip" ${ready ? '' : 'disabled'} title="静默够久以后可以跳过">${skipLabel}</button>` : ''}</div>
+    ${ev ? `<div class="endvote"><div><b>${ev.by}号 提议终止对局</b> · 同意 ${ev.yes} / 需要 ${ev.need}</div>
+      <div class="sub">终止即解散游戏，不算输赢。还在的 ${ev.total} 人里过半同意才终止，3 分钟内没表态算不同意${ev.mine !== null ? ` · 你已${ev.mine ? '同意' : '不同意'}` : ''}</div>
+      ${view.actions.some(a => a.type === 'room_end_yes') ? `<div class="row" style="margin-top: 10px;"><button class="btn sm danger" data-room="room_end_yes">同意终止</button><button class="btn sm" data-room="room_end_no">不同意，继续玩</button></div>` : ''}</div>` : ''}`;
+  box.querySelectorAll('[data-room]').forEach(b => b.onclick = () => roomAct(b.dataset.room));
   const skip = $('#skip');
   if (skip) skip.onclick = async () => {
-    if (!confirm(p.hidden ? '跳过夜里还没行动的人？他们会执行默认操作。' : `跳过 ${p.text}？会执行默认操作。`)) return;
+    if (!confirm(ends ? '对方很久没动了。结束这局？掉线的一方判负。' : p.hidden ? '跳过夜里还没行动的人？他们会执行默认操作。' : `跳过 ${p.text}？会执行默认操作。`)) return;
     try { const r = await api(`/rooms/${roomId}/skip`, { json: {} }); Maowo.toast(r.message || '已跳过'); refresh(); } catch (err) { Maowo.toast(err.message); }
   };
+}
+
+// ---------- room row: leave / come back / end the game / resign ----------
+const ROOM_CONFIRM = {
+  room_leave: '先走的话，之后轮到你时系统会替你跳过（弃票、不发言、夜里不行动），大家不用等你。回来可以点「我回来了」。确定要走吗？',
+  room_end: '终止，即为解散游戏。是否确认？',
+  room_end_yes: '同意终止？终止即解散游戏，不算输赢。',
+  resign: '确定认输？对方直接获胜。',
+};
+const ROOM_LABEL = { room_leave: '我先走了', room_back: '我回来了', room_end: '终止对局', resign: '认输' };
+function renderRoomBar() {
+  const bar = $('#roombar');
+  const acts = view.status === 'playing' ? view.actions.filter(a => isRoomAction(a) && ROOM_LABEL[a.type]) : [];
+  const html = acts.length ? `<div class="roombar">${acts.map(a => `<button class="btn ${a.type === 'room_back' ? 'primary' : a.danger ? 'danger' : ''}" data-room="${a.type}" title="${esc(a.label)}">${ROOM_LABEL[a.type]}</button>`).join('')}</div>` : '';
+  if (bar.dataset.html === html) return;
+  bar.dataset.html = html;
+  bar.innerHTML = html;
+  bar.querySelectorAll('[data-room]').forEach(b => b.onclick = () => roomAct(b.dataset.room));
+}
+async function roomAct(type) {
+  if (ROOM_CONFIRM[type] && !confirm(ROOM_CONFIRM[type])) return;
+  try { const r = await api(`/rooms/${roomId}/act`, { json: { type } }); if (r.message) Maowo.toast(r.message); refresh(); }
+  catch (err) { Maowo.toast(err.message); }
 }
 
 function tick() {
@@ -221,6 +259,7 @@ function seatNote(s, p) {
   if (!b) return s.me ? '你' : '';
   if (picked === s.seat) return '已选';
   if (p && !p.alive) return p.role ? `${p.role}` : (p.cause || '出局');
+  if (s.away && view.status === 'playing') return s.away === 'left' ? '已离开' : '托管中';
   if (p && p.role && view.status === 'finished') return p.role;
   if (b.speaking === s.seat) return view.pending && view.pending.text.includes('发言') ? '发言中' : '操作中';
   if (b.voted.includes(s.seat)) return b.votingLabel === '上警报名' ? '已选择' : '已投';
@@ -412,7 +451,8 @@ function renderActionBar() {
     let msg = '旁观中';
     if (view.status === 'waiting') msg = view.mySeat ? '等人齐了由房主开始' : '点空位入座，或者旁观';
     else if (view.status === 'finished') msg = '这局已经结束了';
-    else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.length ? '轮到你了，点棋盘落子' : '还没轮到你';
+    else if (view.mySeat && view.seats.find(s => s.me)?.away) msg = '你现在托管中，系统会替你跳过。想继续玩就点上面的「我回来了」';
+    else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.some(a => a.type === 'move') ? '轮到你了，点棋盘落子' : '还没轮到你';
     html = `<div class="inputbox"><div class="placeholder">${esc(msg)}</div><button class="send" disabled aria-label="发送">${icon('send', 18, 2)}</button></div>`;
   }
   // Nothing changed in the bar (e.g. the other player just moved): leave it alone, so the
@@ -493,7 +533,7 @@ function apply(v) {
   skipAt = Date.now() + (v.skip.waitMs || 0);
   if (picked && !(targetActions().find(a => a.type === targetType)?.targets || []).includes(picked)) picked = null;
   pickTargetType();
-  renderHeader(); renderNotice(); renderSeats(); renderExtra(); renderEvents(); renderActionBar();
+  renderHeader(); renderNotice(); renderRoomBar(); renderSeats(); renderExtra(); renderEvents(); renderActionBar();
   // Leave room at the bottom for the action bar, whatever its height right now.
   document.querySelector('main').style.paddingBottom = (document.querySelector('.actionbar').offsetHeight + 24) + 'px';
   // Only the first load starts at the newest message; after that the page stays where you are.

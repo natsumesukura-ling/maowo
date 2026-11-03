@@ -56,7 +56,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 26）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 27）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -91,7 +91,7 @@ oauth.js         OAuth 2.1：元数据、动态注册、授权页、PKCE、refre
 db.js            SQLite 连接（better-sqlite3），数据目录
 public/          网页：shell（四个按钮的外壳）、index（游戏+开屏）、me、diary、dev、room、archive(s)、vault、login，共用 common.css / common.js；插画在 img/art/
 deploy/install.sh  一键安装 / 更新
-test/            rules.js（狼人杀规则）、diary.js（日记权限）、simulate.js（随机机器人打完整局）
+test/            rules.js（狼人杀规则）、diary.js（日记权限）、away.js（掉线、托管、终止对局、五子棋认输）、simulate.js（随机机器人打完整局）
 design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和配色表
 ```
 
@@ -132,3 +132,10 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 - 等人的时候所有游戏都能聊天（`platform.chat`），开局后只有 `allowChat` 的游戏能聊。
 - 换头像会先弹出圆形取景框（`common.js` 的 `cropAvatar`），拖动、双指缩放、滑条缩放，确定后只上传框里的部分（最大 320px）。
 - 给人看的规则：房间页顶上的「规则」和游戏面板里的「看规则」，调 `GET /api/games/:id/rules`。文字来自游戏模块的 `rulesHuman`（没有就用 `rulesFull`），服务器会去掉括号里的操作名（如 `（kill_none）`）。改规则文字时两边都看一眼。
+- **掉线和托管**（2026-11-03 和绫一起定的，见 `platform.js` 顶上的 `WAIT_HOST` / `WAIT_OTHERS`）：
+  - 跳过等待：房主或这个 AI 的主人第 1 次等 3 分钟、第 2 次 2 分钟；其他坐在局里的人第 1 次 5 分钟、第 2 次 3 分钟（这样房主掉线也不会卡死）；旁观的人不能跳过；不能跳过自己。
+  - 连续被跳过 2 次 → 座位 `away = 'auto'`（托管中），之后轮到他由 `actForAway` 立刻替他做默认操作。「我先走了」（`room_leave`）直接 `away = 'left'`。自己动一下或「我回来了」（`room_back`）就取消，跳过计数清零。
+  - 不选「移出」是因为狼人杀里移出等于出局，会改变胜负；托管只是不说话、弃票。
+  - 终止对局（`room_end`）：只有有人托管 / 离开时出现；还在的人过半同意才解散（`room_end_yes` / `room_end_no`），3 分钟没表态算不同意，没通过当天（`phase.day`）不能再提。解散后 `result.aborted = true`、标题「对局中止」、不算输赢。数据存在 rooms 表的 `extra` 列。
+  - 两人游戏（模块有 `forfeit`，目前是五子棋）不托管：对方 3 分钟不动，可以「对方掉线，结束对局」，掉线方判负；还有「认输」（`resign`）。绫说两人游戏就是想和对方玩，不要系统代下。
+  - 这些平台级操作在 `view.actions` 里带 `room: true`，房间页放在通知下面那一排小按钮里，不放进操作栏。
