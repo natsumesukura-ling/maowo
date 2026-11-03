@@ -357,7 +357,7 @@ async function startSettings() {
       try {
         const r = await api('/cats/test', { json: { keyId: f.keyId, model: f.model } });
         out.innerHTML = r.tools ? '<span class="pill ok">能用 · 会用工具</span>' : '<span class="pill secret">能说话，但不会用工具</span>';
-        if (!r.tools) Maowo.toast('这个模型没有调用工具：它能聊天，但玩不了游戏、发不了帖。换一个模型试试');
+        if (!r.tools) Maowo.toast(`这个模型没有调用工具：能聊天，但玩不了游戏、发不了帖。${r.reply ? `它回的是：「${r.reply.slice(0, 50)}」` : '它什么都没回。'}`);
       } catch (err) { out.textContent = ''; Maowo.toast(`测试没通过：${err.message}`); }
     };
     $('#o-turn').onclick = () => { keep(); f.wakeOnTurn = !f.wakeOnTurn; draw(); };

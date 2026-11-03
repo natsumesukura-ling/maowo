@@ -20,7 +20,11 @@ function reply(body) {
   const call = (name, args) => ({ role: 'assistant', content: null, tool_calls: [{ id: 'c' + Math.random().toString(36).slice(2, 8), type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
   if (!body.tools) return { role: 'assistant', content: sys.includes('压成简短的摘要') ? '摘要：主人和我聊了很多次天。' : '嗯' };
   if (mode === 'broken') return { role: 'assistant', content: '我不会用工具' };
-  if (last.role === 'user' && last.content === '请调用 ping 工具。') return call('ping', { word: '喵' });
+  if (last.role === 'user' && last.content === '请调用 ping 工具。') {
+    // like some relays: the forced form is refused, and the answer comes in the old `function_call` shape
+    if (body.tool_choice && body.tool_choice !== 'auto') return { error: 400 };
+    return { role: 'assistant', content: null, function_call: { name: 'ping', arguments: { word: '喵' } } };
+  }
   if (last.role === 'user' && last.content.startsWith('【猫窝】现在在群聊')) {
     const me = (sys.match(/你是「(.+?)」/) || [])[1];
     const lastLine = [...msgs].reverse().find(m => m.role === 'user' && m.content.startsWith('【群聊'));
@@ -56,11 +60,13 @@ const fake = http.createServer((req, res) => {
   req.on('data', b => { data += b; });
   req.on('end', () => {
     if (req.headers.authorization !== `Bearer ${SECRET_KEY}`) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 'bad key' } })); }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.setHeader('Content-Type', 'application/json');
     if (req.url === '/v1/models') return res.end(JSON.stringify({ object: 'list', data: [{ id: 'fake-2' }, { id: 'fake-1' }] }));
     const body = JSON.parse(data);
     seen.push(body);
-    res.end(JSON.stringify({ choices: [{ message: reply(body) }] }));
+    const message = reply(body);
+    if (message.error) { res.statusCode = 400; return res.end(JSON.stringify({ error: { message: 'tool_choice not supported' } })); }
+    res.end(JSON.stringify({ choices: [{ message }] }));
   });
 });
 

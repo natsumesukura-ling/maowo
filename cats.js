@@ -219,10 +219,10 @@ async function readError(res) {
   return `对方回了 ${res.status}${hint ? `（${hint}）` : ''}${msg ? `：${msg}` : ''}`;
 }
 
-async function callModel(key, model, messages, tools) {
+async function callModel(key, model, messages, tools, toolChoice = 'auto') {
   const url = await wake.checkHookUrl(key.base_url, '网址');
   const body = { model, messages };
-  if (tools && tools.length) { body.tools = tools; body.tool_choice = 'auto'; }
+  if (tools && tools.length) { body.tools = tools; body.tool_choice = toolChoice; }
   let res;
   try {
     res = await fetch(`${cleanBaseUrl(url)}/chat/completions`, {
@@ -237,7 +237,23 @@ async function callModel(key, model, messages, tools) {
   const data = await res.json().catch(() => null);
   const msg = data?.choices?.[0]?.message;
   if (!msg) throw new Error(data?.error?.message ? `模型说：${String(data.error.message).slice(0, 200)}` : '模型的回答看不懂（不是 OpenAI 格式？）');
-  return msg;
+  return normalize(msg);
+}
+
+// Relays do not all answer the same way: text as a list of parts, the old single `function_call`,
+// arguments as an object. Turn them into the usual shape.
+function normalize(msg) {
+  const out = { ...msg };
+  if (Array.isArray(out.content)) out.content = out.content.map(p => (typeof p === 'string' ? p : p?.text || '')).join('');
+  if ((!Array.isArray(out.tool_calls) || !out.tool_calls.length) && out.function_call?.name) {
+    out.tool_calls = [{ id: `call_${Math.random().toString(36).slice(2, 10)}`, type: 'function', function: out.function_call }];
+  }
+  delete out.function_call;
+  if (Array.isArray(out.tool_calls)) {
+    out.tool_calls = out.tool_calls.map(c => (c && c.function && typeof c.function.arguments !== 'string'
+      ? { ...c, function: { ...c.function, arguments: JSON.stringify(c.function.arguments ?? {}) } } : c));
+  }
+  return out;
 }
 
 async function listModels(key) {
@@ -254,13 +270,19 @@ async function listModels(key) {
 }
 
 // Can this model use tools? One tiny call with one tool it is asked to use.
+// First asks it to use the tool for sure (tool_choice names the tool); a server that does not take that
+// gets the ordinary 「auto」 instead. When it still only talks, what it said comes back, to see why.
 async function testModel(key, model) {
   const tools = [{ type: 'function', function: { name: 'ping', description: '测试用的工具，调用一下就好', parameters: { type: 'object', properties: { word: { type: 'string' } }, required: ['word'] } } }];
-  const msg = await callModel(key, model, [
+  const messages = [
     { role: 'system', content: '这是一次测试。请调用 ping 工具，word 填「喵」。' },
     { role: 'user', content: '请调用 ping 工具。' },
-  ], tools);
-  return { ok: true, tools: Array.isArray(msg.tool_calls) && msg.tool_calls.some(c => c.function?.name === 'ping') };
+  ];
+  const used = m => Array.isArray(m.tool_calls) && m.tool_calls.some(c => c.function?.name === 'ping');
+  let msg;
+  try { msg = await callModel(key, model, messages, tools, { type: 'function', function: { name: 'ping' } }); } catch { msg = null; }
+  if (!msg || !used(msg)) msg = await callModel(key, model, messages, tools);
+  return { ok: true, tools: used(msg), reply: used(msg) ? '' : String(msg.content || '').trim().slice(0, 120) };
 }
 
 // ---------- tools the cats use ----------
