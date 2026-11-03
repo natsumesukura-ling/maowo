@@ -67,6 +67,7 @@ const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
 const roomId = location.pathname.split('/').pop();
 $('#back').innerHTML = icon('back', 22);
+Maowo.backTo($('#back'), '/archive');
 $('#send').innerHTML = icon('send', 18, 2);
 
 function line(a, e) {

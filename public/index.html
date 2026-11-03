@@ -170,21 +170,21 @@ function renderGames() {
     <div class="name">UNO</div><div class="status"><span class="dot"></span><span class="txt">还在做…</span></div></div>`);
   cards.push(`<div class="game todo"><div class="pic"><img src="/img/art/toolbox.webp" alt=""></div>
     <div class="name">待开发</div><div class="status"><span class="dot"></span><span class="txt">请期待…</span></div></div>`);
-  $('#games').innerHTML = cards.join('');
+  if (!Maowo.setHtml($('#games'), cards.join(''))) return;
   document.querySelectorAll('[data-game]').forEach(b => b.onclick = () => showGame(b.dataset.game));
 }
 
 // Every table that is waiting or playing, yours first.
 function renderLive() {
   const rooms = [...state.rooms].sort((a, b) => (b.mySeat ? 1 : 0) - (a.mySeat ? 1 : 0));
-  $('#live').innerHTML = rooms.length ? rooms.map(r => `
+  Maowo.setHtml($('#live'), rooms.length ? rooms.map(r => `
     <a class="live-room ${r.mySeat ? 'mine' : ''}" href="/room/${r.id}">
       <div class="thumb">${ART[r.game] ? `<img src="${ART[r.game]}" alt="">` : ''}</div>
       <div style="flex-grow: 1; min-width: 0;"><div class="name">${esc(r.name)}</div>
         <div class="meta">${esc(r.gameName)} · ${r.status === 'waiting' ? `等人中 ${r.filled} / ${r.total}` : `${esc(r.phase)}`}</div></div>
       ${r.mySeat ? `<span class="you">你在 ${r.mySeat}号</span>` : ''}
       <span style="color: var(--accent); display: flex;">${icon('chevronRight', 18, 2)}</span>
-    </a>`).join('') : '<div class="empty" style="padding: 12px 0;">现在没有在玩的桌。点上面的游戏开一桌吧</div>';
+    </a>`).join('') : '<div class="empty" style="padding: 12px 0;">现在没有在玩的桌。点上面的游戏开一桌吧</div>');
 }
 
 function archiveLabel(r) {
@@ -194,12 +194,12 @@ function archiveLabel(r) {
 
 function renderArchives() {
   const list = state.archives.slice(0, 3);
-  $('#archives').innerHTML = list.length ? list.map(r => `
+  Maowo.setHtml($('#archives'), list.length ? list.map(r => `
     <a class="arch" href="/archive/${r.id}">
       <div class="thumb">${ART[r.game] ? `<img src="${ART[r.game]}" alt="">` : ''}</div>
       <div class="t">${archiveLabel(r)}</div>
       <img class="deco sprig" src="/img/art/sprig.webp" alt="">
-    </a>`).join('') : '<div class="empty">还没有结束的局</div>';
+    </a>`).join('') : '<div class="empty">还没有结束的局</div>');
 }
 
 // ---------- one game: its tables and a form for a new one ----------

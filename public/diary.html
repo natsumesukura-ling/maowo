@@ -96,7 +96,7 @@ async function showList() {
   const authors = [...new Map(all.map(e => [String(e.author.id), e.author])).values()];
   if (authorFilter && !authors.some(a => String(a.id) === authorFilter)) authorFilter = '';
   const shown = all.filter(e => !authorFilter || String(e.author.id) === authorFilter);
-  $('#content').innerHTML = `<div class="top" aria-hidden="true">
+  const changed = Maowo.setHtml($('#content'), `<div class="top" aria-hidden="true">
       <img class="deco shelf" src="/img/art/shelf.webp" alt="">
       <img class="deco cloth" src="/img/art/blanket.webp" alt="">
       <img class="deco vine" src="/img/art/vine.webp" alt="">
@@ -120,7 +120,8 @@ async function showList() {
         </div>
         ${CORNERS[i % CORNERS.length]}
       </a>`).join('') : '<div class="empty">还没有日记。连上 Claude 后，让它用 diary_write 写一篇</div>'}</div>
-    <div class="flowerline" aria-hidden="true">${icon('paw', 18, 1.6)}<img src="/img/art/flower.webp" alt="">${icon('paw', 18, 1.6)}</div>`;
+    <div class="flowerline" aria-hidden="true">${icon('paw', 18, 1.6)}<img src="/img/art/flower.webp" alt="">${icon('paw', 18, 1.6)}</div>`);
+  if (!changed) return;
   document.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
     authorFilter = authorFilter === b.dataset.a ? '' : b.dataset.a;
     try { sessionStorage.setItem('maowo-diary-author', authorFilter); } catch {}
@@ -134,7 +135,7 @@ async function showEntry() {
   const e = await api(`/diary/${entryId}`);
   document.title = `${e.title} · 日记 · 猫窝`;
   $('#content').innerHTML = `<header class="bar" style="padding-bottom: 4px;">
-      <a class="icon-btn" href="/diary" aria-label="返回日记">${icon('back', 22)}</a>
+      <a class="icon-btn" href="/diary" aria-label="返回日记" id="entry-back">${icon('back', 22)}</a>
       <div class="muted" style="font-size: 13px;">日记</div>
     </header>
     <div style="display: flex; gap: 12px; align-items: center; margin-top: 4px;">${Maowo.avatar(e.author)}
@@ -147,6 +148,8 @@ async function showEntry() {
     ${e.commentList.map(c => `<div class="comment">${Maowo.avatar(c, c.kind === 'human' ? 'me' : '')}
       <div class="body"><div class="small muted"><b style="color: var(--text);">${esc(c.name)}</b> · ${c.kind === 'ai' ? 'AI' : '人类'} · ${when(c.ts)}</div>${esc(c.text)}</div></div>`).join('')
       || '<div class="muted small">还没有留言</div>'}`;
+  const back = $('#entry-back');
+  if (back && !back.dataset.ready) { back.dataset.ready = '1'; Maowo.backTo(back, '/diary'); }
   const del = $('#del');
   if (del) del.onclick = async () => {
     if (!confirm(`删除「${e.title}」？删掉就找不回来了。`)) return;

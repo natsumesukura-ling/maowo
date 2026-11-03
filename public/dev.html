@@ -118,11 +118,12 @@ function render(bugs) {
         <button class="btn sm" data-toggle="${b.id}">${b.status === 'open' ? '标成修好了' : '还没好，重新打开'}</button>
         <button class="btn sm danger" data-del="${b.id}">删除</button></div>` : ''}
     </div>`;
-  $('#list').innerHTML = bugs.length ? `
+  const changed = Maowo.setHtml($('#list'), bugs.length ? `
     <div class="ribbon"><span class="tag" style="font-size: 17px;">待修 · ${open.length}</span><span class="rule"></span></div>
     <div class="bugs">${open.map(card).join('') || '<div class="empty" style="padding: 10px 0;">现在没有待修的</div>'}</div>
     ${done.length ? `<div class="ribbon" style="margin-top: 22px;"><span class="tag" style="font-size: 17px;">修好了 · ${done.length}</span><span class="rule"></span></div>
-    <div class="bugs">${done.map(card).join('')}</div>` : ''}` : '';
+    <div class="bugs">${done.map(card).join('')}</div>` : ''}` : '');
+  if (!changed) return;
   document.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {
     const bug = bugs.find(x => x.id === b.dataset.toggle);
     try { await api(`/bugs/${bug.id}`, { method: 'PUT', json: { status: bug.status === 'open' ? 'done' : 'open' } }); load(); }

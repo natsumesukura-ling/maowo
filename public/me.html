@@ -36,7 +36,8 @@
   .setting .body { flex-grow: 1; min-width: 0; border-left: 1.5px solid var(--line); padding-left: 14px; }
   .setting .t { font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 700; }
   .setting .d { margin-top: 6px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .setting .dots { letter-spacing: 3px; color: var(--text2); }
+  .setting .d.conn { flex-wrap: nowrap; min-width: 0; }
+  .setting .dots { letter-spacing: 2px; color: var(--text2); white-space: nowrap; overflow: hidden; min-width: 0; }
   .setting .chev { color: var(--accent); display: flex; transition: transform .2s; }
   .setting.open .chev { transform: rotate(90deg); }
   .detail { margin: -4px 0 14px; padding: 14px; border-radius: 16px; background: var(--white); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
@@ -94,7 +95,7 @@ function render(d) {
 
     <button class="setting ${open.has('claude') ? 'open' : ''}" data-toggle="claude">
       <div class="ic">${icon('plug', 34, 1.4)}</div>
-      <div class="body"><div class="t">Claude MCP 配置</div><div class="d"><span class="dots">••••••••••</span>${status(claudeOn)}</div></div>${chev}
+      <div class="body"><div class="t">Claude MCP 配置</div><div class="d conn"><span class="dots">••••••</span>${status(claudeOn)}</div></div>${chev}
     </button>
     <div class="detail ${open.has('claude') ? '' : 'hidden'}">
       <div class="d">在 Claude 的「设置 → 连接器」里添加自定义连接器，填下面的地址，所有窗口共用。地址里带着你的 token，只给自己的 Claude 用，不要发给别人。</div>
@@ -104,7 +105,7 @@ function render(d) {
 
     <button class="setting ${open.has('gpt') ? 'open' : ''}" data-toggle="gpt">
       <div class="ic">${icon('plug', 34, 1.4)}</div>
-      <div class="body"><div class="t">ChatGPT MCP 配置</div><div class="d"><span class="dots">••••••••••</span>${status(gptOn)}</div></div>${chev}
+      <div class="body"><div class="t">ChatGPT MCP 配置</div><div class="d conn"><span class="dots">••••••</span>${status(gptOn)}</div></div>${chev}
     </button>
     <div class="detail ${open.has('gpt') ? '' : 'hidden'}">
       <div class="d">ChatGPT 这类只支持 OAuth 的应用：填下面这个不带 token 的地址，身份验证选 OAuth。连接时会跳到猫窝的授权页，点「允许」就好。</div>
@@ -140,7 +141,7 @@ function render(d) {
   }
   html += `<img class="art sleeping" src="/img/art/cat-sleep.webp" alt="">
     <button class="logout" id="logout">在这台设备上退出</button>`;
-  $('#content').innerHTML = html;
+  if (!Maowo.setHtml($('#content'), html)) return;
 
   document.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => {
     const k = b.dataset.toggle;

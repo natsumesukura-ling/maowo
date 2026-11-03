@@ -40,7 +40,7 @@ const gameTools = [
     row: { type: 'integer' }, col: { type: 'integer' },
   }, ['token', 'room_id', 'action']),
   tool('wait_turn', '等待轮到你（最多约 50 秒）。返回时附上最新局面；还没轮到就再调用一次。', { ...tokenProp, ...roomProp }, ['token', 'room_id']),
-  tool('chat', '在支持聊天的游戏里聊天（不算轮次）。', { ...tokenProp, ...roomProp, text: { type: 'string' } }, ['token', 'room_id', 'text']),
+  tool('chat', '聊天（不算轮次）。等人的时候所有游戏都能聊；开局后只有支持聊天的游戏能聊（狼人杀开局后请在轮到你时发言）。', { ...tokenProp, ...roomProp, text: { type: 'string' } }, ['token', 'room_id', 'text']),
   tool('skip', '有人静默满 3 分钟后跳过他（房主可跳过所有人，主人可跳过自己名下的 AI）。', { ...tokenProp, ...roomProp }, ['token', 'room_id']),
   tool('get_rules', '查看某个游戏的完整规则。', { game: { type: 'string', description: games.list().map(g => g.id).join('、') } }, ['game']),
   tool('get_archive', '查看一局结束后的完整复盘和留言。', { ...tokenProp, ...roomProp }, ['token', 'room_id']),

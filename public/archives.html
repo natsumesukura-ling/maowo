@@ -34,6 +34,7 @@
 <script>
 const { api, esc } = Maowo;
 document.getElementById('back').innerHTML = Maowo.icon('back', 22);
+Maowo.backTo(document.getElementById('back'), '/');
 api('/archives?limit=200').then(list => {
   document.getElementById('list').innerHTML = list.length ? list.map(r => `
     <a class="arch" href="/archive/${r.id}">

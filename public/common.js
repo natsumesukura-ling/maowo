@@ -86,6 +86,25 @@ const Maowo = (() => {
 
   const initial = name => String(name || '?').slice(0, 1);
 
+  // Puts html into el only when it differs from what was put there last time, so a refresh
+  // with nothing new does not rebuild the pictures (they would flash). Returns whether it changed.
+  function setHtml(el, html) {
+    if (el._maowoHtml === html) return false;
+    el.innerHTML = html;
+    el._maowoHtml = html;
+    return true;
+  }
+
+  // A back button that returns to the page you came from (inside maowo), else to `fallback`.
+  function backTo(el, fallback) {
+    el.href = fallback;
+    el.addEventListener('click', e => {
+      let fromHere = false;
+      try { fromHere = !!document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1; } catch {}
+      if (fromHere) { e.preventDefault(); history.back(); }
+    });
+  }
+
   // A round avatar: the uploaded picture, or the first character of the name.
   const avatar = (who, cls = '') =>
     `<div class="avatar ${cls}">${who && who.avatar ? `<img src="${esc(who.avatar)}" alt="" loading="lazy">` : esc(initial(who && who.name))}</div>`;
@@ -109,18 +128,22 @@ const Maowo = (() => {
     mask.innerHTML = `<div class="sheet-panel" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
     const panel = mask.firstElementChild;
     // In the shell, hide its buttons while the panel is open so they do not cover it.
-    const tell = open => { if (framed) topWin.postMessage({ maowo: 'sheet', open }, location.origin); };
-    const close = () => { mask.remove(); document.removeEventListener('keydown', onKey); tell(false); };
+    // Panels can stack (the crop panel opens over the AI panel), so count them.
+    const tell = () => { if (framed) topWin.postMessage({ maowo: 'sheet', open: sheet.count > 0 }, location.origin); };
+    let closed = false;
+    const close = () => { if (closed) return; closed = true; mask.remove(); document.removeEventListener('keydown', onKey); sheet.count--; tell(); };
     const onKey = e => { if (e.key === 'Escape') close(); };
     mask.addEventListener('click', e => { if (e.target === mask) close(); });
     document.addEventListener('keydown', onKey);
     document.body.appendChild(mask);
-    tell(true);
+    sheet.count = (sheet.count || 0) + 1;
+    tell();
     panel.close = close;
     return panel;
   }
 
-  // Picks a picture, crops it to a square, shrinks it to 320px and uploads it as the avatar of account `id`.
+  // Picks a picture, lets you place it in a round frame (drag to move, pinch or slider to zoom),
+  // then shrinks the framed part to 320px and uploads it as the avatar of account `id`.
   function pickAvatar(id) {
     return new Promise((resolve, reject) => {
       const input = document.createElement('input');
@@ -128,22 +151,82 @@ const Maowo = (() => {
       input.onchange = async () => {
         const file = input.files[0];
         if (!file) return;
+        let img;
         try {
-          const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('这张图打不开')); i.src = URL.createObjectURL(file); });
-          const side = Math.min(img.naturalWidth, img.naturalHeight), size = Math.min(320, side);
-          const c = document.createElement('canvas'); c.width = c.height = size;
-          c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-          URL.revokeObjectURL(img.src);
-          const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.88));
-          const res = await fetch(`/api/avatar/${id}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + token(), 'Content-Type': 'image/jpeg' }, body: blob });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || '上传失败');
-          toast('头像换好了'); resolve(data);
-        } catch (err) { toast(err.message); reject(err); }
+          img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('这张图打不开')); i.src = URL.createObjectURL(file); });
+        } catch (err) { toast(err.message); return reject(err); }
+        cropAvatar(img, id).then(resolve, reject).finally(() => URL.revokeObjectURL(img.src));
       };
       input.click();
     });
   }
 
-  return { token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, avatar, tabbar, sheet, pickAvatar };
+  function cropAvatar(img, id) {
+    return new Promise((resolve, reject) => {
+      const V = Math.min(280, window.innerWidth - 64); // the round frame, in CSS px
+      const W = img.naturalWidth, H = img.naturalHeight;
+      const minS = Math.max(V / W, V / H), maxS = minS * 5;
+      let s = minS, x = (V - W * s) / 2, y = (V - H * s) / 2;
+      const panel = sheet(`<h2>调整头像</h2>
+        <div class="small muted" style="margin-bottom: 14px;">拖动挪位置，两指捏合或者拉下面的滑条放大缩小</div>
+        <div id="crop" style="position: relative; width: ${V}px; height: ${V}px; margin: 0 auto; border-radius: 50%; overflow: hidden; touch-action: none; cursor: grab; background: var(--card); box-shadow: 0 0 0 3px var(--white), 0 0 0 4px var(--border);">
+          <img id="crop-img" src="${img.src}" alt="" draggable="false" style="position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; user-select: none; -webkit-user-select: none; pointer-events: none;">
+        </div>
+        <input id="crop-zoom" type="range" min="0" max="1000" value="0" aria-label="放大缩小" style="margin: 18px 0 4px; padding: 0; accent-color: var(--accent);">
+        <div class="row" style="margin-top: 12px; flex-wrap: nowrap;">
+          <button class="btn" id="crop-cancel" style="flex: 1;">取消</button>
+          <button class="btn primary" id="crop-ok" style="flex: 2;">就这样</button>
+        </div>`);
+      const box = panel.querySelector('#crop'), pic = panel.querySelector('#crop-img'), zoom = panel.querySelector('#crop-zoom');
+      const clamp = () => { x = Math.min(0, Math.max(V - W * s, x)); y = Math.min(0, Math.max(V - H * s, y)); };
+      const draw = () => { clamp(); pic.style.transform = `translate(${x}px, ${y}px) scale(${s})`; zoom.value = String(Math.round((s - minS) / (maxS - minS) * 1000)); };
+      // Zoom to `next` keeping the point (cx, cy) of the frame still.
+      const zoomAt = (next, cx, cy) => { next = Math.min(maxS, Math.max(minS, next)); x = cx - (cx - x) * next / s; y = cy - (cy - y) * next / s; s = next; draw(); };
+      draw();
+
+      const pts = new Map();
+      let last = null; // previous single-finger position, or previous pinch { d, cx, cy }
+      const local = e => { const r = box.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+      const pinch = () => { const [a, b] = [...pts.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; };
+      box.addEventListener('pointerdown', e => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, local(e)); last = pts.size === 2 ? pinch() : local(e); });
+      box.addEventListener('pointermove', e => {
+        if (!pts.has(e.pointerId)) return;
+        pts.set(e.pointerId, local(e));
+        if (pts.size === 2) {
+          const p = pinch();
+          if (last && last.d) { x += p.cx - last.cx; y += p.cy - last.cy; zoomAt(s * p.d / last.d, p.cx, p.cy); }
+          last = p;
+        } else if (pts.size === 1) {
+          const p = local(e);
+          if (last && last.d === undefined) { x += p.x - last.x; y += p.y - last.y; draw(); }
+          last = p;
+        }
+      });
+      const up = e => { pts.delete(e.pointerId); last = pts.size === 1 ? [...pts.values()][0] : null; };
+      box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+      box.addEventListener('wheel', e => { e.preventDefault(); const p = local(e); zoomAt(s * (e.deltaY < 0 ? 1.1 : 1 / 1.1), p.x, p.y); }, { passive: false });
+      zoom.addEventListener('input', () => zoomAt(minS + (maxS - minS) * Number(zoom.value) / 1000, V / 2, V / 2));
+
+      let done = false;
+      const close = panel.close;
+      panel.close = () => { close(); if (!done) reject(new Error('cancelled')); };
+      panel.querySelector('#crop-cancel').onclick = () => panel.close();
+      panel.querySelector('#crop-ok').onclick = async () => {
+        const btn = panel.querySelector('#crop-ok');
+        btn.disabled = true; btn.textContent = '上传中…';
+        try {
+          const size = Math.min(320, Math.round(V / s));
+          const c = document.createElement('canvas'); c.width = c.height = Math.max(64, size);
+          c.getContext('2d').drawImage(img, -x / s, -y / s, V / s, V / s, 0, 0, c.width, c.height);
+          const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.9));
+          const res = await fetch(`/api/avatar/${id}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + token(), 'Content-Type': 'image/jpeg' }, body: blob });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || '上传失败');
+          done = true; panel.close(); toast('头像换好了'); resolve(data);
+        } catch (err) { btn.disabled = false; btn.textContent = '就这样'; toast(err.message); }
+      };
+    });
+  }
+
+  return { token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, setHtml, backTo, avatar, tabbar, sheet, pickAvatar };
 })();

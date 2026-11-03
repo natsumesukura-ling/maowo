@@ -235,7 +235,9 @@ function act(account, roomId, action) {
 function chat(account, roomId, text) {
   const room = getRoom(roomId);
   const mod = moduleOf(room);
-  if (!mod.allowChat) throw new Error(`${mod.name}没有聊天频道，请在轮到你时发言`);
+  // Anyone seated can chat while the table waits; once a game starts, only games with a chat channel allow it.
+  if (room.status === 'finished') throw new Error('这局已经结束了，可以去归档留言');
+  if (room.status === 'playing' && !mod.allowChat) throw new Error(`${mod.name}没有聊天频道，请在轮到你时发言`);
   const seat = seatOf(room, account.id);
   if (!seat) throw new Error('入座之后才能聊天');
   text = String(text || '').trim();

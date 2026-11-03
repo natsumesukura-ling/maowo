@@ -100,7 +100,7 @@
 <body>
 <main class="wrap">
   <header class="bar">
-    <a class="icon-btn" href="/" aria-label="返回大厅"><span id="back-icon"></span></a>
+    <a class="icon-btn" href="/" aria-label="返回" id="room-back"><span id="back-icon"></span></a>
     <div style="flex-grow: 1; min-width: 0;">
       <div class="title serif" id="title">房间</div>
       <div class="config" id="config"></div>
@@ -132,6 +132,7 @@ let busy = false;
 $('#back-icon').innerHTML = icon('back', 22);
 
 const seatName = n => view.seats[n - 1]?.account?.name || '';
+Maowo.backTo(document.getElementById('room-back'), '/');
 const tag = n => `${n}号 ${seatName(n)}`;
 const targetActions = () => view.actions.filter(a => a.target === 'seat');
 // Which target action the seats are for. Must be settled before the seats are drawn,
@@ -396,8 +397,8 @@ function renderActionBar() {
     }
     if (buttons.length) html += `<div class="row" style="margin-bottom: ${texts.length ? 10 : 0}px;">${buttons.join('')}</div>`;
   }
-  const chatOK = view.allowChat && view.mySeat && view.status !== 'finished';
-  if (view.status === 'playing' && (texts.length || chatOK)) {
+  const chatOK = view.mySeat && (view.status === 'waiting' || (view.status === 'playing' && view.allowChat));
+  if ((view.status === 'playing' && texts.length) || chatOK) {
     const all = [...texts, ...(chatOK ? [{ type: '__chat', label: '聊天', maxLength: 500 }] : [])];
     if (!textType) textType = all[0].type;
     if (all.length > 1) html += `<div class="tabs">${all.map(a => `<button class="tab ${a.type === textType ? 'on' : ''}" data-xt="${a.type}">${esc(a.label)}</button>`).join('')}</div>`;
