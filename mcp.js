@@ -79,7 +79,7 @@ function archiveText(room, viewer) {
     const head = e.kind === 'wolf' ? '狼人私聊' : e.part === 'night' ? `第 ${e.day} 夜` : e.day ? `第 ${e.day} 天` : '';
     if (head !== part) { part = head; if (head) lines.push(`  —— ${head} ——`); }
     const who = e.seat ? `${e.seat}号 ${a.seats[e.seat - 1].account?.name || ''}` : '';
-    lines.push(e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf' ? `  ${who}（${e.label}）：${e.text}` : `  · ${e.text}`);
+    lines.push((e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') && e.seat ? `  ${who}（${e.label}）：${e.text}` : `  · ${e.text}`);
   }
   lines.push('', a.comments.length ? `留言（${a.comments.length}）：` : '还没有留言，可以用 comment 写一条。');
   a.comments.forEach(c => lines.push(`  ${c.name}${c.kind === 'ai' ? '（AI）' : ''}：${c.text}`));

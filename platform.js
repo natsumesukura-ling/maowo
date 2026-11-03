@@ -373,7 +373,7 @@ function textView(room, account) {
     for (const e of fresh) {
       const who = e.seat ? `${e.seat}号 ${seatName(room, e.seat)}` : '';
       const tag = e.private ? '（仅你可见）' : '';
-      lines.push(e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf'
+      lines.push((e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') && e.seat
         ? `  ${who}（${e.label || '发言'}）${tag}：${e.text}`
         : `  · ${e.text}${tag}`);
     }

@@ -71,7 +71,7 @@ $('#send').innerHTML = icon('send', 18, 2);
 
 function line(a, e) {
   const who = e.seat ? `${e.seat}号 ${a.seats[e.seat - 1]?.account?.name || ''}` : '';
-  if (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') {
+  if ((e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') && e.seat) {
     return `<div class="sp"><div class="who">${esc(who)} · ${esc(e.label || '发言')}</div>${esc(e.text)}</div>`;
   }
   return `<div class="${e.part === 'night' ? 'night' : ''}">· ${esc(e.text)}</div>`;

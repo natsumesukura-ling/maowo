@@ -325,6 +325,7 @@ function onBoardClick(e) {
 function renderEvents() {
   $('#events').innerHTML = events.map(e => {
     const who = e.seat ? tag(e.seat) : '';
+    if (e.kind === 'wolf' && !e.seat) return `<div class="private" data-ev="${e.id}">${view.status !== 'finished' ? '仅狼人可见 · ' : ''}${esc(e.text)}</div>`;
     if (e.kind === 'speech' || e.kind === 'chat' || e.kind === 'wolf') {
       const scope = e.kind === 'wolf' && view.status !== 'finished' ? ' · 仅狼人可见' : '';
       return `<div class="speech ${e.kind === 'wolf' ? 'wolf' : ''}" data-ev="${e.id}"><div class="who"><b>${esc(who)}</b> · ${esc(e.label || '发言')}${scope}</div><div class="bubble">${esc(e.text)}</div></div>`;
