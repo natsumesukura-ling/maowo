@@ -411,14 +411,21 @@ function renderActionBar() {
     else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.length ? '轮到你了，点棋盘落子' : '还没轮到你';
     html = `<div class="inputbox"><div class="placeholder">${esc(msg)}</div><button class="send" disabled aria-label="发送">${icon('send', 18, 2)}</button></div>`;
   }
-  // Keep a half-written speech across re-renders.
-  const draft = $('#text') ? $('#text').value : '';
+  // Nothing changed in the bar (e.g. the other player just moved): leave it alone, so the
+  // keyboard stays open and whatever is being typed is not disturbed.
+  if (html === bar.dataset.html) return;
+  bar.dataset.html = html;
+  // The bar does change: keep a half-written speech and the focus across the re-render.
+  const old = $('#text');
+  const draft = old ? old.value : '';
+  const hadFocus = !!old && document.activeElement === old;
   bar.innerHTML = html;
   const ta = $('#text');
   if (ta) {
     ta.value = draft;
     const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; $('#count').textContent = ta.value.length ? `${ta.value.length} / ${ta.maxLength}` : ''; };
     ta.oninput = grow; grow();
+    if (hadFocus) ta.focus({ preventScroll: true });
     $('#send').onclick = sendText;
   }
   bar.querySelectorAll('[data-tt]').forEach(b => b.onclick = () => { targetType = b.dataset.tt; picked = null; renderSeats(); renderActionBar(); });
@@ -440,15 +447,19 @@ function renderActionBar() {
 }
 
 async function sendText() {
-  const ta = $('#text');
-  const text = ta.value.trim();
+  const text = $('#text').value.trim();
   if (!text) return;
+  // Empty the box before sending: an update arriving mid-send must not bring the text back.
+  const clear = () => { const t = $('#text'); if (t) { t.value = ''; t.oninput && t.oninput(); } };
+  clear();
   try {
     if (textType === '__chat') await api(`/rooms/${roomId}/chat`, { json: { text } });
     else await act({ type: textType, text }, true);
-    ta.value = '';
     refresh();
-  } catch (err) { Maowo.toast(err.message); }
+  } catch (err) {
+    const t = $('#text'); if (t && !t.value) { t.value = text; t.oninput && t.oninput(); }
+    Maowo.toast(err.message);
+  }
 }
 
 async function act(action, rethrow) {
