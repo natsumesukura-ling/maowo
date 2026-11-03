@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F7EEE1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="猫窝">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
+<title>猫窝</title>
+<link rel="stylesheet" href="/common.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  /* 四页各住一个框，切换只是换哪一页在最前面，不重新打开网页 */
+  .pane { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; visibility: hidden; opacity: 0; transition: opacity .18s ease; }
+  .pane.on { visibility: visible; opacity: 1; }
+  .tabbar { transition: transform .22s ease; }
+  .tabbar.away { transform: translateY(110%); }
+  .tabbar a { -webkit-tap-highlight-color: transparent; }
+  @media (prefers-reduced-motion: reduce) { .pane, .tabbar { transition: none; } }
+</style>
+</head>
+<body>
+<div class="tabbar" id="tabbar"><nav aria-label="主要页面" id="tabs"></nav></div>
+<script src="/common.js"></script>
+<script>
+// Tab path -> the page that fills it. The pages also work on their own (see /p/...).
+const TABS = [
+  { id: 'me', path: '/me', src: '/p/me', label: '我的', icon: 'cat' },
+  { id: 'games', path: '/', src: '/p/games', label: '游戏', icon: 'gamepad' },
+  { id: 'diary', path: '/diary', src: '/p/diary', label: '日记', icon: 'notebook' },
+  { id: 'dev', path: '/dev', src: '/p/dev', label: '开发中…', icon: 'helmet' },
+];
+const tabs = document.getElementById('tabs'), bar = document.getElementById('tabbar');
+const frames = {};
+let current = null;
+
+tabs.innerHTML = TABS.map(t => `<a href="${t.path}" data-tab="${t.id}">${Maowo.icon(t.icon, 24, 1.6)}<span>${t.label}</span></a>`).join('');
+
+function frameFor(t) {
+  if (!frames[t.id]) {
+    const f = document.createElement('iframe');
+    f.className = 'pane'; f.title = t.label;
+    // The games page keeps the query (for ?splash=1).
+    f.src = t.src + (t.id === 'games' ? location.search : '');
+    document.body.insertBefore(f, bar);
+    frames[t.id] = f;
+  }
+  return frames[t.id];
+}
+
+function show(id, push) {
+  const t = TABS.find(x => x.id === id) || TABS[1];
+  if (current === t.id) {
+    // Tapping the tab you are on scrolls it back to the top.
+    try { frames[t.id].contentWindow.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+    return;
+  }
+  const f = frameFor(t);
+  if (current) {
+    // Coming back to a tab: refresh its data quietly.
+    try { f.contentWindow.maowoRefresh && f.contentWindow.maowoRefresh(); } catch {}
+  }
+  for (const [k, el] of Object.entries(frames)) el.classList.toggle('on', k === t.id);
+  tabs.querySelectorAll('a').forEach(a => { const on = a.dataset.tab === t.id; a.classList.toggle('on', on); on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
+  current = t.id;
+  document.title = `${t.label} · 猫窝`;
+  if (push) history.replaceState(null, '', t.path);
+  bar.classList.remove('away');
+}
+
+tabs.addEventListener('click', e => {
+  const a = e.target.closest('[data-tab]');
+  if (!a) return;
+  e.preventDefault();
+  show(a.dataset.tab, true);
+});
+
+// A page opened a bottom panel: get the buttons out of its way.
+addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || e.data.maowo !== 'sheet') return;
+  bar.classList.toggle('away', !!e.data.open);
+});
+
+const start = TABS.find(t => t.path === location.pathname) || TABS[1];
+show(start.id, false);
+// Load the other tabs in the background so the first tap on them is instant too.
+addEventListener('load', () => setTimeout(() => TABS.forEach(frameFor), 600));
+</script>
+</body>
+</html>

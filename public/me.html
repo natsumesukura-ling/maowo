@@ -168,7 +168,7 @@ function render(d) {
     if (bio === null) return;
     try { await api('/me', { method: 'PUT', json: { bio } }); load(); } catch (err) { Maowo.toast(err.message); }
   };
-  $('#logout').onclick = () => { if (confirm('在这台设备上退出？下次要重新输入 token。')) { Maowo.setToken(''); location.href = '/login'; } };
+  $('#logout').onclick = () => { if (confirm('在这台设备上退出？下次要重新输入 token。')) { Maowo.setToken(''); Maowo.go('/login'); } };
   const inv = $('#invite');
   if (inv) inv.onsubmit = async e => {
     e.preventDefault();
@@ -202,6 +202,7 @@ async function load() {
   try { const [me, conn] = await Promise.all([api('/me'), api('/connections')]); render({ ...me, conn }); }
   catch (err) { Maowo.toast(err.message); }
 }
+window.maowoRefresh = load;
 load();
 </script>
 </body>

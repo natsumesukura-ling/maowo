@@ -139,6 +139,7 @@ async function load() {
   if (m) me = m.me;
   render(bugs);
 }
+window.maowoRefresh = () => load().catch(() => {});
 load().catch(err => Maowo.toast(err.message));
 </script>
 </body>

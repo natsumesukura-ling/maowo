@@ -3,10 +3,17 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').cat
 
 const Maowo = (() => {
   const KEY = 'maowo-token';
+  // The four tab pages run inside the tab shell (shell.html) as frames. Links and redirects
+  // from a frame go to the whole window, not just the frame.
+  let framed = false;
+  try { framed = window.top !== window && window.top.location.origin === location.origin; } catch {}
+  if (framed) document.head.insertAdjacentHTML('afterbegin', '<base target="_top">');
+  const topWin = framed ? window.top : window;
+  const go = url => { topWin.location.href = url; };
   const token = () => { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } };
   const setToken = t => { try { t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY); } catch {} };
 
-  const toLogin = () => { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash); };
+  const toLogin = () => { const l = topWin.location; go('/login?next=' + encodeURIComponent(l.pathname + l.search + l.hash)); };
 
   async function api(path, opts = {}) {
     if (!token()) { toLogin(); throw new Error('需要登录'); }
@@ -86,12 +93,13 @@ const Maowo = (() => {
   // The four buttons at the bottom of 我的 / 游戏 / 日记 / 开发中.
   const TABS = [['me', '/me', '我的', 'cat'], ['games', '/', '游戏', 'gamepad'], ['diary', '/diary', '日记', 'notebook'], ['dev', '/dev', '开发中…', 'helmet']];
   function tabbar(active) {
+    document.body.classList.add('has-tabbar');
+    if (framed) return; // the shell draws the buttons
     const el = document.createElement('div');
     el.className = 'tabbar';
     el.innerHTML = `<nav aria-label="主要页面">${TABS.map(([id, href, label, ic]) =>
       `<a href="${href}" class="${id === active ? 'on' : ''}" ${id === active ? 'aria-current="page"' : ''}>${icon(ic, 24, 1.6)}<span>${label}</span></a>`).join('')}</nav>`;
     document.body.appendChild(el);
-    document.body.classList.add('has-tabbar');
   }
 
   // A panel that slides up from the bottom. Returns the panel element; close() removes it.
@@ -100,11 +108,14 @@ const Maowo = (() => {
     mask.className = 'sheet-mask';
     mask.innerHTML = `<div class="sheet-panel" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
     const panel = mask.firstElementChild;
-    const close = () => { mask.remove(); document.removeEventListener('keydown', onKey); };
+    // In the shell, hide its buttons while the panel is open so they do not cover it.
+    const tell = open => { if (framed) topWin.postMessage({ maowo: 'sheet', open }, location.origin); };
+    const close = () => { mask.remove(); document.removeEventListener('keydown', onKey); tell(false); };
     const onKey = e => { if (e.key === 'Escape') close(); };
     mask.addEventListener('click', e => { if (e.target === mask) close(); });
     document.addEventListener('keydown', onKey);
     document.body.appendChild(mask);
+    tell(true);
     panel.close = close;
     return panel;
   }
@@ -134,5 +145,5 @@ const Maowo = (() => {
     });
   }
 
-  return { token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, avatar, tabbar, sheet, pickAvatar };
+  return { token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, avatar, tabbar, sheet, pickAvatar };
 })();

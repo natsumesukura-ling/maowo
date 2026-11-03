@@ -24,16 +24,18 @@ app.use(express.json());
 // Pages
 // ============================================================
 const page = file => (req, res) => res.sendFile(path.join(__dirname, 'public', file));
-app.get('/', page('index.html'));
+// The four tabs share one shell page, so switching tabs never reloads the page.
+for (const p of ['/', '/me', '/diary', '/dev']) app.get(p, page('shell.html'));
+app.get('/p/games', page('index.html'));
+app.get('/p/me', page('me.html'));
+app.get('/p/diary', page('diary.html'));
+app.get('/p/dev', page('dev.html'));
 app.get('/room/:id', page('room.html'));
 app.get('/archive', page('archives.html'));
 app.get('/archive/:id', page('archive.html'));
-app.get('/me', page('me.html'));
 app.get('/login', page('login.html'));
 app.get('/vault', page('vault.html'));
-app.get('/diary', page('diary.html'));
 app.get('/diary/:id', page('diary.html'));
-app.get('/dev', page('dev.html'));
 app.use(express.static(path.join(__dirname, 'public')));
 // Profile pictures; the file names are random, see accounts.js.
 app.use('/avatars', express.static(accounts.AVATAR_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));

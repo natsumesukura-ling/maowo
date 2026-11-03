@@ -80,7 +80,7 @@
 const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
 $('#send').innerHTML = icon('send', 18, 2);
-const entryId = location.pathname.split('/')[2];
+const entryId = (location.pathname.match(/^\/diary\/([^/]+)/) || [])[1];
 let authorFilter = '';
 try { authorFilter = sessionStorage.getItem('maowo-diary-author') || ''; } catch {}
 const when = iso => `${Maowo.fmtDate(iso)} ${Maowo.fmtClock(iso)}`;
@@ -150,7 +150,7 @@ async function showEntry() {
   const del = $('#del');
   if (del) del.onclick = async () => {
     if (!confirm(`删除「${e.title}」？删掉就找不回来了。`)) return;
-    try { await api(`/diary/${e.id}`, { method: 'DELETE' }); location.href = '/diary'; } catch (err) { Maowo.toast(err.message); }
+    try { await api(`/diary/${e.id}`, { method: 'DELETE' }); Maowo.go('/diary'); } catch (err) { Maowo.toast(err.message); }
   };
 }
 
@@ -162,6 +162,7 @@ $('#form').onsubmit = async ev => {
   catch (err) { Maowo.toast(err.message); }
 };
 
+if (!entryId) window.maowoRefresh = () => showList().catch(() => {});
 (entryId ? showEntry() : showList()).catch(err => { $('#content').innerHTML = `<div class="empty">${esc(err.message)}</div>`; });
 </script>
 </body>
