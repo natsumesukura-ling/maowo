@@ -69,8 +69,7 @@ const twelve = ['wolf', 'wolf', 'wolf', 'wolf', 'villager', 'villager', 'village
   assert.strictEqual(s.step.kind, 'death');
   assert(!ww.actions(s, 9).some(a => a.type === 'shoot'), 'poisoned hunter must not shoot');
   act(9, 'speak', { text: '遗言' });
-  act(9, 'confirm');
-  assert.strictEqual(s.step.kind, 'day_order');
+  assert.strictEqual(s.step.kind, 'day_order', 'after last words a poisoned hunter is simply out');
   act(4, 'clockwise');
   assert.deepStrictEqual(s.step.order, [5, 6, 7, 8, 1, 2, 3, 4], 'clockwise from sheriff, sheriff last');
   for (const x of s.step.order.slice()) act(x, 'pass');
@@ -112,10 +111,51 @@ const twelve = ['wolf', 'wolf', 'wolf', 'wolf', 'villager', 'villager', 'village
   const { s, act } = game(['wolf', 'wolf', 'villager', 'villager', 'seer', 'witch']);
   act(1, 'kill', { target: 5 }); act(2, 'kill', { target: 5 });
   act(6, 'witch_pass'); act(5, 'check', { target: 1 });
-  act(5, 'speak', { text: '1号是狼' }); act(5, 'confirm');
+  act(5, 'speak', { text: '1号是狼' });
   for (const x of s.step.order.slice()) act(x, 'pass');
   act(1, 'vote', { target: 6 }); act(2, 'vote', { target: 6 }); act(3, 'abstain'); act(4, 'abstain'); act(6, 'abstain');
   assert(s.over && s.over.winner === 'wolf', 'all gods out → wolves win');
   console.log('ok 屠边');
+}
+// Nobody but a hunter who may shoot has to 「确认出局」; the hunter's choice is announced either way.
+{
+  const { s, act, logs } = game(nine);
+  // night 1: wolves kill 9 (hunter); witch passes; seer checks
+  for (const w of [1, 2, 3]) act(w, 'kill', { target: 9 });
+  act(8, 'witch_pass'); act(7, 'check', { target: 1 });
+  for (let x = 1; x <= 9; x++) if (ww.actions(s, x).some(a => a.type === 'not_run')) act(x, 'not_run');
+  assert.strictEqual(s.step.kind, 'death');
+  assert.strictEqual(s.step.seat, 9);
+  act(9, 'pass');
+  assert(ww.actions(s, 9).some(a => a.type === 'shoot') && ww.actions(s, 9).some(a => a.type === 'no_shoot'), 'hunter chooses');
+  assert(!ww.actions(s, 9).some(a => a.type === 'confirm'));
+  act(9, 'no_shoot');
+  assert(logs.some(l => /猎人 9号 .* 放弃开枪/.test(l.text)), 'no shot is announced');
+  // day: everyone passes, exile 4 (villager): straight on, no confirm step for them
+  for (const x of s.step.order.slice()) act(x, 'pass');
+  for (const x of [1, 2, 3, 5, 6, 7, 8]) act(x, 'vote', { target: 4 });
+  act(4, 'abstain');
+  assert.strictEqual(s.players[3].alive, false);
+  if (s.step && s.step.kind === 'death') {
+    assert.deepStrictEqual(ww.actions(s, 4).map(a => a.type).sort(), ['pass', 'speak'], 'only last words');
+    act(4, 'speak', { text: '我是好人' });
+  }
+  assert(!(s.step && s.step.kind === 'death' && s.step.seat === 4), 'exiled villager is out without confirming');
+  console.log('ok 只有猎人决定开枪，放弃开枪也会公布；其他人出局不用确认');
+}
+// A hunter exiled during the day who shoots: announced with the target.
+{
+  const { s, act, logs } = game(nine);
+  for (const w of [1, 2, 3]) act(w, 'kill_none');
+  act(8, 'witch_pass'); act(7, 'check', { target: 1 });
+  for (let x = 1; x <= 9; x++) act(x, 'not_run');
+  for (const x of s.step.order.slice()) act(x, 'pass');
+  for (const x of [1, 2, 3, 4, 5, 6, 7, 8]) act(x, 'vote', { target: 9 });
+  act(9, 'abstain');
+  if (s.step.stages && s.step.stages[s.step.stage] === 'lastwords') act(9, 'pass');
+  act(9, 'shoot', { target: 1 });
+  assert(logs.some(l => /猎人 9号 .* 开枪带走了 1号/.test(l.text)));
+  assert.strictEqual(s.players[0].alive, false);
+  console.log('ok 猎人被放逐开枪带走');
 }
 console.log('all rule checks passed');

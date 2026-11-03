@@ -86,9 +86,8 @@ const voteFor = target => (v, seat, req) => (req.some(a => a.type === 'vote') &&
   silence(id, 2 * MIN);
   assert.strictEqual(trySkip(id, owner), '已跳过');
   assert.strictEqual(room(id).seats[0].away, 'auto', 'two skips in a row: 托管');
-  // The 「确认出局」 stage is handled by the system right away.
+  // Last words were skipped; nobody but a hunter has anything left to do once out.
   assert.notStrictEqual(kind(id), 'death');
-  assert(lastLines(id, 6).some(t => /托管中，自动跳过/.test(t)));
   ok('A 全场归票 1号，1号投票前掉线：3 分钟、2 分钟后跳过，之后系统托管');
 }
 
@@ -97,12 +96,11 @@ const voteFor = target => (v, seat, req) => (req.some(a => a.type === 'vote') &&
   const id = newGame(ais.slice(0, 9), ROLES9);
   runUntil(id, [], () => kind(id) === 'day_vote', noSheriffNoKill);
   runUntil(id, [], () => kind(id) === 'death', voteFor(1));
-  silence(id, 3 * MIN); assert.strictEqual(trySkip(id, owner), '已跳过');
-  silence(id, 2 * MIN); assert.strictEqual(trySkip(id, owner), '已跳过');
-  assert.notStrictEqual(kind(id), 'death');
+  silence(id, 3 * MIN); assert.strictEqual(trySkip(id, owner), '已跳过'); // last words
+  assert.notStrictEqual(kind(id), 'death', 'no 确认出局 after last words');
   for (let i = 0; i < 3000 && room(id).status !== 'finished'; i++) if (!stepOnce(id, [1], randomPolicy)) throw new Error('stuck');
   assert.strictEqual(room(id).status, 'finished');
-  ok('B 放逐后才掉线：跳过遗言和出局确认，游戏照常打完');
+  ok('B 放逐后才掉线：跳过遗言，游戏照常打完');
 }
 
 // ---------- C: who may skip, and how long they wait ----------

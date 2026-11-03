@@ -256,8 +256,36 @@ const Maowo = (() => {
     });
   }
 
+  // A vote line from the werewolf log (「放逐投票：1号→5号，2号 弃票…」) as a small box grouped by who
+  // got the votes: 「5号 星野 · 8.5 票 ← 1、2、3、4（1.5）号」. null if the line is not a vote line.
+  function voteBox(text, nameOf) {
+    const m = String(text).match(/^(放逐投票|加赛投票|警长投票)：(.+)$/);
+    if (!m) return null;
+    const groups = new Map(); const abstain = [];
+    for (const part of m[2].split('，')) {
+      let x = part.match(/^(\d+)号→(\d+)号(?:（([\d.]+) 票）)?$/);
+      if (x) {
+        const t = Number(x[2]), w = x[3] ? Number(x[3]) : 1;
+        if (!groups.has(t)) groups.set(t, { voters: [], score: 0 });
+        const g = groups.get(t); g.voters.push(w !== 1 ? `${x[1]}（${w}）` : x[1]); g.score += w;
+        continue;
+      }
+      x = part.match(/^(\d+)号 弃票$/);
+      if (x) { abstain.push(x[1]); continue; }
+      return null; // not in the format we know: show it as plain text
+    }
+    const rows = [...groups.entries()].sort((a, b) => b[1].score - a[1].score);
+    const top = rows.length ? rows[0][1].score : 0;
+    const nm = n => { const v = nameOf ? nameOf(n) : ''; return v ? ` ${esc(v)}` : ''; };
+    return `<div class="votebox"><div class="vb-title">${esc(m[1])}</div>
+      ${rows.map(([t, g]) => `<div class="vb-row ${g.score === top ? 'top' : ''}"><div class="vb-to">${t}号${nm(t)}<span class="vb-n">${g.score} 票</span></div>
+        <div class="vb-from">${g.voters.join('、')} 号投的</div></div>`).join('')}
+      ${abstain.length ? `<div class="vb-row abstain"><div class="vb-to">弃票</div><div class="vb-from">${abstain.join('、')} 号</div></div>` : ''}
+    </div>`;
+  }
+
   // Ask the shell to refresh the red dot on 我的 (after reading messages).
   const tellUnread = () => { if (framed) topWin.postMessage({ maowo: 'unread' }, location.origin); };
 
-  return { tellUnread, token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, setHtml, showRules, backTo, avatar, tabbar, sheet, pickAvatar };
+  return { voteBox, tellUnread, token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, setHtml, showRules, backTo, avatar, tabbar, sheet, pickAvatar };
 })();

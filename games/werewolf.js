@@ -66,12 +66,14 @@ function kill(s, seat, cause, when) {
   if (['exile', 'shot', 'explode'].includes(cause)) p.publicCause = CAUSE[cause];
 }
 
-// Death follow-up for one seat: last words, then a final step everyone gets (so a hunter's
-// shot looks like anyone else's confirmation), then handing over the badge.
+// Death follow-up for one seat: last words, then (only for a hunter who may shoot) the choice to
+// shoot or not, then handing over the badge. Nobody else has to 「确认出局」 (绫, 2026-11-04):
+// out is out. A hunter's choice is announced either way: 「放弃开枪」 or 「开枪带走了…」.
+const canShoot = (s, seat, cause) => P(s, seat).role === 'hunter' && ['wolf', 'exile'].includes(cause);
 function deathStep(s, seat, cause, lastWords) {
   const stages = [];
   if (lastWords) stages.push('lastwords');
-  if (['wolf', 'poison', 'exile'].includes(cause)) stages.push('final');
+  if (canShoot(s, seat, cause)) stages.push('final');
   stages.push('badge');
   return { kind: 'death', seat, cause, stages };
 }
@@ -202,6 +204,8 @@ function begin(s, step, ctx) {
 
 function stageApplies(s, step, stage) {
   if (stage === 'badge') return s.sheriff === step.seat;
+  // Games saved before the change still list 'final' for everyone: skip it unless it is the hunter's.
+  if (stage === 'final') return canShoot(s, step.seat, step.cause);
   return true;
 }
 
@@ -519,8 +523,9 @@ function act(s, seat, action, ctx) {
     }
     case 'shoot':
     case 'no_shoot':
+      me.revealed = true;
+      if (type === 'no_shoot') ctx.log({ text: `猎人 ${tag(s, seat)} 放弃开枪` });
       if (type === 'shoot') {
-        me.revealed = true;
         ctx.log({ text: `猎人 ${tag(s, seat)} 开枪带走了 ${tag(s, t)}` });
         kill(s, t, 'shot');
         if (checkWin(s, ctx)) return { message: '已开枪' };
@@ -577,7 +582,7 @@ function phase(s) {
   if (s.over) return { label: '已结束', night: false, day: s.day, part: s.part };
   const night = s.part === 'night';
   const stepLabel = s.step && !NIGHT_STEPS.includes(s.step.kind)
-    ? (s.step.kind === 'death' ? (s.step.stages[s.step.stage] === 'lastwords' ? '遗言' : '出局') : LABEL[s.step.kind])
+    ? (s.step.kind === 'death' ? ({ lastwords: '遗言', final: '猎人开枪', badge: '移交警徽' }[s.step.stages[s.step.stage]] || '出局') : LABEL[s.step.kind])
     : '';
   return {
     label: night ? `第 ${s.night} 夜` : `第 ${s.day} 天${stepLabel ? ' · ' + stepLabel : ''}`,
@@ -592,7 +597,7 @@ function pending(s) {
   const hidden = NIGHT_STEPS.includes(step.kind);
   const mode = ['sheriff_speech', 'sheriff_pk_speech', 'day_speech', 'pk_speech', 'death', 'day_order'].includes(step.kind) || hidden && step.kind !== 'wolf' ? 'turn' : 'simultaneous';
   let label = LABEL[step.kind] || '操作';
-  if (step.kind === 'death') label = step.stages[step.stage] === 'lastwords' ? '遗言' : step.stages[step.stage] === 'badge' ? '移交警徽' : '出局确认';
+  if (step.kind === 'death') label = step.stages[step.stage] === 'lastwords' ? '遗言' : step.stages[step.stage] === 'badge' ? '移交警徽' : '猎人决定是否开枪';
   return { mode, seats, since: step.since, label, hidden };
 }
 
@@ -707,7 +712,7 @@ const rulesFull = `狼人杀规则（照搬 GG 狼人杀）
 - 公布昨夜出局的玩家（不公布死因），存活玩家依次发言（speak，每次最多 500 字），也可以过（pass）。
 - 第 1 夜出局的玩家有遗言；之后夜里出局的没有；被放逐的玩家有遗言。
 - 放逐投票：所有存活玩家同时投票（vote），不能投自己，可以弃票（abstain）。最高票并列则进入一次加赛发言和加赛投票（平票者不投票）；再平票或全员弃票则无人出局。
-- 猎人：被狼人袭击或被放逐时可以开枪（shoot）带走一名存活玩家，也可以不开（no_shoot）；被毒死不能开枪。出局玩家都要确认出局（confirm），这样别人分不出谁是猎人。
+- 猎人：被狼人袭击或被放逐时可以开枪（shoot）带走一名存活玩家，也可以不开（no_shoot）；被毒死不能开枪。不管开不开枪，系统都会公布（「放弃开枪」或「开枪带走了某某」）。其他人出局后直接离场，不用确认。
 - 自爆：狼人可在白天发言阶段自爆（explode），公开身份，立即结束当天，进入黑夜。
 - 认输：只剩最后一只狼时，可以在白天发言阶段代表狼人阵营认输（concede）。
 

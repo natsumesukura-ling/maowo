@@ -123,3 +123,14 @@ body.night .avatar.me { background: var(--text); color: var(--bg); }
 }
 .sheet-panel .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 12px; }
 .sheet-panel h2 { font-family: "Noto Serif SC", serif; font-size: 22px; margin: 0 0 4px; }
+
+/* 狼人杀的投票结果：按「谁被投了」分组装在一个框里（房间页和归档页共用） */
+.votebox { align-self: stretch; padding: 10px 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--border); font-size: 13px; }
+.votebox .vb-title { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.votebox .vb-row { padding: 6px 0; border-top: 1px dashed var(--border); }
+.votebox .vb-title + .vb-row { border-top: none; }
+.votebox .vb-to { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: var(--text); }
+.votebox .vb-row.top .vb-to { color: var(--accent); }
+.votebox .vb-n { font-weight: 600; white-space: nowrap; }
+.votebox .vb-from { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+.votebox .abstain .vb-to { font-weight: 400; color: var(--muted); }
