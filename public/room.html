@@ -16,7 +16,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
 <style>
-  main.wrap { padding-bottom: 170px; }
+  /* 上下分开（绫画的）：上面房间信息、谁在行动、座位、身份一直钉着不动；下面的发言、聊天、投票自己滚动。 */
+  html, body { height: 100%; }
+  body { min-height: 0; overflow: hidden; }
+  main.wrap { padding-bottom: 0; height: 100%; display: flex; flex-direction: column; }
+  .top-pane { flex: none; max-height: 58%; overflow-y: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .top-pane::-webkit-scrollbar { display: none; }
+  body.gomoku .top-pane { max-height: 78%; }
+  .feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -16px; padding: 4px 16px 0; }
   .title { font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .config { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .notice {
@@ -99,27 +106,6 @@
   .tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
   .tab { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--text2); font: inherit; font-size: 12px; cursor: pointer; }
   .tab.on { background: var(--text); color: var(--bg); border-color: var(--text); }
-  /* 往下滑、座位滑出屏幕时，顶上固定一条小座位栏：谁在行动、谁出局，一眼就能看到 */
-  .mini {
-    position: fixed; left: 0; right: 0; top: 0; z-index: 22; background: var(--bg); border-bottom: 1px solid var(--border);
-    box-shadow: 0 4px 14px rgba(42, 31, 23, .08); padding: 8px 0 8px; transform: translateY(-110%); transition: transform .2s ease, background .4s;
-  }
-  .mini.on { transform: none; }
-  .mini .line { font-size: 12.5px; color: var(--text2); display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
-  .mini .line .t { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mini .line .s { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
-  .mini .row6 { display: flex; flex-wrap: wrap; gap: 6px 4px; justify-content: center; }
-  .mseat { position: relative; width: 34px; height: 34px; padding: 0; border: none; background: transparent; cursor: default; flex-shrink: 0; }
-  .mseat .c { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 12px; background: var(--card); border: 1px solid var(--border); color: var(--text2); margin: 1px; }
-  .mseat .c img { width: 100%; height: 100%; object-fit: cover; }
-  .mseat .n { position: absolute; right: -3px; bottom: -3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); font-size: 9.5px; line-height: 13px; text-align: center; color: var(--text2); }
-  .mseat.dead { opacity: .35; filter: grayscale(1); }
-  .mseat.active .c { box-shadow: 0 0 0 2.5px var(--accent-line); }
-  .mseat.me .c { border: 1.5px solid var(--text); }
-  .mseat.picked .c { box-shadow: 0 0 0 2.5px var(--accent); }
-  .mseat.picked .n { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .mseat.pickable { cursor: pointer; }
-  .mseat.faded { opacity: .45; }
   .board-wrap { margin-top: 8px; background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 8px; display: flex; justify-content: center; }
   canvas { display: block; touch-action: manipulation; max-width: 100%; }
   .count { font-size: 11px; color: var(--muted); text-align: right; margin-top: 4px; }
@@ -127,6 +113,7 @@
 </head>
 <body>
 <main class="wrap">
+  <div class="top-pane" id="top">
   <header class="bar">
     <a class="icon-btn" href="/" aria-label="返回" id="room-back"><span id="back-icon"></span></a>
     <div style="flex-grow: 1; min-width: 0;">
@@ -140,10 +127,10 @@
   <div id="roombar"></div>
   <div class="seats" id="seats"></div>
   <div id="extra"></div>
-  <div class="events" id="events"></div>
+  </div>
+  <div class="feed" id="feed"><div class="events" id="events"></div></div>
 </main>
 <button class="newmsg hidden" id="newmsg"></button>
-<div class="mini" id="mini" aria-hidden="true"><div class="wrap"><div class="line"><span class="t" id="mini-t"></span><span class="s" id="mini-s"></span></div><div class="row6" id="mini-seats"></div></div></div>
 <div class="actionbar"><div class="wrap" id="actionbar"></div></div>
 
 <script src="/common.js"></script>
@@ -272,8 +259,6 @@ function tick() {
   if (!view || !view.pending) return;
   const el = $('#silence');
   if (el) el.textContent = `已静默 ${Maowo.fmtSilence(Date.now() - view.pending.since)}`;
-  const ms = $('#mini-s');
-  if (ms && view.status === 'playing') ms.textContent = `已静默 ${Maowo.fmtSilence(Date.now() - view.pending.since)}`;
   const skip = $('#skip');
   if (skip && skip.disabled && Date.now() >= skipAt) skip.disabled = false;
 }
@@ -324,43 +309,7 @@ function renderSeats() {
     picked = picked === seat ? null : seat;
     renderSeats(); renderActionBar();
   });
-  renderMini(targets);
 }
-
-// The small pinned copy of the seats (and who is acting), shown while the big one is scrolled away.
-// Its seats can be tapped to pick a target too, so you never have to scroll back up.
-function renderMini(targets) {
-  const players = view.board && view.board.players;
-  const p = view.pending;
-  const mine = p && !p.hidden && view.mySeat && p.seats.includes(view.mySeat);
-  $('#mini-t').innerHTML = view.status === 'playing' && p ? `${mine ? '<b>轮到你了</b> · ' : ''}${esc(p.text)}` : esc(view.phase || '');
-  $('#mini-s').textContent = view.status === 'playing' && p ? `已静默 ${Maowo.fmtSilence(Date.now() - p.since)}` : '';
-  $('#mini-seats').innerHTML = view.seats.map(s => {
-    const pl = players ? players[s.seat - 1] : null;
-    const cls = ['mseat'];
-    if (s.me) cls.push('me');
-    if (pl && !pl.alive) cls.push('dead');
-    if (view.board && view.board.speaking === s.seat) cls.push('active');
-    if (picked === s.seat) cls.push('picked');
-    const pickable = view.status === 'playing' && targets.includes(s.seat);
-    if (pickable) cls.push('pickable');
-    if (targetType && !pickable && !(pl && !pl.alive)) cls.push('faded');
-    const name = s.account ? s.account.name : '空位';
-    return `<button class="${cls.join(' ')}" data-mseat="${s.seat}" aria-label="${s.seat}号 ${esc(name)}" ${pickable ? '' : 'tabindex="-1"'}>
-      <span class="c">${s.account?.avatar ? `<img src="${esc(s.account.avatar)}" alt="">` : esc(Maowo.initial(name))}</span><span class="n">${s.seat}</span></button>`;
-  }).join('');
-  $('#mini-seats').querySelectorAll('.mseat.pickable').forEach(b => b.onclick = () => {
-    const seat = Number(b.dataset.mseat);
-    picked = picked === seat ? null : seat;
-    renderSeats(); renderActionBar();
-  });
-}
-// Show the pinned copy once the big seats have scrolled off the top.
-new IntersectionObserver(([e]) => {
-  const on = !e.isIntersecting && e.boundingClientRect.top < 0 && !!view && view.status !== 'waiting';
-  $('#mini').classList.toggle('on', on);
-  $('#mini').setAttribute('aria-hidden', on ? 'false' : 'true');
-}).observe(document.getElementById('seats'));
 
 // ---------- identity / board ----------
 function renderExtra() {
@@ -466,18 +415,19 @@ function noteNew(added) {
 function clearNew() { unseenId = null; $('#newmsg').classList.add('hidden'); }
 $('#newmsg').onclick = () => {
   const el = unseenId !== null && evEl(unseenId);
-  if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 90, behavior: 'smooth' });
+  if (el) feed.scrollTo({ top: feed.scrollTop + el.getBoundingClientRect().top - feed.getBoundingClientRect().top - 16, behavior: 'smooth' });
   clearNew();
 };
 // Seen = the first new message has come into view, or you are at the bottom of the page
 // (the last lines can sit under the action bar even when you cannot scroll further).
-const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 40;
+const feed = document.getElementById('feed');
+const atBottom = () => feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 40;
 function checkSeen() {
   if (unseenId === null) return;
   const el = evEl(unseenId);
   if (!el || onScreen(el)) clearNew();
 }
-window.addEventListener('scroll', checkSeen, { passive: true });
+feed.addEventListener('scroll', checkSeen, { passive: true });
 window.addEventListener('touchend', () => setTimeout(checkSeen, 300), { passive: true });
 
 // ---------- action bar ----------
@@ -600,9 +550,10 @@ function apply(v) {
   pickTargetType();
   renderHeader(); renderNotice(); renderRoomBar(); renderSeats(); renderExtra(); renderEvents(); renderActionBar();
   // Leave room at the bottom for the action bar, whatever its height right now.
-  document.querySelector('main').style.paddingBottom = (document.querySelector('.actionbar').offsetHeight + 24) + 'px';
-  // Only the first load starts at the newest message; after that the page stays where you are.
-  if (first) window.scrollTo(0, document.body.scrollHeight);
+  feed.style.paddingBottom = (document.querySelector('.actionbar').offsetHeight + 16) + 'px';
+  document.body.classList.toggle('gomoku', view.game === 'gomoku');
+  // Only the first load starts at the newest message; after that the list stays where you are.
+  if (first) feed.scrollTop = feed.scrollHeight;
   else if (added.length) noteNew(added);
 }
 
