@@ -93,6 +93,11 @@ $DOMAIN {
 	reverse_proxy 127.0.0.1:$PORT
 }
 EOF
+# Caddy is built with Go 1.24+, which listens with Multipath TCP when the kernel allows it.
+# 猫窝 does not need MPTCP, and CVE-2026-98432 (TCP use-after-free, 2026-10) was shown exploitable
+# for remote root through MPTCP listeners, so it stays off. Caddy restarts below to listen without it.
+echo 'net.mptcp.enabled = 0' > /etc/sysctl.d/99-maowo-no-mptcp.conf
+sysctl -q -w net.mptcp.enabled=0 2>/dev/null || true
 systemctl enable caddy >/dev/null
 systemctl restart caddy
 
@@ -111,6 +116,10 @@ $(printf '\033[1;32m')猫窝装好啦！$(printf '\033[0m')
 
 以后更新：再运行一次同样的安装命令。
 EOF
+    # A kernel security update only counts after a reboot.
+    if [ -f /var/run/reboot-required ]; then
+      echo; echo "$(printf '\033[1;33m')系统装了需要重启才生效的更新（比如内核补丁）。方便的时候运行：sudo reboot$(printf '\033[0m')"
+    fi
     exit 0
   fi
   sleep 4
