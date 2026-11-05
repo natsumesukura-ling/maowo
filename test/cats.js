@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const assert = require('assert');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maowo-cats-'));
-const PORT = 3900 + Math.floor(Math.random() * 300);
+const PORT = 4200 + Math.floor(Math.random() * 300); // clear of ports fetch refuses (4045, 4190)
 const URL_ = `http://127.0.0.1:${PORT}`;
 const OWNER = 'owner-test-token';
 const SECRET_KEY = 'sk-test-abcdef-9f3a';

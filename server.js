@@ -18,6 +18,8 @@ const lore = require('./lore');
 const app = express();
 // Caddy in front terminates HTTPS; trust its X-Forwarded-* headers for the public URL.
 app.set('trust proxy', 'loopback');
+// 门铃: every refused request (401 / 403) leaves one line in the system log, never a token.
+app.use(require('./doorbell').middleware);
 app.use(oauth.router);
 // MCP calls may carry a base64 file for vault_save_file, so the MCP routes get a larger limit.
 app.use('/mcp', express.json({ limit: Math.ceil(vault.MAX_FILE_BYTES * 1.4) }));

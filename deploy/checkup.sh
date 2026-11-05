@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 猫窝服务器安全体检（只看不改）
 #
-#   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/checkup.sh?v=2" | sudo bash
+#   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/checkup.sh?v=4" | sudo bash
 #
 # 只读：不改任何配置、不装任何东西、不重启任何服务。
 # 口令、钥匙、token 只报「有没有、谁能读」，从不打印内容。
@@ -190,7 +190,16 @@ info "猫窝「导出全部」里有：存档、帖子文字。还没有：帖�
 # ------------------------------------------------------------
 sec "8. 门铃：被拒绝的访问有没有记下来"
 if grep -q '^\s*log' /etc/caddy/Caddyfile 2>/dev/null; then ok "Caddy 记访问日志"; else warn "Caddy 没开访问日志：谁来敲过门（包括被拒绝的）查不到"; fi
-info "猫窝程序自己：被拒绝的请求现在不记日志"
+n=$(journalctl -u maowo --since '-7 days' --no-pager 2>/dev/null | grep -c '\[门铃\]' || true)
+if journalctl -u maowo --since '-30 days' --no-pager 2>/dev/null | grep -q '\[门铃\]' || [ -f /opt/maowo/doorbell.js ]; then
+  ok "猫窝的门铃：装了。最近 7 天被拒绝 ${n:-0} 次（看：sudo journalctl -u maowo --since -1day | grep 门铃）"
+  journalctl -u maowo --since '-7 days' --no-pager 2>/dev/null | grep -oE '\[门铃\] [0-9]+ \S+ [A-Z]+ \S+' | awk '{print $5, $6}' | sort | uniq -c | sort -rn | head -5 | sed 's/^/      最常被敲的门：/'
+else
+  warn "猫窝程序自己：被拒绝的请求不记日志"
+fi
+if systemctl is-active --quiet fail2ban 2>/dev/null; then
+  info "fail2ban 现在关着 $(fail2ban-client status sshd 2>/dev/null | awk -F: '/Currently banned/ {gsub(/ /,"",$2); print $2}') 个地址，一共抓过 $(fail2ban-client status sshd 2>/dev/null | awk -F: '/Total banned/ {gsub(/ /,"",$2); print $2}') 个"
+fi
 info "SSH 失败登录记在系统日志里（journalctl -u ssh）。$(journalctl --disk-usage 2>/dev/null)"
 
 echo

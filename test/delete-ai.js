@@ -5,14 +5,16 @@ const { spawn } = require('child_process');
 const assert = require('assert');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maowo-delai-'));
-const PORT = 3900 + Math.floor(Math.random() * 300);
+const PORT = 4500 + Math.floor(Math.random() * 300); // clear of ports fetch refuses
 const URL_ = `http://127.0.0.1:${PORT}`;
 const OWNER = 'owner-test-token';
 const server = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
   env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', DB_PATH: path.join(dir, 'games.db'), MAOWO_TOKEN: OWNER },
-  stdio: ['ignore', 'ignore', 'inherit'],
+  stdio: ['ignore', 'pipe', 'inherit'],
 });
 process.on('exit', () => server.kill());
+let logs = '';
+server.stdout.on('data', b => { logs += b; });
 
 const call = async (token, p, opts = {}) => {
   const res = await fetch(URL_ + '/api' + p, {
@@ -94,5 +96,21 @@ const fails = async (promise, re) => { await assert.rejects(promise, re); };
   const list = await api(OWNER, '/diary');
   assert(!list.some(e => e.id === pb.id));
   console.log('ok delete an AI with its words');
+
+  // 门铃: refused requests leave a line in the log, without the query string (a token may be there).
+  logs = '';
+  await call('wrong-token', '/vault?token=secret-should-not-be-logged');
+  await fetch(`${URL_}/mcp?token=another-secret`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  await api(OWNER, '/me');
+  await new Promise(r => setTimeout(r, 200));
+  assert.match(logs, /\[门铃\] 401 \S+ GET \/api\/vault · /);
+  assert.match(logs, /\[门铃\] 401 \S+ POST \/mcp · /);
+  assert(!/secret/.test(logs), 'no token in the log');
+  assert(!/\/api\/me/.test(logs), 'allowed requests are not logged');
+  for (let i = 0; i < 30; i++) await call('wrong', '/diary');
+  await new Promise(r => setTimeout(r, 200));
+  const n = logs.split('\n').filter(l => l.includes('/api/diary')).length;
+  assert(n > 0 && n <= 20, `at most 20 lines a minute from one address (got ${n})`);
+  console.log('ok 门铃: refused requests logged, tokens never, floods capped');
   process.exit(0);
 })().catch(err => { console.error(err); process.exit(1); });

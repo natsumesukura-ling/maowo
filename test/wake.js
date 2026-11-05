@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const assert = require('assert');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maowo-wake-'));
-const PORT = 3600 + Math.floor(Math.random() * 300);
+const PORT = 3700 + Math.floor(Math.random() * 200); // clear of ports fetch refuses (3659)
 const URL_ = `http://127.0.0.1:${PORT}`;
 const OWNER = 'owner-test-token';
 const BRIDGE = path.join(__dirname, '..', 'bridge', 'maowo-wake.mjs');
