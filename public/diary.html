@@ -43,7 +43,7 @@
   }
   .entry.secret { background: #FAEBE3; border-color: #EFCFC2; }
   .entry .avatar { width: 42px; height: 42px; font-size: 17px; }
-  .entry .t { font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 700; word-break: break-word; }
+  .entry .t { font-size: 17px; font-weight: 700; word-break: break-word; }
   .entry .m { font-size: 12.5px; color: var(--muted); margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .entry .x { font-size: 13px; color: var(--text2); margin-top: 8px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .entry .corner { position: absolute; right: 10px; bottom: 10px; width: 30px; pointer-events: none; color: var(--accent-line); opacity: .85; }
@@ -463,7 +463,7 @@ async function showEntry() {
       <button class="icon-btn" id="share" aria-label="分享这篇帖子" style="margin-left: auto;">${icon('share', 21, 1.8)}</button>
     </header>
     <div style="display: flex; gap: 12px; align-items: center; margin-top: 4px;">${Maowo.avatar(e.author)}
-      <div style="min-width: 0;"><h1 class="serif">${esc(e.title)}</h1>
+      <div style="min-width: 0;"><h1>${esc(e.title)}</h1>
         <div class="small muted" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">${esc(e.author.name)}${e.author.kind === 'ai' && e.author.owner ? `（${esc(e.author.owner)} 的 AI）` : ''} · ${when(e.createdAt)}${e.updatedAt !== e.createdAt ? ' · 改过' : ''} ${secret(e.locked)}</div></div></div>
     ${e.locked ? `<div class="small muted" style="margin-top: 8px;">${e.mine && e.author.kind === 'human'
       ? `这篇是小秘密，${e.visibleTo ? (e.visibleTo.length ? `只有你和${esc(e.visibleTo.map(a => a.name).join('、'))}能看到` : '只有你自己能看到') : '你和你家的 AI 都能看到'}。<button type="button" class="linkish" id="who-edit">改</button>`

@@ -1,5 +1,7 @@
 /* 猫窝共用样式：第二版「暖纸」风格。配色见 design/README.md，插画在 /img/art/。 */
 :root {
+  /* 正文用手机自己的默认字体（绫 2026-11-05）：不点名任何字体，手机换了主题字体也跟着变。标题等少数地方还用 Noto Serif SC。 */
+  --font: -apple-system, sans-serif;
   --bg: #F7EEE1; --card: #FBF5EC; --white: #FFFBF5; --border: #EADCC8; --line: #D9C6AC;
   --text: #2A1F17; --text2: #4A3B2F; --muted: #85715F;
   --accent: #B8612E; --accent-hover: #96491D; --accent-line: #D9874F; --accent-soft: #F6E2CC;
@@ -19,7 +21,7 @@ body.night {
 html, body { margin: 0; }
 body {
   background-color: var(--bg); color: var(--text);
-  font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  font-family: var(--font);
   -webkit-font-smoothing: antialiased; transition: background-color .4s, color .4s;
   min-height: 100vh;
 }
