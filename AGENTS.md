@@ -80,7 +80,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 58）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 59）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -137,7 +137,7 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 ## 网页风格
 
 - 第二版「暖纸」配色：底色 `#F7EEE1`（带很淡的纸张噪点）、卡片 `#FBF5EC`、边框 `#EADCC8`、主文字 `#2A1F17`、次要文字 `#85715F`、强调 `#B8612E` / `#D9874F`、浅强调 `#F6E2CC`、「已连接」绿 `#E4E6CC`/`#5E6B32`、「小秘密」粉 `#F6DCD3`/`#A9503C`；夜晚底色仍是 `#1F1E1D`。都在 `public/common.css` 的变量里。第一版配色见 `design/README.md`。
-- 标题用 Noto Serif SC（加粗），正文用手机自己的默认字体：`common.css` 的 `--font`（`-apple-system, sans-serif`，不点名任何字体，这样手机换了主题字体也跟着变；绫 2026-11-05 要的）。帖子标题和内容、评论、猫们的私聊和群聊都用它，新写的地方也用 `var(--font)`，别再写 PingFang、Noto Sans。**界面不用 emoji**，小图标用线条 SVG（`common.js` 的 `icon()`），大插画用 `public/img/art/` 里的水彩图。新插画请绫找 ChatGPT 用同一画风画（透明背景、无文字），不要自己从截图抠。
+- 标题用 Noto Serif SC（加粗），正文用手机自己的默认字体：`common.css` 的 `--font`（`-apple-system, sans-serif`，不点名任何字体，这样手机换了主题字体也跟着变；绫 2026-11-05 要的）。帖子标题和内容、评论、猫们的私聊和群聊都用它，新写的地方也用 `var(--font)`，别再写 PingFang、Noto Sans。省略号「…」单独用 `MaowoDots`（`common.css` 顶上的 `@font-face`，`unicode-range: U+2026`，指向手机里的 Roboto / Helvetica / Arial），让它坐在底线上，不像中文字体那样居中（绫要的「下沉」）。**界面不用 emoji**，小图标用线条 SVG（`common.js` 的 `icon()`），大插画用 `public/img/art/` 里的水彩图。新插画请绫找 ChatGPT 用同一画风画（透明背景、无文字），不要自己从截图抠。
 - 小节标题用 `.ribbon`（纸签 + 细线），底部按钮用 `Maowo.tabbar('me'|'games'|'diary'|'dev')`，弹出面板用 `Maowo.sheet(html)`，头像用 `Maowo.avatar(info)`（有图显示图，没图显示名字第一个字）。
 - 手机竖屏优先；夜晚阶段整页变暗。
 

@@ -1,7 +1,16 @@
+/* 省略号「…」坐在底线上（像英文那样），不要中文字体里那种居中的。只换这一个字：
+   unicode-range 只有 U+2026，用手机里现成的西文字体，其他字照样用手机默认字体（绫 2026-11-05）。 */
+@font-face {
+  font-family: MaowoDots;
+  src: local("Roboto"), local("Roboto-Regular"), local("Roboto Regular"),
+       local("Helvetica Neue"), local("HelveticaNeue"), local("Helvetica"), local("Arial"), local("ArialMT"),
+       local("Segoe UI"), local("Liberation Sans"), local("DejaVu Sans");
+  unicode-range: U+2026;
+}
 /* 猫窝共用样式：第二版「暖纸」风格。配色见 design/README.md，插画在 /img/art/。 */
 :root {
   /* 正文用手机自己的默认字体（绫 2026-11-05）：不点名任何字体，手机换了主题字体也跟着变。标题等少数地方还用 Noto Serif SC。 */
-  --font: -apple-system, sans-serif;
+  --font: MaowoDots, -apple-system, sans-serif;
   --bg: #F7EEE1; --card: #FBF5EC; --white: #FFFBF5; --border: #EADCC8; --line: #D9C6AC;
   --text: #2A1F17; --text2: #4A3B2F; --muted: #85715F;
   --accent: #B8612E; --accent-hover: #96491D; --accent-line: #D9874F; --accent-soft: #F6E2CC;
