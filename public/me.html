@@ -86,7 +86,6 @@
 const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
 Maowo.tabbar('me');
-const mcpUrl = () => `${location.origin}/mcp?token=${encodeURIComponent(Maowo.token())}`;
 const where = w => w ? `在「${w.roomName}」${w.seat}号 · ${w.phase}` : '空闲';
 const open = new Set();
 let data = null;
@@ -97,8 +96,15 @@ const chev = `<span class="chev">${icon('chevronRight', 20, 2)}</span>`;
 function render(d) {
   data = d;
   const me = d.me;
-  const claudeOn = !!d.conn.urlToken.lastUsedAt;
-  const gptOn = d.conn.oauth.length > 0;
+  const isClaude = g => /claude|anthropic/i.test(g.name);
+  const claudeGrants = d.conn.oauth.filter(isClaude), gptGrants = d.conn.oauth.filter(g => !isClaude(g));
+  // The old way (owner token in the address) counts as connected only while it is still in use.
+  const oldWay = d.conn.urlToken.lastUsedAt && Date.now() - Date.parse(d.conn.urlToken.lastUsedAt) < 7 * 864e5;
+  const claudeOn = claudeGrants.length > 0 || !!oldWay;
+  const gptOn = gptGrants.length > 0;
+  const grantList = list => list.length ? `<div class="d">已授权的应用：</div>${list.map(g => `<div class="addr">
+        <div class="v">${esc(g.name)} · ${g.lastUsedAt ? '最近使用 ' + Maowo.fmtDate(g.lastUsedAt) : '授权于 ' + Maowo.fmtDate(g.createdAt)}</div>
+        <button class="btn sm danger" data-revoke="${g.id}">撤销</button></div>`).join('')}` : '';
   const defaultBio = me.isOwner ? '猫窝的主人，正在慢慢把这里搭起来。' : '猫窝的朋友。';
   let html = `<div class="profile">
       <button class="bell" id="bell" aria-label="${d.unread ? `消息，${d.unread} 条新的` : '消息'}">${icon('bell', 22, 1.8)}${d.unread ? `<span class="badge">${d.unread > 99 ? '99+' : d.unread}</span>` : ''}</button>
@@ -116,9 +122,11 @@ function render(d) {
       <div class="body"><div class="t">Claude MCP 配置</div><div class="d conn"><span class="dots">••••••</span>${status(claudeOn)}</div></div>${chev}
     </button>
     <div class="detail ${open.has('claude') ? '' : 'hidden'}">
-      <div class="d">在 Claude 的「设置 → 连接器」里添加自定义连接器，填下面的地址，所有窗口共用。地址里带着你的 token，只给自己的 Claude 用，不要发给别人。</div>
-      <div class="addr"><div class="v mono">${esc(location.origin)}/mcp?token=••••••</div><button class="btn sm" id="copy-mcp">复制</button></div>
-      <div class="d">${claudeOn ? `最近一次连上：${Maowo.fmtDate(d.conn.urlToken.lastUsedAt)} ${Maowo.fmtClock(d.conn.urlToken.lastUsedAt)}。` : ''}连上以后，在 Claude 的对话里说「去猫窝注册一下」，它就会出现在下面的「我的 AI」里。</div>
+      <div class="d">在 Claude 的「设置 → 连接器」里添加自定义连接器，填下面这个<b>不带 token</b> 的地址。连接时会跳到猫窝的授权页，粘贴你的 token、点「允许」就好，所有窗口共用。</div>
+      <div class="addr"><div class="v mono">${esc(location.origin)}/mcp</div><button class="btn sm" id="copy-mcp">复制</button></div>
+      ${oldWay && !claudeGrants.length ? `<div class="d" style="color: var(--danger);">你的 Claude 还在用旧地址（地址里带着 token），最近一次：${Maowo.fmtDate(d.conn.urlToken.lastUsedAt)} ${Maowo.fmtClock(d.conn.urlToken.lastUsedAt)}。在 Claude 里把连接器的地址换成上面这个，重新连一次。</div>` : ''}
+      ${grantList(claudeGrants)}
+      <div class="d">连上以后，在 Claude 的对话里说「去猫窝注册一下」，它就会出现在下面的「我的 AI」里。</div>
     </div>
 
     <button class="setting ${open.has('gpt') ? 'open' : ''}" data-toggle="gpt">
@@ -128,9 +136,7 @@ function render(d) {
     <div class="detail ${open.has('gpt') ? '' : 'hidden'}">
       <div class="d">ChatGPT 这类只支持 OAuth 的应用：填下面这个不带 token 的地址，身份验证选 OAuth。连接时会跳到猫窝的授权页，点「允许」就好。</div>
       <div class="addr"><div class="v mono">${esc(location.origin)}/mcp</div><button class="btn sm" id="copy-oauth">复制</button></div>
-      ${d.conn.oauth.length ? `<div class="d">已授权的应用：</div>${d.conn.oauth.map((g, i) => `<div class="addr">
-        <div class="v">${esc(g.name)} · ${g.lastUsedAt ? '最近使用 ' + Maowo.fmtDate(g.lastUsedAt) : '授权于 ' + Maowo.fmtDate(g.createdAt)}</div>
-        <button class="btn sm danger" data-revoke="${i}">撤销</button></div>`).join('')}` : ''}
+      ${grantList(gptGrants)}
     </div>
 
     <div class="ribbon" style="margin-top: 22px;"><span class="tag">其他设置</span><span class="rule"></span></div>
@@ -172,10 +178,10 @@ function render(d) {
     b.classList.toggle('open');
     b.nextElementSibling.classList.toggle('hidden');
   });
-  $('#copy-mcp').onclick = () => Maowo.copy(mcpUrl(), 'Claude 连接地址已复制');
+  $('#copy-mcp').onclick = () => Maowo.copy(`${location.origin}/mcp`, '地址已复制（不带 token）');
   $('#copy-oauth').onclick = () => Maowo.copy(`${location.origin}/mcp`, '地址已复制');
   document.querySelectorAll('[data-revoke]').forEach(b => b.onclick = async () => {
-    const g = d.conn.oauth[b.dataset.revoke];
+    const g = d.conn.oauth.find(x => x.id === b.dataset.revoke);
     if (!confirm(`撤销「${g.name}」的授权？它就连不上猫窝了，要用的话得重新授权。`)) return;
     try { await api(`/oauth/grants/${g.id}`, { method: 'DELETE' }); load(); } catch (err) { Maowo.toast(err.message); }
   });

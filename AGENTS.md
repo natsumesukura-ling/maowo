@@ -80,7 +80,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 60）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 61）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -145,7 +145,7 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 
 - 新服务器开机头几分钟会自动更新系统，占着 apt 锁。安装脚本已经设置了等待（`/etc/apt/apt.conf.d/99maowo-lock-timeout`）。
 - **MPTCP 关着**（2026-11-04）：CVE-2026-98432（Linux TCP 内核漏洞，9.8 分）被演示过通过 MPTCP 监听远程拿 root。Caddy 是 Go 1.24+ 编的，内核允许就会用 MPTCP 监听 80/443，所以安装脚本写了 `/etc/sysctl.d/99-maowo-no-mptcp.conf` 把它关掉。这只是降低风险，真正修好要装 Ubuntu 的内核补丁再重启（`apt update && apt upgrade -y` 然后 `reboot`；脚本最后看到 `/var/run/reboot-required` 会提醒）。
-- **SSH 只认钥匙 + fail2ban**（2026-11-05，绫点头的）：体检（`deploy/checkup.sh`，只读，`POST=1` 把结果发成只给小55看的小秘密）发现密码登录开着、一周 8698 次猜密码。绫平时用腾讯云小程序的「免密连接」，走 `tat_agent`，30 天里没有一次 SSH 登录，所以关密码不影响她。`deploy/ssh-lockdown.sh` 加了 `/etc/ssh/sshd_config.d/00-maowo.conf`（排在云镜像的 `50-cloud-init.conf`（PasswordAuthentication yes）前面，sshd 取第一次读到的值），装了 fail2ban（10 分钟错 3 次封一天，`backend = systemd`）。绫没有腾讯云网页版，小程序里没有 VNC。**门铃**（`doorbell.js`，2026-11-05）：被拒绝的请求（401 / 403）在系统日志里记一行 `[门铃] 状态 地址 方法 路径 · 程序`，`?` 后面不记（可能有 token），同一地址一分钟最多逐条记 20 条；看 `sudo journalctl -u maowo --since -1day | grep 门铃`。Caddy 的访问日志故意没开：它会把 Claude 连接地址里的 `?token=` 原样记下来。体检报告里还没处理的：总钥匙挂在网址上（Claude 的 MCP 地址、存档下载链接）、备份。
+- **SSH 只认钥匙 + fail2ban**（2026-11-05，绫点头的）：体检（`deploy/checkup.sh`，只读，`POST=1` 把结果发成只给小55看的小秘密）发现密码登录开着、一周 8698 次猜密码。绫平时用腾讯云小程序的「免密连接」，走 `tat_agent`，30 天里没有一次 SSH 登录，所以关密码不影响她。`deploy/ssh-lockdown.sh` 加了 `/etc/ssh/sshd_config.d/00-maowo.conf`（排在云镜像的 `50-cloud-init.conf`（PasswordAuthentication yes）前面，sshd 取第一次读到的值），装了 fail2ban（10 分钟错 3 次封一天，`backend = systemd`）。绫没有腾讯云网页版，小程序里没有 VNC。**门铃**（`doorbell.js`，2026-11-05）：被拒绝的请求（401 / 403）在系统日志里记一行 `[门铃] 状态 地址 方法 路径 · 程序`，`?` 后面不记（可能有 token），同一地址一分钟最多逐条记 20 条；看 `sudo journalctl -u maowo --since -1day | grep 门铃`。Caddy 的访问日志故意没开：它会把 Claude 连接地址里的 `?token=` 原样记下来。**钥匙不挂网址上**（2026-11-05）：REST 接口只认 `Authorization` 请求头，不再认 `?token=`（存档下载、导出全部改成带请求头 fetch 成 blob）；Claude 改成和 ChatGPT 一样走 OAuth（「我的」里只给不带 token 的 `/mcp` 地址，`test/oauth.js` 走一遍 Claude 的完整授权流程）。MCP 地址里的 `?token=` 暂时还认：AI 自己的 token（唤醒桥 `call`、旧对话）要用；**主人 token 放在 MCP 地址里**等绫在 Claude 里换成新地址后再停用。体检报告里还没处理的：之前提到的「总钥匙挂在网址上」第二步（停用主人 token 的 MCP 网址）（Claude 的 MCP 地址、存档下载链接）、备份。
 - raw.githubusercontent.com 有缓存，所以更新命令要加 `?v=N`。
 - Caddy 在前面，Express 设了 `trust proxy`，OAuth 元数据里的地址靠它拼出 https。
 - ChatGPT 的自定义 MCP 只有 OAuth；Claude 两种都行。

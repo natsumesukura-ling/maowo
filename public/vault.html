@@ -163,7 +163,24 @@ async function loadAis() {
 }
 const aiName = id => (myAis || []).find(a => a.id === id)?.name;
 const sharedText = list => !list.length ? '' : list.includes('all') ? '全部 AI' : list.map(aiName).filter(Boolean).join('、');
-const downloadUrl = (id, inline) => `/api/vault/${id}/download?token=${encodeURIComponent(getToken())}${inline ? '&inline=1' : ''}`;
+// Files come with the token in a header, never in the link: a link stays in the browser's history.
+const downloadPath = (id, inline) => `/api/vault/${id}/download${inline ? '?inline=1' : ''}`;
+async function fetchBlob(path) {
+  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + getToken() } });
+  if (!res.ok) { const r = await res.json().catch(() => ({})); throw new Error(r.error || `出错了（${res.status}）`); }
+  return res.blob();
+}
+async function saveFile(path, name, btn) {
+  const label = btn && btn.innerHTML;
+  if (btn) { btn.disabled = true; btn.textContent = '准备中…'; }
+  try {
+    const url = URL.createObjectURL(await fetchBlob(path));
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) { toast(err.message); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = label; } }
+}
 
 function header(crumb, backHash) {
   return `<header>
@@ -211,11 +228,13 @@ async function viewList(trash) {
     <div class="backup">
       <p class="hint">把全部笔记和文件（包括回收站和旧版本），还有你能看到的帖子，打包成一个压缩包，存到手机或电脑上。压缩包不用猫窝也能直接打开。换服务器时，在新的猫窝里导入它就能原样恢复；已经有的不会被覆盖。</p>
       <div class="actions">
-        <a class="btn" href="/api/vault/backup/export?token=${encodeURIComponent(getToken())}" download="maowo-存档-${new Date().toISOString().slice(0, 10)}.zip">${icon('download', 18)}导出全部</a>
+        <button class="btn" id="export">${icon('download', 18)}导出全部</button>
         <button class="btn" id="import">${icon('upload', 18)}从备份导入</button>
       </div>
     </div>`}`;
 
+  const ex = $('#export');
+  if (ex) ex.onclick = () => saveFile('/api/vault/backup/export', `maowo-存档-${new Date().toISOString().slice(0, 10)}.zip`, ex);
   // Note bodies are searched on the server; titles and tags filter instantly here.
   let contentHits = new Set();
   const render = () => {
@@ -296,12 +315,12 @@ async function viewItem(id) {
       ${item.deleted_at
         ? `<button class="btn primary" id="restore">恢复</button><button class="btn danger" id="purge">彻底删除</button>`
         : `<a class="btn primary" href="#/edit/${item.id}">编辑</a>
-           <a class="btn" href="${downloadUrl(item.id)}" download="${esc(item.kind === 'note' ? item.title + '.txt' : item.filename)}">下载</a>
+           <button class="btn" id="download">下载</button>
            <button class="btn danger" id="del">移到回收站</button>`}
     </div>
     ${item.kind === 'note' ? `<div class="paper">${esc(item.content)}</div>`
-      : isImage ? `<img class="preview" src="${downloadUrl(item.id, true)}" alt="${esc(item.title)}">`
-      : item.mime === 'application/pdf' ? `<a class="btn" href="${downloadUrl(item.id, true)}" target="_blank" rel="noopener">在新页面打开 PDF</a>`
+      : isImage ? `<img class="preview" id="preview" alt="${esc(item.title)}">`
+      : item.mime === 'application/pdf' ? `<button class="btn" id="open-pdf">在新页面打开 PDF</button>`
       : `<p class="hint">sha256 ${esc(item.sha256)}</p>`}
     ${revisions.length ? `<div class="section-title">以前的版本（${revisions.length}）</div>
       ${revisions.map(r => `<div class="rev"><span>${fmtTime(r.created_at)} · ${sourceLabel(r.source)} · ${fmtSize(r.size || 0)}</span>
@@ -310,6 +329,14 @@ async function viewItem(id) {
 
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
   if (!item.deleted_at) drawShare(item);
+  on('#download', e => saveFile(downloadPath(item.id), item.kind === 'note' ? item.title + '.txt' : item.filename, e.currentTarget));
+  const pv = $('#preview');
+  if (pv) fetchBlob(downloadPath(item.id, true)).then(b => { pv.src = URL.createObjectURL(b); }).catch(err => toast(err.message));
+  on('#open-pdf', async () => {
+    const w = window.open('', '_blank'); // opened right away, or the phone blocks it as a pop-up
+    try { const url = URL.createObjectURL(await fetchBlob(downloadPath(item.id, true))); if (w) w.location = url; else location.href = url; }
+    catch (err) { if (w) w.close(); toast(err.message); }
+  });
   on('#del', async () => { await api('/' + id, { method: 'DELETE' }); toast('已移到回收站'); location.hash = '#/'; });
   on('#restore', async () => { await api(`/${id}/restore`, { method: 'POST' }); toast('已恢复'); viewItem(id); });
   on('#purge', async () => {

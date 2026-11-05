@@ -25,10 +25,10 @@ function checkToken(given) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// Only from the Authorization header: a token in a link stays in browser history and logs.
 function tokenFromRequest(req) {
   const header = req.get('authorization') || '';
-  if (header.startsWith('Bearer ')) return header.slice(7).trim();
-  return req.query.token;
+  return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
 }
 
 // Express middleware

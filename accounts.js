@@ -144,10 +144,10 @@ function publicInfo(account) {
   };
 }
 
-// Express middleware: Bearer token (or ?token=) must belong to an account.
+// Express middleware: the Bearer token must belong to an account. Never ?token= (it would stay in history and logs).
 function requireAccount(req, res, next) {
   const header = req.get('authorization') || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : req.query.token;
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   const account = resolve(token);
   if (!account) return res.status(401).json({ error: '需要正确的 token' });
   req.account = account;
