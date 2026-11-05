@@ -206,6 +206,16 @@ const ok = name => console.log('ok', name);
     await assert.rejects(up('bad.docx', Buffer.from('not a zip')), /打不开/);
     ok('uploads: docx (paragraphs, tabs, &amp;), txt, Tavern json; .doc and others refused');
 
+    // The System prompt box reads a file too (nothing stored, just the words back).
+    const fileText = async (name, body) => {
+      const res = await fetch(`${URL_}/api/file-text?name=${encodeURIComponent(name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + OWNER, 'Content-Type': 'application/octet-stream' }, body });
+      const out = await res.json(); if (!res.ok) throw new Error(out.error); return out.text;
+    };
+    assert.strictEqual(await fileText('人设.docx', docx), '第一段 A&B\t尾巴\n第二段');
+    assert.strictEqual(await fileText('人设.md', Buffer.from('﻿# 阿栗\r\n轻快')), '# 阿栗\n轻快');
+    await assert.rejects(fileText('世界书.json', Buffer.from('{}')), /只支持/);
+    ok('System prompt from a file: docx, md');
+
     lb = await api(OWNER, `/cats/${cat.id}/lore/${zs.id}`, { method: 'PUT', json: { enabled: true, content: '总设定改过了' } });
     assert(lb.entries.find(e => e.id === zs.id).enabled);
     lb = await api(OWNER, `/cats/${cat.id}/lore/${zs.id}`, { method: 'DELETE' });

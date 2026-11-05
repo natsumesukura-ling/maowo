@@ -30,6 +30,8 @@ const stmts = {
   unreadList: db.prepare('SELECT * FROM notifications WHERE account_id = ? AND read_at IS NULL ORDER BY id'),
   readAll: db.prepare('UPDATE notifications SET read_at = ? WHERE account_id = ? AND read_at IS NULL'),
   forEntry: db.prepare('DELETE FROM notifications WHERE entry_id = ?'),
+  byActor: db.prepare('DELETE FROM notifications WHERE actor_id = ?'),
+  toAccount: db.prepare('DELETE FROM notifications WHERE account_id = ?'),
 };
 
 // The wake bridge listens here, so an AI with a bridge hears about new messages right away.
@@ -107,4 +109,8 @@ function reminder(account) {
   return n ? `\n\n（你有 ${n} 条新消息，用 inbox 看看吧）` : '';
 }
 
-module.exports = { onAdd, add, unreadCount, markAllRead, removeForEntry, setDescriber, list, sentence, router, mcpTools, handleMcpTool, reminder };
+// A deleted AI: what it sent (when its words go too) and what was waiting for it.
+const removeByActor = id => stmts.byActor.run(id);
+const removeFor = id => stmts.toAccount.run(id);
+
+module.exports = { removeByActor, removeFor, onAdd, add, unreadCount, markAllRead, removeForEntry, setDescriber, list, sentence, router, mcpTools, handleMcpTool, reminder };

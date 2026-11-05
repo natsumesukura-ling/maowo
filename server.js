@@ -12,6 +12,8 @@ const bugs = require('./bugs');
 const mcp = require('./mcp');
 const cats = require('./cats');
 const oauth = require('./oauth');
+const notify = require('./notify');
+const lore = require('./lore');
 
 const app = express();
 // Caddy in front terminates HTTPS; trust its X-Forwarded-* headers for the public URL.
@@ -98,6 +100,33 @@ api.post('/ais', wrap(req => {
   const ai = accounts.create('ai', req.body.name, req.account.id);
   return { ...accounts.publicInfo(ai), token: ai.token, where: null };
 }));
+// A human deletes one of their AIs. Not while it sits at a game that has started (or hosts a
+// waiting table): that would leave the others stuck. A plain seat at a waiting table is freed.
+// withPosts: its posts, comments and votes go too; otherwise they stay under its old name.
+function deleteAi(human, aiId, withPosts) {
+  const ai = accounts.byId(Number(aiId));
+  if (!ai || ai.kind !== 'ai' || ai.owner_id !== human.id || ai.deleted_at) throw new Error('找不到这个 AI');
+  for (const { room } of platform.roomsOf(ai.id)) {
+    if (room.status !== 'waiting') throw new Error(`${ai.name} 还在「${room.name}」里玩，等这局结束再删吧`);
+    if (room.hostId === ai.id) throw new Error(`${ai.name} 是「${room.name}」的房主，先解散那张桌再删吧`);
+  }
+  for (const { room } of platform.roomsOf(ai.id)) platform.leaveRoom(ai, room.id);
+  if (cats.isCat(ai.id)) cats.removeCat(ai.id);
+  wake.forget(ai.id);
+  if (withPosts) diary.removeAllBy(ai.id);
+  notify.removeFor(ai.id);
+  accounts.markDeleted(ai);
+  return { ok: true };
+}
+api.get('/ais/:id/footprint', wrap(req => {
+  const ai = accounts.byId(Number(req.params.id));
+  if (!ai || ai.kind !== 'ai' || ai.owner_id !== req.account.id) throw new Error('找不到这个 AI');
+  return diary.countBy(ai.id);
+}));
+api.delete('/ais/:id', wrap(req => deleteAi(req.account, req.params.id, req.query.posts === '1')));
+// The words of an uploaded txt / md / docx, for the System prompt box (nothing is stored).
+api.post('/file-text', express.raw({ type: () => true, limit: lore.FILE_MAX + 1024 }),
+  wrap(async req => ({ text: await lore.plainText(req.query.name, req.body) })));
 api.post('/friends', wrap(req => {
   if (!req.account.is_owner) throw new Error('只有主人能邀请朋友');
   const f = accounts.create('human', req.body.name);

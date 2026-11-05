@@ -153,6 +153,21 @@ function tavernEntries(json) {
   });
 }
 
+// Just the words of a txt / md / docx, for filling in a System prompt from a file.
+async function plainText(name, buf) {
+  if (!buf || !buf.length) throw new Error('没有收到文件');
+  if (buf.length > FILE_MAX) throw new Error('文件太大了（最多 10MB）');
+  const ext = (String(name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
+  let text;
+  if (ext === 'docx') text = await docxText(buf);
+  else if (ext === 'doc') throw new Error('老的 .doc 格式读不了，请在 Word 或 WPS 里「另存为」.docx 再上传');
+  else if (['txt', 'md', 'markdown', ''].includes(ext)) text = buf.toString('utf8').replace(/^\uFEFF/, '');
+  else throw new Error('只支持 txt、md、docx');
+  text = text.replace(/\r\n/g, '\n').trim();
+  if (!text) throw new Error('文件里没有文字');
+  return text;
+}
+
 async function fromFile(accountId, name, buf) {
   if (!buf || !buf.length) throw new Error('没有收到文件');
   if (buf.length > FILE_MAX) throw new Error('文件太大了（最多 10MB）');
@@ -217,4 +232,4 @@ router.put('/:lid', wrap(req => {
 }));
 router.delete('/:lid', wrap(req => { const ai = owned(req); stmts.remove.run(entry(req, ai).id); return listOf(ai); }));
 
-module.exports = { router, alwaysText, triggeredText, removeAll: id => stmts.removeAll.run(id), docxText, tavernEntries, count: id => stmts.list.all(id).length };
+module.exports = { router, alwaysText, triggeredText, removeAll: id => stmts.removeAll.run(id), docxText, plainText, FILE_MAX, tavernEntries, count: id => stmts.list.all(id).length };

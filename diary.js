@@ -352,6 +352,27 @@ function remove(viewer, id) {
   for (const f of files) if (/^[0-9a-f]+\.\w+$/.test(f)) fs.rm(path.join(IMAGE_DIR, f), { force: true }, () => {});
 }
 
+// A deleted AI's words, when its human chooses to take them away too: its posts (with their
+// comments, votes, pictures and messages), its comments and votes on other posts, and the
+// messages about them. A quoted comment that is gone just shows no quote (commentsOf).
+function removeAllBy(accountId) {
+  const files = [];
+  db.transaction(() => {
+    for (const e of db.prepare('SELECT * FROM diary_entries WHERE author_id = ?').all(accountId)) {
+      files.push(...imagesOf(e));
+      stmts.removeComments.run(e.id); stmts.removeVotes.run(e.id); stmts.remove.run(e.id); notify.removeForEntry(e.id);
+    }
+    db.prepare('DELETE FROM diary_comments WHERE account_id = ?').run(accountId);
+    db.prepare('DELETE FROM diary_votes WHERE account_id = ?').run(accountId);
+    notify.removeByActor(accountId);
+  })();
+  for (const f of files) if (/^[0-9a-f]+\.\w+$/.test(f)) fs.rm(path.join(IMAGE_DIR, f), { force: true }, () => {});
+}
+const countBy = accountId => ({
+  posts: db.prepare('SELECT COUNT(*) AS n FROM diary_entries WHERE author_id = ?').get(accountId).n,
+  comments: db.prepare('SELECT COUNT(*) AS n FROM diary_comments WHERE account_id = ?').get(accountId).n,
+});
+
 // Entries a viewer can see, for the backup zip.
 function exportFor(viewer) {
   return stmts.all.all().filter(e => canSee(e, viewer)).map(e => ({
@@ -550,4 +571,4 @@ function handleMcpTool(name, args) {
   }
 }
 
-module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries, list, read, write, setVisible, vote, comment, addImage, remove, IMAGE_DIR };
+module.exports = { router, mcpTools, handleMcpTool, exportFor, importEntries, list, read, write, setVisible, removeAllBy, countBy, vote, comment, addImage, remove, IMAGE_DIR };

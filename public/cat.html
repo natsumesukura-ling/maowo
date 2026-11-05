@@ -397,9 +397,11 @@ async function startSettings() {
       ${c ? `<div class="pic">${Maowo.avatar(c)}<button class="btn sm" id="pic">${icon('camera', 16)}换头像</button></div>` : ''}
       <label class="field">名字（最多 16 个字，猫窝里不能重名）</label><textarea class="single" rows="1" id="f-name" maxlength="16">${esc(f.name)}</textarea>
       <label class="field">一句话介绍（别人在猫窝里能看到，可以不填）</label><textarea class="single" rows="1" id="f-bio" maxlength="40">${esc(f.bio)}</textarea>
-      <label class="field">System prompt（只有它自己看得到）</label>
+      <div class="row" style="justify-content: space-between; align-items: flex-end; margin-bottom: 8px;"><label class="field">System prompt（只有它自己看得到）</label>
+        <button type="button" class="btn sm" id="prompt-up">${icon('book', 15, 1.8)}从文件读</button></div>
+      <input type="file" id="prompt-file" accept=".txt,.md,.markdown,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
       <textarea class="big" id="f-prompt" placeholder="比如：你叫阿栗，说话轻快，有点小骄傲……">${esc(f.systemPrompt)}</textarea>
-      <div class="hint">猫窝会在后面自动加上「怎么用猫窝」的说明、它的小本本和现在的时间，你不用写这些。</div>
+      <div class="hint">可以直接写，也可以点「从文件读」导入 txt / md / docx（会换掉框里现在的字，导入后还能改，点保存才算数）。猫窝会在后面自动加上「怎么用猫窝」的说明、它的小本本和现在的时间，你不用写这些。</div>
       ${c ? `<a class="lorelink" href="/cats/${c.id}/lore">${icon('book', 22, 1.6)}<span class="t">世界书<span class="s">设定资料：可以自己写，也可以上传 txt / md / docx</span></span><span class="v">${c.loreCount} 条</span>${icon('chevronRight', 18, 2)}</a>` : '<div class="hint">搬进来以后，可以在这里给它加世界书（设定资料）。</div>'}
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">用哪个模型</span><span class="rule"></span></div>
@@ -425,6 +427,23 @@ async function startSettings() {
     Maowo.backTo($('#back'), c ? `/cats/${c.id}` : '/cats');
     const keep = () => { f.name = $('#f-name').value; f.bio = $('#f-bio').value; f.systemPrompt = $('#f-prompt').value; };
     document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => { keep(); const id = Number(b.dataset.key); if (id !== f.keyId) { f.keyId = id; f.model = ''; } draw(); });
+    $('#prompt-up').onclick = () => $('#prompt-file').click();
+    $('#prompt-file').onchange = async e => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      if ($('#f-prompt').value.trim() && !confirm(`用「${file.name}」里的文字换掉现在写的 System prompt？`)) return;
+      Maowo.toast('读取中…');
+      try {
+        const res = await fetch(`/api/file-text?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': 'application/octet-stream' }, body: file });
+        const out = await res.json();
+        if (!res.ok) throw new Error(out.error || res.status);
+        if (out.text.length > 20000) Maowo.toast(`文件有 ${out.text.length} 字，System prompt 最多 2 万字，只放了前 2 万字。长的设定可以放进世界书`);
+        else Maowo.toast(`读好了，约 ${out.text.length} 字。记得点保存`);
+        $('#f-prompt').value = out.text.slice(0, 20000);
+        keep();
+      } catch (err) { Maowo.toast(err.message); }
+    };
     $('#addkey').onclick = () => { keep(); CatKit.keys(async () => { keys = (await api('/cats')).keys; if (!f.keyId && keys[0]) f.keyId = keys[0].id; draw(); }); };
     $('#pickmodel').onclick = () => { keep(); CatKit.models(f.keyId, key.name, f.model, m => { f.model = m; draw(); }); };
     $('#test').onclick = async () => {

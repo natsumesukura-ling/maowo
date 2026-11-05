@@ -279,6 +279,11 @@ manage.post('/:id', wrap(req => {
   return { ...info(ai), key };
 }));
 manage.delete('/:id', wrap(req => { const ai = target(req); stmts.remove.run(ai.id); hangUp(ai.id); return info(ai); }));
+// When an AI is deleted: its key, its wake URL and any open line go away.
+function forget(aiId) {
+  stmts.remove.run(aiId); stmts.removeHook.run(aiId); hangUp(aiId);
+  for (const k of [...openTurns.keys()]) if (k.startsWith(`${aiId}:`)) openTurns.delete(k);
+}
 
 // The password header: a plain header name and a one-line value. Empty value = no header.
 function cleanHeader(rawName, rawValue) {
@@ -312,4 +317,4 @@ manage.post('/:id/hook/test', awrap(async req => {
   return { ...info(ai), test: r };
 }));
 
-module.exports = { router, manage, stream, wake, onWake, REASON, turnMessage, checkHookUrl, isPrivateIp, _openTurns: openTurns };
+module.exports = { router, manage, stream, wake, onWake, forget, REASON, turnMessage, checkHookUrl, isPrivateIp, _openTurns: openTurns };

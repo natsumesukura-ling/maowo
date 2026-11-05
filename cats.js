@@ -1249,11 +1249,14 @@ router.post('/:id/test', wrap(async req => {
   try { const r = await testModel(k, model); stmts.keyResult.run(1, null, k.id); return r; }
   catch (err) { throw new Error(err.message); }
 }));
+function removeCat(aiId) {
+  db.transaction(() => { stmts.clear.run(aiId); stmts.removeCat.run(aiId); stmts.removeMemberEverywhere.run(aiId); lore.removeAll(aiId); })();
+  removeImages(aiId);
+  queues.delete(aiId);
+}
 router.delete('/:id', wrap(req => {
   const { ai } = mine(req);
-  db.transaction(() => { stmts.clear.run(ai.id); stmts.removeCat.run(ai.id); stmts.removeMemberEverywhere.run(ai.id); lore.removeAll(ai.id); })();
-  removeImages(ai.id);
-  queues.delete(ai.id);
+  removeCat(ai.id);
   return { ok: true };
 }));
 router.delete('/:id/memory', wrap(req => {
@@ -1342,4 +1345,4 @@ router.post('/:id/messages', wrap(req => {
   return { ok: true };
 }));
 
-module.exports = { router, isCat, _enqueue: enqueue, _busy: busy };
+module.exports = { router, isCat, removeCat, _enqueue: enqueue, _busy: busy };

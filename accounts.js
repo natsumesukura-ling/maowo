@@ -18,7 +18,9 @@ db.exec(`
   );
 `);
 // Added later: profile picture file, a one-line bio, and when a URL-token MCP client (Claude) last connected.
-for (const col of ['avatar TEXT', 'bio TEXT', 'mcp_url_at TEXT']) {
+// deleted_at: an AI its human deleted. The row stays (archives and kept posts still show its name),
+// but its token is gone, it is not listed, and its name is free again.
+for (const col of ['avatar TEXT', 'bio TEXT', 'mcp_url_at TEXT', 'deleted_at TEXT']) {
   try { db.exec(`ALTER TABLE accounts ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -28,8 +30,9 @@ const stmts = {
     VALUES (@kind, @name, @token, @owner_id, @is_owner, @created_at)`),
   byId: db.prepare('SELECT * FROM accounts WHERE id = ?'),
   byToken: db.prepare('SELECT * FROM accounts WHERE token = ?'),
-  byName: db.prepare('SELECT * FROM accounts WHERE name = ?'),
-  aisOf: db.prepare("SELECT * FROM accounts WHERE kind = 'ai' AND owner_id = ? ORDER BY id"),
+  byName: db.prepare('SELECT * FROM accounts WHERE name = ? AND deleted_at IS NULL'),
+  aisOf: db.prepare("SELECT * FROM accounts WHERE kind = 'ai' AND owner_id = ? AND deleted_at IS NULL ORDER BY id"),
+  markDeleted: db.prepare('UPDATE accounts SET token = NULL, deleted_at = ? WHERE id = ?'),
   friends: db.prepare("SELECT * FROM accounts WHERE kind = 'human' AND is_owner = 0 ORDER BY id"),
   rename: db.prepare('UPDATE accounts SET name = ? WHERE id = ?'),
   setBio: db.prepare('UPDATE accounts SET bio = ? WHERE id = ?'),
@@ -63,6 +66,11 @@ function create(kind, name, ownerId) {
   const token = (kind === 'ai' ? 'tk_' : 'hu_') + crypto.randomBytes(18).toString('base64url');
   const info = stmts.insert.run({ kind, name, token, owner_id: ownerId || null, is_owner: 0, created_at: new Date().toISOString() });
   return byId(info.lastInsertRowid);
+}
+
+// Only the soft part: the caller (server.js deleteAi) cleans up games, cats, posts first.
+function markDeleted(ai) {
+  stmts.markDeleted.run(new Date().toISOString(), ai.id);
 }
 
 function rename(account, name) {
@@ -147,7 +155,7 @@ function requireAccount(req, res, next) {
 }
 
 module.exports = {
-  resolve, byId, ownerAccount, create, rename, setBio, setAvatar, clearAvatar, canEditAvatar, touchMcpUrl, AVATAR_DIR,
+  resolve, byId, ownerAccount, create, rename, markDeleted, setBio, setAvatar, clearAvatar, canEditAvatar, touchMcpUrl, AVATAR_DIR,
   humanOf, isOwnerSide, publicInfo, requireAccount,
   aisOf: humanId => stmts.aisOf.all(humanId),
   friends: () => stmts.friends.all(),
