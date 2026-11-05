@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 猫窝服务器安全体检（只看不改）
 #
-#   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/checkup.sh?v=1" | sudo bash
+#   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/checkup.sh?v=2" | sudo bash
 #
 # 只读：不改任何配置、不装任何东西、不重启任何服务。
 # 口令、钥匙、token 只报「有没有、谁能读」，从不打印内容。
@@ -102,7 +102,26 @@ if command -v sshd >/dev/null; then
     info "$(basename "$h") 有 $n 把登录密钥（只数个数）  权限 $(stat -c '%a %U' "$f")"
   done
   systemctl is-active --quiet ssh.socket 2>/dev/null && info "SSH 由 ssh.socket 代为监听（改端口要走 systemd，别手写）"
-  ls /etc/ssh/sshd_config.d/ 2>/dev/null | sed 's/^/      附加配置：/'
+  for f in /etc/ssh/sshd_config.d/*.conf; do
+    [ -f "$f" ] || continue
+    echo "      附加配置 $(basename "$f")：$(grep -vE '^\s*(#|$)' "$f" | tr '\n' ';' | sed 's/;$//')"
+  done
+  info "认密钥的方式：$(echo "$T" | awk '$1 ~ /^(authorizedkeysfile|authorizedkeyscommand|trustedusercakeys)$/ {printf "%s=%s  ", $1, $2}')"
+  if getent passwd lighthouse >/dev/null; then
+    lh=$(getent passwd lighthouse | cut -d: -f6)
+    n=$(grep -cE '^(ssh-|ecdsa-|sk-)' "$lh/.ssh/authorized_keys" 2>/dev/null || true)
+    info "腾讯云的 lighthouse 用户：在（家目录 $lh，${n:-0} 把登录密钥）"
+  else
+    info "腾讯云的 lighthouse 用户：没有"
+  fi
+  echo "  最近 30 天成功登进来的方式（只数次数，不打印来源地址）："
+  journalctl -u ssh -u ssh.service --since '-30 days' --no-pager 2>/dev/null \
+    | grep -oE 'Accepted [a-z-]+ for [A-Za-z0-9_.-]+' | sort | uniq -c | sed 's/^/      /'
+  journalctl -u ssh -u ssh.service --since '-30 days' --no-pager 2>/dev/null | grep -q 'Accepted' \
+    || info "30 天里没有一次是通过 SSH 登进来的（网页终端可能走的是腾讯云自己的通道）"
+  pw=$(passwd -S root 2>/dev/null | awk '{print $2}')
+  case "$pw" in P) info "root 设了密码" ;; L|NP) info "root 没有可用的密码（$pw）" ;; esac
+  systemctl is-active --quiet tat_agent 2>/dev/null && info "腾讯云自动化助手 tat_agent 在跑（网页终端「免密连接」靠它）"
 else
   info "没装 SSH 服务"
 fi
@@ -135,7 +154,7 @@ info "其他服务的启动配置里带口令的（只列文件和变量名）�
 found=0
 for f in /etc/systemd/system/*.service /etc/systemd/system/*/*.conf /etc/environment /etc/default/*; do
   [ -f "$f" ] || continue
-  names=$(grep -oiE '\b[A-Z_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY)[A-Z_]*=' "$f" 2>/dev/null | tr -d '=' | sort -u | tr '\n' ' ')
+  names=$(grep -vE '^\s*#' "$f" 2>/dev/null | grep -oiE '\b[A-Z_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY)[A-Z_]*=["'"'"']?[^"'"'"'[:space:]]' | sed 's/=.*//' | sort -u | tr '\n' ' ')
   [ -n "$names" ] || continue
   found=1
   mode=$(stat -c '%a' "$f")
@@ -159,7 +178,10 @@ m=$(sysctl -n net.mptcp.enabled 2>/dev/null); [ "$m" = 0 ] && ok "MPTCP 关着�
 # ------------------------------------------------------------
 sec "7. 备份"
 info "猫窝的数据：$DATA  大小 $(du -sh $DATA 2>/dev/null | cut -f1)"
-c=$( (crontab -l 2>/dev/null; cat /etc/cron.d/* 2>/dev/null) | grep -ciE 'backup|maowo|rsync|rclone|restic' || true)
+c=$( (crontab -l 2>/dev/null; cat /etc/cron.d/* 2>/dev/null) | grep -vE '^\s*#' | grep -ciE 'backup|maowo|rsync|rclone|restic' || true)
+for f in /etc/cron.d/*; do
+  [ -f "$f" ] && grep -vE '^\s*#' "$f" | grep -qiE 'backup|maowo|rsync|rclone|restic' && info "像备份的定时任务在 $f：$(grep -vE '^\s*#' "$f" | grep -iE 'backup|maowo|rsync|rclone|restic' | head -2 | awk '{for(i=6;i<=NF;i++) printf "%s ", $i; print ""}' | cut -c1-120)"
+done
 t=$(systemctl list-timers --all --no-pager 2>/dev/null | grep -ciE 'backup|maowo|restic|rclone' || true)
 [ $((c + t)) -gt 0 ] && info "找到 $((c + t)) 个像是备份的定时任务" || bad "没有自动备份的定时任务（现在只有手动「导出全部」）"
 info "腾讯云的「快照」在控制台看，和服务器是同一家、同一个账号"
