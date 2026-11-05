@@ -145,6 +145,7 @@ design/          绫喜欢的设计稿（.dc.html 要在设计画布里看）和
 
 - 新服务器开机头几分钟会自动更新系统，占着 apt 锁。安装脚本已经设置了等待（`/etc/apt/apt.conf.d/99maowo-lock-timeout`）。
 - **MPTCP 关着**（2026-11-04）：CVE-2026-98432（Linux TCP 内核漏洞，9.8 分）被演示过通过 MPTCP 监听远程拿 root。Caddy 是 Go 1.24+ 编的，内核允许就会用 MPTCP 监听 80/443，所以安装脚本写了 `/etc/sysctl.d/99-maowo-no-mptcp.conf` 把它关掉。这只是降低风险，真正修好要装 Ubuntu 的内核补丁再重启（`apt update && apt upgrade -y` 然后 `reboot`；脚本最后看到 `/var/run/reboot-required` 会提醒）。
+- **SSH 只认钥匙 + fail2ban**（2026-11-05，绫点头的）：体检（`deploy/checkup.sh`，只读，`POST=1` 把结果发成只给小55看的小秘密）发现密码登录开着、一周 8698 次猜密码。绫平时用腾讯云小程序的「免密连接」，走 `tat_agent`，30 天里没有一次 SSH 登录，所以关密码不影响她。`deploy/ssh-lockdown.sh` 加了 `/etc/ssh/sshd_config.d/00-maowo.conf`（排在云镜像的 `50-cloud-init.conf`（PasswordAuthentication yes）前面，sshd 取第一次读到的值），装了 fail2ban（10 分钟错 3 次封一天，`backend = systemd`）。绫没有腾讯云网页版，小程序里没有 VNC。体检报告里还没处理的：门铃（访问日志）、总钥匙挂在网址上（Claude 的 MCP 地址、存档下载链接）、备份。
 - raw.githubusercontent.com 有缓存，所以更新命令要加 `?v=N`。
 - Caddy 在前面，Express 设了 `trust proxy`，OAuth 元数据里的地址靠它拼出 https。
 - ChatGPT 的自定义 MCP 只有 OAuth；Claude 两种都行。
