@@ -66,6 +66,11 @@
   - 叫醒走 `wake.js` 的 `onWake` 监听：猫们自己接住，不再发给唤醒桥。
   - 窗口里存的是发给模型的原样消息（`cat_messages.msg`），加一行给人看的字（`text`）。工具结果太旧的会截短；思考内容（`reasoning_content`，DeepSeek 要）只在同一次叫醒里传回去。对话超过 `MAOWO_CATS_CONTEXT`（默认 1.6 万字）就把旧的一半压成摘要，掉出去的它可以用 `recall` 自己翻。**别往 System prompt 里放会变的东西**（时间、桌子）：会让缓存失效、多花钱，放进「猫窝备注」（`contextNote`），见 docs/DESIGN.md 第 18 节。
   - **酒馆角色卡**（`cards.js`，2026-11-09）：新建猫时「从角色卡导入」，JSON（V1/V2/V3）或 PNG（tEXt 块 `chara` / `ccv3`，base64 的 JSON）。先 `POST /api/cats/card` 读出来填表（解析结果在内存里留 1 小时，用 `cardId` 取），「搬进来」时带上自带的世界书（`lore.importBook`）和开场白（窗口里第一句 `say`）；PNG 卡由页面裁成方形头像上传。拼 System prompt：system_prompt、【名字】描述、【性格】、【场景】、【对话示例】、post_history_instructions。`{{char}}` 导入时换成角色名，`{{user}}` 在叫醒时（`fillNames`）换成面具名字或绫的名字。世界书页上传角色卡 json / png 只导入它自带的世界书。
+  - **小剧场工具**（2026-11-09，绫爱玩小剧场）：
+    - **回溯**：长按自己发的话 →「从这句重来」，只限最近 10 句、还没被压成摘要的。这句和之后的**聊天**从记忆里删掉（`chatRowsFrom`：她的 `me`、`aside`，以及 `run_kind = 'me'` 的行，也就是回她话时说的和做的），小本本回到这句发出时的样子（`me` 行存了 `nb_before`）。游戏 / 闹钟 / 群聊叫醒的那些行（`run_kind` 是别的）不删，它还知道游戏玩到哪。已经做过的事（下的棋、发的帖）不会撤回。
+    - **重新回答**：它最后一句回答下面的按钮，删掉对她最后一句的回答（小本本也回去）再叫它答一次。
+    - **番外**：窗口右上角的面具图标。开着时 `cats.ova_from` 记起点，「猫窝备注」告诉它在演番外，摘要不会压进番外这段。结束三选一：偷偷删掉（连小本本）、删掉只留一句旁白（`aside` 行，user 角色）、留着。
+    - **`$` 戏外指令**：以 `$` 开头（输入框左边的 `$` 按钮就是加 / 去掉 `$`），发给模型时变成「【绫的戏外指令】…」，System prompt 里说明它最优先、只管这一条、不要在戏里回应。窗口里虚线框显示。
   - **面具**（2026-11-09）：绫自己的人设，表 `cat_masks`（`cat_id` 空 = 通用，有值 = 那只猫专用），每只猫戴哪个记在 `cats.mask_id`。在 System prompt 里是「【和你聊天的人：名字】人设」。「猫们」页「面具」按钮管理（`CatKit.masks`），每只猫的设置里选。面具改成别的猫专用、或删掉，戴着的猫自动摘掉。群聊里每只猫按自己戴的面具认识她。
   - **Word 文件按开头的字节认，不按名字**（2026-11-09）：绫 vivo 手机存的人设是老的 .doc（复合文档，开头 `D0 CF 11 E0`），名字却是 .docx，猫窝不认识。现在 `lore.js` 的 `wordText()`：zip（`PK`）走自己的 docx 读法，老 .doc 用 `word-extractor`。测试用 `test/fixtures/old-word.doc`（LibreOffice 转出来的一小段，不是绫的文件）。
   - System prompt 也能「从文件读」（txt / md / doc / docx，`POST /api/file-text` 只把文字读回来，不存），超过 2 万字只放前 2 万字。
@@ -83,7 +88,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 63）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 64）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。

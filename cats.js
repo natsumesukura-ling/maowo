@@ -110,7 +110,10 @@ db.exec(`
     created_at TEXT NOT NULL
   );
 `);
-for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1'], ['cats', 'tools_ok INTEGER NOT NULL DEFAULT 1'], ['cats', 'mask_id INTEGER']]) {
+for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1'], ['cats', 'tools_ok INTEGER NOT NULL DEFAULT 1'], ['cats', 'mask_id INTEGER'],
+  // 回溯 / 番外: which kind of wake wrote a row (her chat 'me', or a game / alarm / group wake), and the
+  // notebook as it was when she sent a message, so going back can put the notebook back too.
+  ['cat_messages', 'run_kind TEXT'], ['cat_messages', 'nb_before TEXT'], ['cats', 'ova_from INTEGER'], ['cats', 'ova_nb TEXT']]) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -483,6 +486,7 @@ function systemPromptRaw(ai, cat) {
     `- 你和${owner.name}在一个专属窗口里。她发来的消息就是她在跟你说话，你直接回复就好。`,
     '- 以【猫窝】开头的消息是猫窝叫醒你的通知，不是主人在说话。照着做完（比如轮到你就用 get_state 看局面、再用 act 行动），最后用一两句话说说你做了什么，主人可能会看。',
     '- 消息末尾括号里的「猫窝备注」是猫窝写给你的：现在几点、你在哪几桌、闹钟。不是主人说的话，不用回应它。',
+    `- 以【${owner.name}的戏外指令】开头的消息，是她在戏外直接告诉你怎么做（比如换个写法、写长一点、剧情往哪走）。最优先照做，但它不是剧情里的台词，不要在戏里回应或提到它。它只管这一条，之后的消息照常。`,
     '- 玩游戏时，每次被叫醒只做轮到你的这一步，做完就停，下一步猫窝会再叫你。',
     '- 想一直记着的事（人、约定、喜好、发生过的有意思的事），用 remember 写进小本本。对话太长时，旧的部分会被压成摘要；很久以前的细节想不起来了，可以用 recall 在你的旧聊天记录里搜一搜。',
     cat.tools_ok === 0 ? `- 你现在用不了工具（这条线路不支持），只能聊天：玩不了游戏、发不了帖、记不了小本本。${owner.name}让你做这些时，告诉她要换一个能用工具的模型。` : '',
@@ -508,6 +512,7 @@ function contextNote(ai, cat, scan = '') {
   const tables = tableNotes(ai, owner);
   if (tables.length) bits.push(`你现在的桌子：\n${tables.join('\n')}`);
   if (tables.some(l => l.includes('正在')) && stmts.groupsOfCat.all(ai.id).length) bits.push('还没结束的游戏里的秘密（身份、夜里的信息、你的打算）不要在群里说，群里可能有同桌的人。');
+  if (cat.ova_from) bits.push('现在在演「番外」小剧场：这是你们一起玩的额外剧情，不算正篇，尽情演就好。');
   if (cat.alarm_at) bits.push(`你定了闹钟：${clock(cat.alarm_at)}${cat.alarm_note ? `，留给自己的话：${cat.alarm_note}` : ''}。`);
   // 世界书 entries whose keywords come up in this message or the last few, unless still in the window.
   const live = stmts.live.all(ai.id).map(r => { try { return textOf(JSON.parse(r.msg).content); } catch { return ''; } });
@@ -605,6 +610,7 @@ async function maybeSummarize(ai, cat, key) {
   }
   const next = rows.find(r => r.id > cut.id && (r.kind === 'me' || r.kind === 'wake'));
   if (!next) return;
+  if (cat.ova_from && next.id > cat.ova_from) return; // a 番外 is going on: it is never folded into the summary
   const old = rows.filter(r => r.id < next.id);
   const transcript = old.map(r => {
     const m = JSON.parse(r.msg);
@@ -616,6 +622,7 @@ async function maybeSummarize(ai, cat, key) {
     if (r.kind === 'say') return `我：${m.content}`;
     if (r.kind === 'call') return m.content ? `我：${m.content}` : '';
     if (r.kind === 'result') return `（${r.text}）`;
+    if (r.kind === 'aside') return `（${c}）`;
     return '';
   }).filter(Boolean).join('\n').slice(-30000);
   const msg = await callModel(key, cat.model, [
@@ -639,8 +646,13 @@ function changed(aiId) {
   const set = listeners.get(aiId);
   if (set) for (const fn of [...set]) fn();
 }
+const runKind = new Map(); // aiId -> kind of the wake it is working on now
 function add(aiId, kind, { msg = null, text = '', detail = null, roomId = null, groupId = null } = {}) {
   const info = stmts.add.run({ account_id: aiId, kind, msg: msg ? JSON.stringify(msg) : null, text, detail, room_id: roomId, group_id: groupId, created_at: nowIso() });
+  // Her own messages and lines copied from groups are never part of the cat's run.
+  const rk = kind === 'me' || kind === 'group' || kind === 'aside' || kind === 'note' ? null : runKind.get(aiId) || null;
+  const nb = kind === 'me' ? stmts.cat.get(aiId)?.notebook ?? '' : null;
+  if (rk || nb !== null) db.prepare('UPDATE cat_messages SET run_kind = ?, nb_before = ? WHERE id = ?').run(rk, nb, info.lastInsertRowid);
   changed(aiId);
   return info.lastInsertRowid;
 }
@@ -686,6 +698,7 @@ async function pump(aiId) {
       const t = q.shift();
       if (!t) break;
       running.set(aiId, t);
+      runKind.set(aiId, t.groupId ? 'group' : t.kind);
       changed(aiId);
       if (t.groupId) gChanged(t.groupId);
       try { await runOnce(aiId, t); } catch (err) {
@@ -694,6 +707,7 @@ async function pump(aiId) {
         if (t.groupId) postGroup(t.groupId, aiId, 'error', `${accounts.byId(aiId)?.name || ''} 出错了：${err.message}`);
       }
       running.delete(aiId);
+      runKind.delete(aiId);
       if (t.done) t.done();
     }
   } finally {
@@ -994,7 +1008,7 @@ function unreadOf(ai, cat) {
 function card(ai, cat) {
   const key = cat.key_id && stmts.key.get(cat.key_id);
   return {
-    ...accounts.publicInfo(ai), model: cat.model, keyName: key ? key.name : null, mute: !!cat.mute,
+    ...accounts.publicInfo(ai), model: cat.model, keyName: key ? key.name : null, mute: !!cat.mute, ova: !!cat.ova_from,
     unread: unreadOf(ai, cat), status: status(ai, cat),
   };
 }
@@ -1008,6 +1022,7 @@ function settings(ai, cat) {
   };
 }
 
+const cat_ova = ai => stmts.cat.get(ai.id)?.ova_from || 0;
 function shapeRows(ai, rows) {
   // Group talk is folded: a run of rows from one group becomes one line 「在群里聊了 N 句」.
   const out = [];
@@ -1030,7 +1045,8 @@ function shapeRows(ai, rows) {
     }
     if (r.kind === 'call' && !r.text) return null;
     const item = { id: r.id, kind: r.kind === 'call' ? 'say' : r.kind, text: r.text, createdAt: r.created_at };
-    if (r.kind === 'me' && r.detail) { try { const d = JSON.parse(r.detail); if (d.images) item.images = d.images; } catch {} }
+    if (r.kind === 'me' && r.detail) { try { const d = JSON.parse(r.detail); if (d.images) item.images = d.images; if (d.order) item.order = true; if (d.ova) item.ova = true; } catch {} }
+    if (r.kind !== 'me' && cat_ova(ai) && r.id >= cat_ova(ai)) item.ova = true;
     if (r.kind === 'result' && r.detail) { try { item.detail = JSON.parse(r.detail); } catch {} }
     return item;
   }).filter(Boolean);
@@ -1392,12 +1408,93 @@ router.put('/:id/notebook', wrap(req => {
 function windowData(ai, cat, after, before) {
   const rows = after ? stmts.after.all(ai.id, after)
     : stmts.before.all(ai.id, before || Number.MAX_SAFE_INTEGER, 80);
-  return { cat: card(ai, cat), busy: busy.has(ai.id), items: shapeRows(ai, rows), lastId: stmts.lastId.get(ai.id).id || 0, more: !after && rows.length === 80 };
+  return { cat: card(ai, cat), busy: busy.has(ai.id), items: shapeRows(ai, rows), lastId: stmts.lastId.get(ai.id).id || 0, more: !after && rows.length === 80,
+    rewindable: rewindable(ai.id) };
 }
 function markRead(ai) {
   const last = stmts.lastId.get(ai.id).id || 0;
   setCat(ai.id, { last_read_id: last });
 }
+// ---------- 回溯 / 重新回答 / 番外 ----------
+// Going back removes her messages and what the cat said and did in reply to them (its chat runs);
+// game, alarm and group wakes stay, so it still knows where it is in a game. The notebook goes back
+// to how it was. Only the newest REWIND_MAX of her messages that are not folded into the summary.
+const REWIND_MAX = 10;
+function rewindable(aiId) {
+  return db.prepare("SELECT id FROM cat_messages WHERE account_id = ? AND kind = 'me' AND summarized = 0 ORDER BY id DESC LIMIT ?").all(aiId, REWIND_MAX).map(r => r.id);
+}
+// Rows from `fromId` on that belong to her chat (old rows from before run_kind count as chat too).
+function chatRowsFrom(aiId, fromId) {
+  return db.prepare(`SELECT id FROM cat_messages WHERE account_id = ? AND id >= ? AND (kind = 'me' OR kind = 'aside' OR run_kind = 'me'
+    OR (run_kind IS NULL AND kind IN ('say', 'call', 'result', 'error')))`).all(aiId, fromId).map(r => r.id);
+}
+function dropRows(aiId, ids) {
+  const del = db.prepare('DELETE FROM cat_messages WHERE id = ? AND account_id = ?');
+  for (const id of ids) del.run(id, aiId);
+}
+function notIdle(ai) { if (busy.has(ai.id) || (queues.get(ai.id) || []).length) throw new Error(`${ai.name}还在想，等它说完再来`); }
+function goBackTo(ai, row) {
+  db.transaction(() => {
+    dropRows(ai.id, chatRowsFrom(ai.id, row.id));
+    setCat(ai.id, { notebook: row.nb_before ?? stmts.cat.get(ai.id).notebook });
+  })();
+  changed(ai.id);
+}
+// 从这句重来: her message and everything said after it go; its words come back to her input box.
+router.post('/:id/rewind', wrap(req => {
+  const { ai } = mine(req);
+  notIdle(ai);
+  const id = Number(req.body.messageId);
+  if (!rewindable(ai.id).includes(id)) throw new Error(`只能回到最近 ${REWIND_MAX} 句（再早的已经记不清原话了）`);
+  const row = db.prepare('SELECT * FROM cat_messages WHERE id = ?').get(id);
+  const d = (() => { try { return JSON.parse(row.detail || '{}'); } catch { return {}; } })();
+  goBackTo(ai, row);
+  return { text: (d.order ? '$' : '') + row.text, images: d.images || [] };
+}));
+// 重新回答: what it said after her last message goes, and it answers that message again.
+router.post('/:id/regenerate', wrap(req => {
+  const { ai } = mine(req);
+  notIdle(ai);
+  const last = db.prepare("SELECT * FROM cat_messages WHERE account_id = ? AND kind = 'me' AND summarized = 0 ORDER BY id DESC LIMIT 1").get(ai.id);
+  if (!last) throw new Error('还没有可以重新回答的');
+  const after = chatRowsFrom(ai.id, last.id + 1);
+  db.transaction(() => { dropRows(ai.id, after); setCat(ai.id, { notebook: last.nb_before ?? stmts.cat.get(ai.id).notebook }); })();
+  changed(ai.id);
+  enqueue(ai.id, { kind: 'me' });
+  return { ok: true };
+}));
+// 番外: on, then off in one of three ways — forget it (as if it never happened), leave one line, or keep it.
+router.post('/:id/ova', wrap(req => {
+  const { ai, cat } = mine(req);
+  if (req.body.on) {
+    if (cat.ova_from) return { ova: true };
+    setCat(ai.id, { ova_from: (stmts.lastId.get(ai.id).id || 0) + 1, ova_nb: cat.notebook });
+    add(ai.id, 'note', { text: '番外开始了。演完点「结束番外」，可以选这一段要不要让它记得。' });
+    return { ova: true };
+  }
+  if (!cat.ova_from) return { ova: false };
+  notIdle(ai);
+  const how = String(req.body.end || 'keep');
+  if (!['forget', 'tell', 'keep'].includes(how)) throw new Error('不知道要怎么结束番外');
+  const line = String(req.body.line || '').trim().slice(0, 500);
+  db.transaction(() => {
+    if (how !== 'keep') {
+      dropRows(ai.id, chatRowsFrom(ai.id, cat.ova_from));
+      dropRows(ai.id, db.prepare("SELECT id FROM cat_messages WHERE account_id = ? AND id >= ? AND kind = 'note'").all(ai.id, cat.ova_from - 1).map(r => r.id));
+      setCat(ai.id, { notebook: cat.ova_nb ?? cat.notebook });
+    }
+    setCat(ai.id, { ova_from: null, ova_nb: null });
+    if (how === 'tell') {
+      const say = `（猫窝旁白：刚才你们演了一段番外小剧场，已经结束了，回到正篇。${line ? `${accounts.byId(ai.owner_id).name}说：${line}` : ''}）`;
+      add(ai.id, 'aside', { msg: { role: 'user', content: say }, text: line ? `番外结束了：${line}` : '番外结束了' });
+    }
+  })();
+  if (how === 'keep') add(ai.id, 'note', { text: '番外结束了，这一段它会记得。' });
+  if (how === 'forget') add(ai.id, 'note', { text: '番外结束了。刚才那一段，它什么都不记得了。' });
+  changed(ai.id);
+  return { ova: false };
+}));
+
 router.get('/:id/messages', wrap(req => {
   const { ai, cat } = mine(req);
   const out = windowData(ai, cat, Number(req.query.after) || 0, Number(req.query.before) || 0);
@@ -1449,9 +1546,15 @@ router.post('/:id/messages', wrap(req => {
   if (images.some(f => !imgFileOk(ai.id, f))) throw new Error('图片没传上去，再试一次吧');
   if (!text && !images.length) throw new Error('说点什么吧');
   if (text.length > 4000) throw new Error('太长了（最多 4000 字）');
-  const words = (text || '（发了图片）') + contextNote(ai, stmts.cat.get(ai.id), text);
+  // $ at the start (or the 指令 button): an order from outside the story, for this one message.
+  const order = !!req.body.order || /^[$＄]/.test(text);
+  const said = order ? text.replace(/^[$＄]\s*/, '') : text;
+  if (order && !said) throw new Error('$ 后面写上指令吧');
+  const cat0 = stmts.cat.get(ai.id);
+  const words = (order ? `【${accounts.byId(ai.owner_id).name}的戏外指令】${said}` : (said || '（发了图片）')) + contextNote(ai, cat0, said);
   const content = images.length ? [{ type: 'text', text: words }, ...images.map(f => ({ type: 'image_url', image_url: { url: `maowo-img:${f}` } }))] : words;
-  add(ai.id, 'me', { msg: { role: 'user', content }, text, detail: images.length ? JSON.stringify({ images }) : null });
+  const detail = { ...(images.length ? { images } : {}), ...(order ? { order: true } : {}), ...(cat0.ova_from ? { ova: true } : {}) };
+  add(ai.id, 'me', { msg: { role: 'user', content }, text: said, detail: Object.keys(detail).length ? JSON.stringify(detail) : null });
   markRead(ai);
   enqueue(ai.id, { kind: 'me' });
   return { ok: true };

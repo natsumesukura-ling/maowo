@@ -252,7 +252,14 @@ const ok = name => console.log('ok', name);
     assert.deepStrictEqual(lqLore.entries.map(e => [e.title, e.mode]).sort(), [['喜好', 'always'], ['天台', 'keyword']]);
     let lw = await api(OWNER, `/cats/${lq.id}/messages`);
     assert.strictEqual(lw.items[0].text, '*洛祁言靠在栏杆上* 主人，你来了。', 'first message, {{user}} = her name');
-    const sayTo = async (id, text) => { await api(OWNER, `/cats/${id}/messages`, { json: { text } }); await until(async () => seen.at(-1).messages.at(-1).content.startsWith(text), 'asked'); await until(async () => !(await api(OWNER, `/cats/${id}/messages`)).busy, 'idle'); return seen.at(-1); };
+    const sayTo = async (id, text) => {
+      const n = seen.length;
+      const asked = () => seen.slice(n).find(q => typeof q.messages.at(-1).content === 'string' && q.messages.at(-1).content.startsWith(text));
+      await api(OWNER, `/cats/${id}/messages`, { json: { text } });
+      await until(async () => asked(), 'asked');
+      await until(async () => !(await api(OWNER, `/cats/${id}/messages`)).busy, 'idle');
+      return asked();
+    };
     b = await sayTo(lq.id, '在天台吗');
     assert(b.messages[0].content.includes('洛祁言是主人的青梅竹马') && b.messages[0].content.includes('洛祁言喜欢猫'), 'names filled in the prompt and the 常驻 book');
     assert(!/\{\{(user|char)\}\}/i.test(JSON.stringify(b.messages)), 'no {{…}} left anywhere');
@@ -282,6 +289,73 @@ const ok = name => console.log('ok', name);
     // A card's world book can also go into an existing cat's 世界书.
     lb = await up('洛祁言.png', cardPng);
     assert(lb.entries.some(e => e.content.includes('天台的门')), 'card PNG into 世界书: its book');
+    // 回溯: back to one of her messages; it and what came after leave the cat's memory, notebook too.
+    const texts = async () => (await api(OWNER, `/cats/${lq.id}/messages`)).items.map(i => i.text);
+    const nbOf = async () => (await api(OWNER, `/cats/${lq.id}/notebook`)).notebook;
+    await sayTo(lq.id, '第一句');
+    await sayTo(lq.id, '记住小剧场设定');
+    assert((await nbOf()).includes('小剧场设定'));
+    await sayTo(lq.id, '第三句');
+    let wm = await api(OWNER, `/cats/${lq.id}/messages`);
+    const back = wm.items.find(i => i.kind === 'me' && i.text === '记住小剧场设定');
+    assert(wm.rewindable.includes(back.id) && wm.rewindable.length <= 10);
+    const rw = await api(OWNER, `/cats/${lq.id}/rewind`, { json: { messageId: back.id } });
+    assert.strictEqual(rw.text, '记住小剧场设定');
+    let tx = await texts();
+    assert(tx.includes('第一句') && tx.includes('收到：第一句') && !tx.includes('记住小剧场设定') && !tx.includes('第三句') && !tx.includes('收到：第三句'), JSON.stringify(tx));
+    assert(!(await nbOf()).includes('小剧场设定'), 'notebook back to before');
+    b = await sayTo(lq.id, '改过的一句');
+    assert(!JSON.stringify(b.messages).includes('第三句'), 'gone from what the model sees');
+    const tooOld = (await api(OWNER, `/cats/${lq.id}/messages`)).items.find(i => i.kind === 'me' && i.text === '是我');
+    for (let i = 0; i < 10; i++) await sayTo(lq.id, `闲聊${i}`);
+    await assert.rejects(api(OWNER, `/cats/${lq.id}/rewind`, { json: { messageId: tooOld.id } }), /最近 10 句/);
+    ok('回溯: her message and what followed leave the memory, the notebook goes back; only the last 10');
+
+    // 重新回答
+    const calls0 = seen.length;
+    await sayTo(lq.id, '再来');
+    await api(OWNER, `/cats/${lq.id}/regenerate`, { json: {} });
+    await until(async () => seen.length > calls0 + 1 && !(await api(OWNER, `/cats/${lq.id}/messages`)).busy, 'regenerated');
+    tx = await texts();
+    assert.strictEqual(tx.filter(t => t === '收到：再来').length, 1, 'the old answer is gone, a new one came');
+    assert.strictEqual(tx.filter(t => t === '再来').length, 1);
+    ok('重新回答: the last answer goes and it answers again');
+
+    // $ 戏外指令: one message, marked for the model and in the window
+    await api(OWNER, `/cats/${lq.id}/messages`, { json: { text: '$ 写长一点' } });
+    await until(async () => seen.at(-1).messages.at(-1).content.startsWith('【主人的戏外指令】写长一点'), 'order seen');
+    await until(async () => !(await api(OWNER, `/cats/${lq.id}/messages`)).busy, 'idle');
+    assert(seen.at(-1).messages[0].content.includes('戏外指令】开头的消息'), 'the prompt explains orders');
+    const ord = (await api(OWNER, `/cats/${lq.id}/messages`)).items.find(i => i.text === '写长一点');
+    assert(ord && ord.order);
+    b = await sayTo(lq.id, '普通的一句');
+    assert(b.messages.at(-1).content.startsWith('普通的一句'), 'the next one is plain again');
+    ok('$ 戏外指令: marked for this message only');
+
+    // 番外: forget / tell / keep
+    await api(OWNER, `/cats/${lq.id}/ova`, { json: { on: true } });
+    assert((await api(OWNER, `/cats/${lq.id}`)).ova);
+    b = await sayTo(lq.id, '番外台词');
+    assert(b.messages.at(-1).content.includes('番外」小剧场'), 'it is told it is a 番外');
+    await sayTo(lq.id, '记住番外设定');
+    await api(OWNER, `/cats/${lq.id}/ova`, { json: { on: false, end: 'forget' } });
+    tx = await texts();
+    assert(!tx.some(t => /番外台词|番外设定/.test(t)) && !(await nbOf()).includes('番外设定'), 'forgotten, notebook back');
+    assert(tx.includes('番外结束了。刚才那一段，它什么都不记得了。'));
+    b = await sayTo(lq.id, '回来了');
+    assert(!JSON.stringify(b.messages).includes('番外台词') && !b.messages.at(-1).content.includes('番外」小剧场'));
+    await api(OWNER, `/cats/${lq.id}/ova`, { json: { on: true } });
+    await sayTo(lq.id, '校园番外');
+    await api(OWNER, `/cats/${lq.id}/ova`, { json: { on: false, end: 'tell', line: '我们演了校园番外' } });
+    b = await sayTo(lq.id, '下一句');
+    assert(!JSON.stringify(b.messages).includes('校园番外"') && JSON.stringify(b.messages).includes('猫窝旁白：刚才你们演了一段番外小剧场') && JSON.stringify(b.messages).includes('我们演了校园番外'), 'one line told');
+    await api(OWNER, `/cats/${lq.id}/ova`, { json: { on: true } });
+    await sayTo(lq.id, '留着的番外');
+    await api(OWNER, `/cats/${lq.id}/ova`, { json: { on: false, end: 'keep' } });
+    b = await sayTo(lq.id, '再下一句');
+    assert(JSON.stringify(b.messages).includes('留着的番外'), 'kept');
+    ok('番外: forget (notebook too), tell one line, or keep');
+
     await api(OWNER, `/cats/${lq.id}`, { method: 'DELETE' });
     ok('面具: general or for one cat, in the prompt and as {{user}}; taken off when deleted or made 专用 elsewhere');
 

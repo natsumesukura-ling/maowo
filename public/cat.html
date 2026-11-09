@@ -45,6 +45,20 @@
   .foldline { align-self: center; font-size: 12.5px; color: var(--accent); text-decoration: none; padding: 4px 12px; border-radius: 999px; background: var(--white); border: 1px solid var(--border); }
   div.foldline { color: var(--muted); }
   .hiddenline { align-self: stretch; text-align: center; font-size: 12.5px; color: var(--muted); padding: 10px 12px; border-radius: 14px; background: var(--card); border: 1px dashed var(--line); line-height: 1.6; }
+  .b.me.order { background: var(--white); border: 1.5px dashed var(--accent-line); color: var(--text2); }
+  .b.me .tag, .b.say .tag { display: block; font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 2px; }
+  .b.ova { box-shadow: inset 3px 0 0 #C9A2D8; }
+  [data-mine] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .noteline { align-self: center; max-width: 92%; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; text-align: center; line-height: 1.5; }
+  .noteline.aside { border-style: dashed; }
+  .regen { align-self: flex-start; display: flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; color: var(--muted); background: none; border: none; padding: 0 4px; cursor: pointer; margin-top: -4px; }
+  .banner { max-width: 560px; margin: 0 auto 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text2); background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 7px 10px; line-height: 1.5; }
+  .banner.ova { background: #F1E6F5; border-color: #DCC6E6; color: #6C4A7C; }
+  .banner .btn { margin-left: auto; width: auto; padding: 0 12px; height: 30px; font-size: 12.5px; }
+  .banner:empty { display: none; }
+  .bottom .dollar { width: 36px; height: 44px; flex-shrink: 0; border: 1px solid var(--line); background: var(--white); color: var(--text2); border-radius: 12px; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; padding: 0; }
+  .bottom .dollar.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-hover); }
+  .icon-btn.ova-on { background: #F1E6F5; color: #7D4F92; }
   .err { align-self: center; max-width: 92%; font-size: 12.5px; color: var(--danger); background: var(--secret-bg); padding: 8px 12px; border-radius: 12px; line-height: 1.6; text-align: center; }
   .typing { align-self: flex-start; font-size: 13px; color: var(--muted); padding: 8px 13px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); }
   .typing i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); margin: 0 1.5px; animation: blink 1.2s infinite; vertical-align: middle; }
@@ -134,7 +148,7 @@ const timeOf = iso => { const d = new Date(iso); const now = new Date(); const s
 // ============================================================
 // The window
 // ============================================================
-let cat = null, lastId = 0, busy = false, items = [], moreBefore = false, firstId = 0;
+let cat = null, lastId = 0, busy = false, items = [], moreBefore = false, firstId = 0, rewindable = [];
 
 function drawTop() {
   $('#who').innerHTML = `${Maowo.avatar(cat)}<div><div class="n">${esc(cat.name)}</div><div class="m"><span class="dot ${busy ? 'busy' : cat.status.state}"></span><span>${esc(busy ? '正在想…' : cat.status.text)}</span></div></div>`;
@@ -143,13 +157,85 @@ function drawTop() {
   m.innerHTML = icon(cat.mute ? 'bellOff' : 'bell', 22, 1.7);
   m.setAttribute('aria-label', cat.mute ? '免打扰（开着）' : '免打扰（关着）');
   document.title = `${cat.name} · 猫们 · 猫窝`;
+  const o = $('#ova');
+  if (o) { o.classList.toggle('ova-on', !!cat.ova); o.setAttribute('aria-label', cat.ova ? '番外中，点这里结束' : '开始番外'); }
+  drawBanner();
+}
+
+// The line above the input: 番外 going on, or this message is an order.
+function drawBanner() {
+  const b = $('#banner'), ta = $('#text');
+  if (!b || !ta || !cat) return;
+  const order = /^[$＄]/.test(ta.value);
+  b.className = 'banner' + (cat.ova ? ' ova' : '');
+  b.innerHTML = cat.ova
+    ? `${icon('drama', 16, 1.8)}<span>番外中${order ? ' · 这条是戏外指令' : '：演完可以选要不要让它记得'}</span><button class="btn sm" id="ova-end">结束番外</button>`
+    : order ? `<span>这条是<b>戏外指令</b>：它会照做，只管这一条。</span>` : '';
+  const e = $('#ova-end'); if (e) e.onclick = endOva;
+}
+
+async function startOva() {
+  if (!confirm(`开始番外？\n这一段可以随便演。演完点「结束番外」，可以选：让${cat.name}忘掉、只告诉它一句、或者留着。\n（游戏里它被叫醒做的事不算在番外里。）`)) return;
+  try { await api(`/cats/${catId}/ova`, { json: { on: true } }); await reload(); } catch (err) { Maowo.toast(err.message); }
+}
+function endOva() {
+  const panel = Maowo.sheet(`<h2>结束番外</h2>
+    <div class="small muted" style="margin: 6px 0 14px; line-height: 1.6;">这一段番外要让${esc(cat.name)}记得吗？游戏里它被叫醒做的事不受影响。</div>
+    <button class="opt" data-end="forget" style="width: 100%;"><div class="t">偷偷删掉<div class="s">它什么都不记得，小本本也回到番外之前，假装没发生过</div></div></button>
+    <button class="opt" data-end="tell" style="width: 100%;"><div class="t">只告诉它一句<div class="s">删掉这一段，只留下你写的一句话</div></div></button>
+    <textarea id="ova-line" rows="2" maxlength="500" placeholder="比如：我们演了一段校园番外，你是学长" style="margin: -2px 0 10px;"></textarea>
+    <button class="opt" data-end="keep" style="width: 100%;"><div class="t">留着<div class="s">当成正常聊天，它会记得这一段</div></div></button>`);
+  panel.querySelectorAll('[data-end]').forEach(b => b.onclick = async () => {
+    try {
+      await api(`/cats/${catId}/ova`, { json: { on: false, end: b.dataset.end, line: panel.querySelector('#ova-line').value } });
+      panel.close(); await reload();
+    } catch (err) { Maowo.toast(err.message); }
+  });
+}
+
+// Long-press one of her own messages: 从这句重来.
+function armLongPress(el) {
+  let timer = null, x = 0, y = 0;
+  const stop = () => { clearTimeout(timer); timer = null; };
+  el.addEventListener('pointerdown', e => { x = e.clientX; y = e.clientY; stop(); timer = setTimeout(() => { timer = null; mineMenu(Number(el.dataset.mine)); }, 550); });
+  el.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - x, e.clientY - y) > 8) stop(); });
+  el.addEventListener('pointerup', stop); el.addEventListener('pointercancel', stop); el.addEventListener('pointerleave', stop);
+  el.addEventListener('contextmenu', e => { e.preventDefault(); mineMenu(Number(el.dataset.mine)); });
+}
+function mineMenu(id) {
+  const it = items.find(i => i.id === id);
+  if (!it) return;
+  const can = rewindable.includes(id);
+  const panel = Maowo.sheet(`<h2>这句话</h2><div class="detail-pre" style="margin: 8px 0 14px; max-height: 20vh;">${esc(it.text || '（图片）')}</div>
+    ${can ? `<button class="btn primary block" id="rw">${icon('undo', 18, 2)}从这句重来</button>
+      <div class="small muted" style="margin-top: 8px; line-height: 1.6;">这句和它后面的聊天都会从${esc(cat.name)}的记忆里拿掉，小本本也回到这句之前。这句话放回输入框，改一改再发。游戏里它做过的事不受影响。</div>`
+      : `<div class="small muted" style="line-height: 1.6;">只能回到最近 10 句，这句太早了。</div>`}
+    <button class="btn block" id="cp" style="margin-top: 12px;">复制</button>`);
+  panel.querySelector('#cp').onclick = () => { Maowo.copy(it.text || ''); panel.close(); };
+  const rw = panel.querySelector('#rw');
+  if (rw) rw.onclick = async () => {
+    try {
+      const r = await api(`/cats/${catId}/rewind`, { json: { messageId: id } });
+      panel.close();
+      const ta = $('#text'); ta.value = r.text; ta.dispatchEvent(new Event('input'));
+      await reload();
+      if (r.images && r.images.length) Maowo.toast('图片要重新选一次');
+      ta.focus();
+    } catch (err) { Maowo.toast(err.message); }
+  };
+}
+async function regenerate() {
+  try { await api(`/cats/${catId}/regenerate`, { json: {} }); await reload(); } catch (err) { Maowo.toast(err.message); }
 }
 
 function rowHtml(it, prev) {
   let out = '';
   if (!prev || Date.parse(it.createdAt) - Date.parse(prev.createdAt) > 10 * 60000) out += `<div class="stamp">${timeOf(it.createdAt)}</div>`;
-  if (it.kind === 'me') return out + (it.images && it.images.length ? `<div class="mepics ${it.images.length === 1 ? 'one' : ''}">${it.images.map(f => `<button type="button" data-big="${esc(f)}" aria-label="看大图"><img data-img="${esc(f)}" alt="图片"></button>`).join('')}</div>` : '') + (it.text ? `<div class="b me">${esc(it.text)}</div>` : '');
-  if (it.kind === 'say') return out + `<div class="b say">${esc(it.text)}</div>`;
+  if (it.kind === 'me') return out + (it.images && it.images.length ? `<div class="mepics ${it.images.length === 1 ? 'one' : ''}" data-mine="${it.id}">${it.images.map(f => `<button type="button" data-big="${esc(f)}" aria-label="看大图"><img data-img="${esc(f)}" alt="图片"></button>`).join('')}</div>` : '')
+    + (it.text ? `<div class="b me ${it.order ? 'order' : ''} ${it.ova ? 'ova' : ''}" data-mine="${it.id}">${it.order ? '<span class="tag">戏外指令</span>' : ''}${esc(it.text)}</div>` : '');
+  if (it.kind === 'say') return out + `<div class="b say ${it.ova ? 'ova' : ''}">${esc(it.text)}</div>`;
+  if (it.kind === 'note') return out + `<div class="noteline">${esc(it.text)}</div>`;
+  if (it.kind === 'aside') return out + `<div class="noteline aside">${esc(it.text)}</div>`;
   if (it.kind === 'wake') return out + `<div class="wakeline"><span>${esc(it.text)}</span></div>`;
   if (it.kind === 'result') {
     const bad = it.detail && /^错误/.test(it.detail.result || '');
@@ -178,6 +264,10 @@ function feedHtml() {
     prev = it;
   }
   if (busy) html += '<div class="typing">正在想 <i></i><i></i><i></i></div>';
+  // 重新回答 under its last answer to her newest message.
+  const last = items[items.length - 1];
+  if (!busy && last && last.kind === 'say' && rewindable.length && items.some(i => i.kind === 'me' && i.id === rewindable[0]) && !items.some(i => i.id > rewindable[0] && i.kind === 'wake'))
+    html += `<button class="regen" id="regen">${icon('retry', 13, 2)}重新回答</button>`;
   return html;
 }
 
@@ -191,6 +281,8 @@ function drawFeed({ stick, keepTop } = {}) {
   const oldHeight = f.scrollHeight, oldTop = f.scrollTop;
   $('#feed .in').innerHTML = feedHtml();
   f.querySelectorAll('[data-detail]').forEach(b => b.onclick = () => showDetail(items.find(x => String(x.id) === b.dataset.detail)));
+  f.querySelectorAll('[data-mine]').forEach(armLongPress);
+  const rg = f.querySelector('#regen'); if (rg) rg.onclick = regenerate;
   f.querySelectorAll('img[data-img]').forEach(im => picUrl(im.dataset.img).then(u => { im.src = u; im.onload = () => { if (stick || wasBottom) toBottom(); }; }).catch(() => {}));
   f.querySelectorAll('[data-big]').forEach(b => b.onclick = () => picUrl(b.dataset.big).then(u => {
     const box = document.createElement('div');
@@ -259,6 +351,7 @@ async function poll() {
       const d = await api(`/cats/${catId}/wait?after=${lastId}&busy=${busy ? 1 : 0}`);
       const grew = d.items.length > 0 || d.busy !== busy;
       cat = d.cat; busy = d.busy;
+      if (d.rewindable) rewindable = d.rewindable;
       merge(d.items);
       if (d.lastId) lastId = Math.max(lastId, d.lastId);
       drawTop();
@@ -274,7 +367,7 @@ async function poll() {
 // Seats change the meaning of old rows (a game ends and its part shows): reload everything now and then.
 async function reload() {
   const d = await api(`/cats/${catId}/messages`);
-  cat = d.cat; busy = d.busy; items = d.items; moreBefore = d.more;
+  cat = d.cat; busy = d.busy; items = d.items; moreBefore = d.more; rewindable = d.rewindable || [];
   firstId = items.length ? items[0].id : 0;
   lastId = d.lastId;
   drawTop(); drawFeed({ stick: true });
@@ -313,12 +406,13 @@ function startChat() {
     <div class="top"><header>
       <a class="icon-btn" id="back" aria-label="返回猫们">${icon('back', 22)}</a>
       <div class="who" id="who"></div>
+      <button class="icon-btn" id="ova" aria-label="番外">${icon('drama', 22, 1.7)}</button>
       <button class="icon-btn" id="mute"></button>
       <button class="icon-btn" id="book" aria-label="小本本">${icon('notebook', 22, 1.7)}</button>
       <a class="icon-btn" id="set" href="/cats/${catId}/settings" aria-label="设置">${icon('sliders', 22, 1.7)}</a>
     </header></div>
     <div id="feed"><div class="in"></div></div>
-    <div class="bottom"><div class="picks" id="picks"></div><form id="say"><button type="button" class="pic-btn" id="pic" aria-label="发图片">${icon('image', 21, 1.7)}</button><textarea id="text" rows="1" maxlength="4000" placeholder="说点什么…"></textarea><button class="btn primary" type="submit" aria-label="发送">${icon('send', 18, 2)}</button></form>
+    <div class="bottom"><div class="banner" id="banner"></div><div class="picks" id="picks"></div><form id="say"><button type="button" class="pic-btn" id="pic" aria-label="发图片">${icon('image', 21, 1.7)}</button><button type="button" class="dollar" id="dollar" aria-label="戏外指令">$</button><textarea id="text" rows="1" maxlength="4000" placeholder="说点什么…"></textarea><button class="btn primary" type="submit" aria-label="发送">${icon('send', 18, 2)}</button></form>
       <input type="file" id="picfile" accept="image/*" multiple hidden></div>`;
   Maowo.backTo($('#back'), '/cats');
   $('#book').onclick = showNotebook;
@@ -330,6 +424,11 @@ function startChat() {
     } catch (err) { Maowo.toast(err.message); }
   };
   const ta = $('#text');
+  $('#ova').onclick = () => cat.ova ? endOva() : startOva();
+  // $ at the start makes it an order from outside the story: the button just adds or takes away the $.
+  const drawOrder = () => { $('#dollar').classList.toggle('on', /^[$＄]/.test(ta.value)); drawBanner(); };
+  $('#dollar').onclick = () => { ta.value = /^[$＄]/.test(ta.value) ? ta.value.replace(/^[$＄]\s*/, '') : '$ ' + ta.value; drawOrder(); ta.focus(); };
+  ta.addEventListener('input', drawOrder);
   const grow = () => { ta.style.height = '44px'; ta.style.height = Math.min(ta.scrollHeight + 2, 132) + 'px'; ta.style.overflowY = ta.scrollHeight + 2 > 132 ? 'auto' : 'hidden'; };
   ta.addEventListener('input', grow);
   try { ta.value = sessionStorage.getItem(`maowo-cat-draft-${catId}`) || ''; grow(); } catch {}
@@ -370,6 +469,7 @@ function startChat() {
       try { sessionStorage.removeItem(`maowo-cat-draft-${catId}`); } catch {}
     } catch (err) { Maowo.toast(err.message); ta.value = text; grow(); picks = sent; drawPicks(); }
     sending = false;
+    drawOrder();
   };
   $('#newchip').onclick = e => { e.preventDefault(); toBottom(); };
   feed().addEventListener('scroll', () => { if (atBottom()) $('#newchip').style.display = 'none'; });
