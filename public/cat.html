@@ -48,7 +48,7 @@
   .b.me.order { background: var(--white); border: 1.5px dashed var(--accent-line); color: var(--text2); }
   .b.me .tag, .b.say .tag { display: block; font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 2px; }
   .b.ova { box-shadow: inset 3px 0 0 #C9A2D8; }
-  [data-mine] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  [data-mine], [data-theirs] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .noteline { align-self: center; max-width: 92%; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; text-align: center; line-height: 1.5; }
   .noteline.aside { border-style: dashed; }
   .regen { align-self: flex-start; display: flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; color: var(--muted); background: none; border: none; padding: 0 4px; cursor: pointer; margin-top: -4px; }
@@ -195,13 +195,28 @@ function endOva() {
 }
 
 // Long-press one of her own messages: 从这句重来.
-function armLongPress(el) {
+function armLongPress(el, open) {
   let timer = null, x = 0, y = 0;
   const stop = () => { clearTimeout(timer); timer = null; };
-  el.addEventListener('pointerdown', e => { x = e.clientX; y = e.clientY; stop(); timer = setTimeout(() => { timer = null; mineMenu(Number(el.dataset.mine)); }, 550); });
+  el.addEventListener('pointerdown', e => { x = e.clientX; y = e.clientY; stop(); timer = setTimeout(() => { timer = null; open(); }, 550); });
   el.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - x, e.clientY - y) > 8) stop(); });
   el.addEventListener('pointerup', stop); el.addEventListener('pointercancel', stop); el.addEventListener('pointerleave', stop);
-  el.addEventListener('contextmenu', e => { e.preventDefault(); mineMenu(Number(el.dataset.mine)); });
+  el.addEventListener('contextmenu', e => { e.preventDefault(); open(); });
+}
+// Long-press one of its lines: 改成别的说法 (in the window and in its memory).
+function theirsMenu(id) {
+  const it = items.find(i => i.id === id);
+  if (!it) return;
+  const panel = Maowo.sheet(`<h2>改${esc(cat.name)}的这句话</h2>
+    <div class="small muted" style="margin: 6px 0 10px; line-height: 1.6;">改好以后，它会以为自己当时就是这么说的。</div>
+    <textarea id="ed-text" rows="7" maxlength="8000" style="resize: vertical; line-height: 1.65;">${esc(it.text)}</textarea>
+    <button class="btn primary block" id="ed-save" style="margin-top: 12px;">保存</button>
+    <button class="btn block" id="ed-copy" style="margin-top: 10px;">复制</button>`);
+  panel.querySelector('#ed-copy').onclick = () => { Maowo.copy(it.text || ''); panel.close(); };
+  panel.querySelector('#ed-save').onclick = async () => {
+    try { await api(`/cats/${catId}/messages/${id}`, { method: 'PUT', json: { text: panel.querySelector('#ed-text').value } }); panel.close(); await reload(); Maowo.toast('改好了'); }
+    catch (err) { Maowo.toast(err.message); }
+  };
 }
 function mineMenu(id) {
   const it = items.find(i => i.id === id);
@@ -234,7 +249,7 @@ function rowHtml(it, prev) {
   if (!prev || Date.parse(it.createdAt) - Date.parse(prev.createdAt) > 10 * 60000) out += `<div class="stamp">${timeOf(it.createdAt)}</div>`;
   if (it.kind === 'me') return out + (it.images && it.images.length ? `<div class="mepics ${it.images.length === 1 ? 'one' : ''}" data-mine="${it.id}">${it.images.map(f => `<button type="button" data-big="${esc(f)}" aria-label="看大图"><img data-img="${esc(f)}" alt="图片"></button>`).join('')}</div>` : '')
     + (it.text ? `<div class="b me ${it.order ? 'order' : ''} ${it.ova ? 'ova' : ''}" data-mine="${it.id}">${it.order ? '<span class="tag">戏外指令</span>' : ''}${esc(it.text)}</div>` : '');
-  if (it.kind === 'say') return out + `<div class="b say ${it.ova ? 'ova' : ''}">${esc(it.text)}</div>`;
+  if (it.kind === 'say') return out + `<div class="b say ${it.ova ? 'ova' : ''}" data-theirs="${it.id}">${esc(it.text)}</div>`;
   if (it.kind === 'note') return out + `<div class="noteline">${esc(it.text)}</div>`;
   if (it.kind === 'aside') return out + `<div class="noteline aside">${esc(it.text)}</div>`;
   if (it.kind === 'wake') return out + `<div class="wakeline"><span>${esc(it.text)}</span></div>`;
@@ -282,7 +297,8 @@ function drawFeed({ stick, keepTop } = {}) {
   const oldHeight = f.scrollHeight, oldTop = f.scrollTop;
   $('#feed .in').innerHTML = feedHtml();
   f.querySelectorAll('[data-detail]').forEach(b => b.onclick = () => showDetail(items.find(x => String(x.id) === b.dataset.detail)));
-  f.querySelectorAll('[data-mine]').forEach(armLongPress);
+  f.querySelectorAll('[data-mine]').forEach(el => armLongPress(el, () => mineMenu(Number(el.dataset.mine))));
+  f.querySelectorAll('[data-theirs]').forEach(el => armLongPress(el, () => theirsMenu(Number(el.dataset.theirs))));
   const rg = f.querySelector('#regen'); if (rg) rg.onclick = regenerate;
   f.querySelectorAll('img[data-img]').forEach(im => picUrl(im.dataset.img).then(u => { im.src = u; im.onload = () => { if (stick || wasBottom) toBottom(); }; }).catch(() => {}));
   f.querySelectorAll('[data-big]').forEach(b => b.onclick = () => picUrl(b.dataset.big).then(u => {

@@ -311,6 +311,17 @@ const ok = name => console.log('ok', name);
     await assert.rejects(api(OWNER, `/cats/${lq.id}/rewind`, { json: { messageId: tooOld.id } }), /最近 10 句/);
     ok('回溯: her message and what followed leave the memory, the notebook goes back; only the last 10');
 
+    // 改它的话: the awkward first message, changed in the window and in what the model sees next.
+    const firstSay = (await api(OWNER, `/cats/${lq.id}/messages`)).items.find(i => i.kind === 'say');
+    await api(OWNER, `/cats/${lq.id}/messages/${firstSay.id}`, { method: 'PUT', json: { text: '你来啦。' } });
+    assert(!(await texts()).includes(firstSay.text) && (await texts()).includes('你来啦。'));
+    await assert.rejects(api(OWNER, `/cats/${lq.id}/messages/${firstSay.id}`, { method: 'PUT', json: { text: ' ' } }), /空/);
+    const mine1 = (await api(OWNER, `/cats/${lq.id}/messages`)).items.find(i => i.kind === 'me');
+    await assert.rejects(api(OWNER, `/cats/${lq.id}/messages/${mine1.id}`, { method: 'PUT', json: { text: 'x' } }), /改不了/);
+    b = await sayTo(lq.id, '改完以后');
+    assert(JSON.stringify(b.messages).includes('你来啦。') && !JSON.stringify(b.messages).includes(firstSay.text.slice(0, 8)), 'the model sees the new words');
+    ok('改它的话: in the window and in its memory');
+
     // 重新回答
     const calls0 = seen.length;
     await sayTo(lq.id, '再来');

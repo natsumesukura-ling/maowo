@@ -1451,6 +1451,25 @@ router.post('/:id/rewind', wrap(req => {
   goBackTo(ai, row);
   return { text: (d.order ? '$' : '') + row.text, images: d.images || [] };
 }));
+// 改它的话: what it said (an awkward first message, a line she wants different) is changed in the window and in
+// its memory, as if it had said it that way. Only lines still in its memory, not in a group, not while it is thinking.
+router.put('/:id/messages/:mid', wrap(req => {
+  const { ai } = mine(req);
+  notIdle(ai);
+  const row = db.prepare('SELECT * FROM cat_messages WHERE id = ? AND account_id = ?').get(Number(req.params.mid), ai.id);
+  if (!row || !['say', 'call'].includes(row.kind) || row.group_id) throw new Error('这句改不了');
+  if (row.summarized) throw new Error('这句太早了，已经压进摘要里，改不了了');
+  const text = String(req.body.text || '').trim();
+  if (!text) throw new Error('不能改成空的。不想要这句的话，可以用「从这句重来」');
+  if (text.length > 8000) throw new Error('太长了（最多 8000 字）');
+  const msg = JSON.parse(row.msg);
+  msg.content = text;
+  delete msg.reasoning_content; // its old thinking does not match the new words
+  db.prepare('UPDATE cat_messages SET msg = ?, text = ? WHERE id = ?').run(JSON.stringify(msg), text, row.id);
+  changed(ai.id);
+  return { ok: true };
+}));
+
 // 重新回答: what it said after her last message goes, and it answers that message again.
 router.post('/:id/regenerate', wrap(req => {
   const { ai } = mine(req);
