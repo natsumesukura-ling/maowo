@@ -39,6 +39,10 @@
   button.ucard { cursor: pointer; }
   .uno-hand.myturn .ucard:not(.ok) { opacity: .38; }
   .uno-hand .ucard.ok { transform: translateY(-3px); box-shadow: 0 4px 10px rgba(184, 97, 46, .45); }
+  .uno-hand.myturn { padding: 10px 3px 2px; gap: 5px; }
+  .uno-hand .ucard.sel { transform: translateY(-9px); box-shadow: 0 0 0 3px var(--accent), 0 6px 12px rgba(184, 97, 46, .45); }
+  .uno-confirm { display: flex; gap: 8px; margin-top: 12px; }
+  .uno-confirm .btn.primary { flex-grow: 1; }
   .cdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 3px; }
   .colorpick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
   .colorpick button { height: 64px; border-radius: 14px; border: none; color: #fff; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; }
@@ -197,6 +201,27 @@ function renderHeader() {
   $('#phase').innerHTML = (night ? icon('moon', 13, 2) : '') + esc(view.phase);
 }
 
+// Seat her own cats here directly (instead of copying the room number into their windows).
+async function callCats() {
+  let cats;
+  try { cats = (await api('/cats')).cats || []; } catch (err) { return Maowo.toast(err.message); }
+  if (!cats.length) return Maowo.toast('还没有住在猫窝的猫。去「猫们」搬一只进来');
+  const seated = new Set(view.seats.map(s => s.account && s.account.id).filter(Boolean));
+  const panel = Maowo.sheet(`<h2>叫猫来</h2>
+    <div class="small muted" style="margin: 4px 0 14px; line-height: 1.6;">点一下，它就坐进空位。开局后轮到它，猫窝会叫它。</div>
+    <div class="catpick">${cats.map(c => `<button type="button" data-cat="${c.id}" ${seated.has(c.id) ? 'disabled' : ''}>${Maowo.avatar(c)}${esc(c.name)}${seated.has(c.id) ? ' · 已入座' : ''}</button>`).join('')}</div>`);
+  panel.querySelectorAll('[data-cat]:not([disabled])').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const out = await api(`/cats/${b.dataset.cat}/seat`, { json: { roomId } });
+      Maowo.toast(`坐好了，${out.seat}号`);
+      b.innerHTML += ' · 已入座';
+      await refresh();
+      if (!view.seats.some(s => !s.account)) panel.close();
+    } catch (err) { b.disabled = false; Maowo.toast(err.message); }
+  });
+}
+
 function renderNotice() {
   const box = $('#notice');
   if (view.status === 'waiting') {
@@ -209,6 +234,7 @@ function renderNotice() {
       <div class="row" style="margin: 10px 0 2px;">
         ${!mySeat && free ? '<button class="btn sm" id="join">入座</button>' : ''}
         ${mySeat ? '<button class="btn sm" id="leave">离座</button>' : ''}
+        ${free ? `<button class="btn sm soft" id="call-cats">${icon('cat', 15, 1.8)}叫猫来</button>` : ''}
         ${view.isHost ? `<button class="btn sm primary" id="start" ${free ? 'disabled' : ''}>开始游戏</button><button class="btn sm danger" id="dissolve">解散房间</button>` : ''}
       </div>`;
     $('#copy-id').onclick = () => Maowo.copy(view.id, '房间号已复制');
@@ -216,6 +242,7 @@ function renderNotice() {
     on('join', () => post('join', {}));
     on('leave', () => post('leave', {}));
     on('start', () => post('start', {}));
+    on('call-cats', callCats);
     on('dissolve', async () => {
       if (!confirm('解散这个房间？')) return;
       try { await api(`/rooms/${roomId}`, { method: 'DELETE' }); location.href = '/'; } catch (err) { Maowo.toast(err.message); }
@@ -363,27 +390,39 @@ const UNO_HEX = { red: '#D2483A', yellow: '#E3A92B', green: '#4E944A', blue: '#3
 const UNO_CN = { red: '红', yellow: '黄', green: '绿', blue: '蓝' };
 const UNO_FACE = { skip: '禁', reverse: '⇄', draw2: '+2', wild: '<small>变色</small>', wild4: '+4' };
 const unoCard = (c, extra = '', tagName = 'div') => `<${tagName} class="ucard ${c.color || 'wild'} ${extra}" ${tagName === 'button' ? `type="button" data-card="${esc(c.id)}"` : ''} aria-label="${esc(c.name)}">${c.color ? (UNO_FACE[c.value] || esc(c.value)) : `<span>${UNO_FACE[c.value]}</span>`}</${tagName}>`;
+// Tapping a card only picks it; 「确认出牌」 plays it (绫: a slip of the finger should not cost a card).
+let unoPick = null;
 function renderUno(box) {
   const b = view.board;
   const mine = view.me && view.me.hand;
   const myTurn = view.actions.some(a => a.type === 'play' || a.type === 'draw');
+  const picked = myTurn && mine && mine.find(c => c.id === unoPick && c.ok);
+  if (!picked) unoPick = null;
   let html = `<div class="uno-mid">${unoCard(b.top, 'big')}
     <div class="info">现在的颜色：<span class="cdot" style="background: ${UNO_HEX[b.color]}"></span><b>${UNO_CN[b.color]}色</b><br>
       方向：${b.dir === 1 ? '1→2→3 顺着走' : '倒着走'}<br>牌堆还剩 ${b.deck} 张${b.stage === 'challenge' ? `<br><b>${b.turn}号 要决定接不接 +4</b>` : ''}</div></div>`;
   if (mine) {
-    html += `<div class="uno-hand-t">你的手牌 · ${mine.length} 张${myTurn ? ' · 亮着的能出，点一下就出' : ''}</div>
-      <div class="uno-hand ${myTurn ? 'myturn' : ''}">${mine.map(c => unoCard(c, c.ok ? 'ok' : '', c.ok ? 'button' : 'div')).join('')}</div>`;
+    html += `<div class="uno-hand-t">你的手牌 · ${mine.length} 张${myTurn ? ' · 亮着的能出，点一下选中' : ''}</div>
+      <div class="uno-hand ${myTurn ? 'myturn' : ''}">${mine.map(c => unoCard(c, `${c.ok ? 'ok' : ''} ${c.id === unoPick ? 'sel' : ''}`, c.ok ? 'button' : 'div')).join('')}</div>
+      ${picked ? `<div class="uno-confirm"><button type="button" class="btn primary" id="uno-go">${picked.color ? `确认出牌：${esc(picked.name)}` : `确认出 ${esc(picked.name)}，再选颜色`}</button>
+        <button type="button" class="btn" id="uno-cancel">取消</button></div>` : ''}`;
   } else if (view.status === 'finished' && b.hands) {
     html += Object.entries(b.hands).map(([seat, h]) => `<div class="uno-hand-t">${seat}号 剩下 ${h.length} 张</div><div class="uno-hand">${h.map(c => unoCard(c)).join('')}</div>`).join('');
   }
   box.innerHTML = html;
   box.querySelectorAll('[data-card]').forEach(el => el.onclick = () => {
-    const c = mine.find(x => x.id === el.dataset.card);
-    const send = color => act({ type: 'play', card: c.id, ...(color ? { color } : {}), uno: mine.length === 2 });
-    if (c.color) return send();
-    const panel = Maowo.sheet(`<h2>选一个颜色</h2><div class="colorpick">${Object.keys(UNO_HEX).map(k => `<button style="background: ${UNO_HEX[k]}" data-color="${k}">${UNO_CN[k]}</button>`).join('')}</div>`);
-    panel.querySelectorAll('[data-color]').forEach(x => x.onclick = () => { panel.close(); send(x.dataset.color); });
+    unoPick = unoPick === el.dataset.card ? null : el.dataset.card;
+    renderUno(box);
   });
+  if (!picked) return;
+  box.querySelector('#uno-cancel').onclick = () => { unoPick = null; renderUno(box); };
+  box.querySelector('#uno-go').onclick = () => {
+    const c = picked;
+    const send = color => { unoPick = null; act({ type: 'play', card: c.id, ...(color ? { color } : {}), uno: mine.length === 2 }); };
+    if (c.color) return send();
+    const panel = Maowo.sheet(`<h2>选一个颜色</h2><div class="small muted" style="margin-top: 4px;">点了颜色就出牌。不想出了就关掉这里。</div><div class="colorpick">${Object.keys(UNO_HEX).map(k => `<button style="background: ${UNO_HEX[k]}" data-color="${k}">${UNO_CN[k]}</button>`).join('')}</div>`);
+    panel.querySelectorAll('[data-color]').forEach(x => x.onclick = () => { panel.close(); send(x.dataset.color); });
+  };
 }
 
 function renderBoard(box) {
@@ -521,7 +560,7 @@ function renderActionBar() {
     if (view.status === 'waiting') msg = view.mySeat ? '等人齐了由房主开始' : '点空位入座，或者旁观';
     else if (view.status === 'finished') msg = '这局已经结束了';
     else if (view.mySeat && view.seats.find(s => s.me)?.away) msg = '你现在托管中，系统会替你跳过。想继续玩就点上面的「我回来了」';
-    else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.some(a => a.type === 'move') ? '轮到你了，点棋盘落子' : view.game === 'uno' && view.actions.some(a => a.type === 'play') ? '轮到你了，点亮着的牌出牌' : '还没轮到你';
+    else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.some(a => a.type === 'move') ? '轮到你了，点棋盘落子' : view.game === 'uno' && view.actions.some(a => a.type === 'play') ? '轮到你了：点一张亮着的牌，再点「确认出牌」' : '还没轮到你';
     html = `<div class="inputbox"><div class="placeholder">${esc(msg)}</div><button class="send" disabled aria-label="发送">${icon('send', 18, 2)}</button></div>`;
   }
   // Nothing changed in the bar (e.g. the other player just moved): leave it alone, so the

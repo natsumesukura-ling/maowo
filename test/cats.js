@@ -45,6 +45,8 @@ function reply(body) {
     const c = last.content.replace(/\n\n（猫窝备注：[\s\S]*）$/, '');
     if (c.startsWith('翻旧账 ')) return call('recall', { query: c.slice(4) });
     const room = (last.content.match(/room_id：(\w+)/) || [])[1];
+    // the table is in the wake: act at once, like a model should
+    if (c.startsWith('【猫窝】') && room && c.includes('【现在的局面】')) return call('act', { room_id: room, action: 'move', row: 7, col: (msgs.filter(m => m.role === 'tool').length * 2) % 15 });
     if (c.startsWith('【猫窝】') && room) return call('get_state', { room_id: room });
     if (c.startsWith('记住')) return call('remember', { text: c.slice(2) });
     if (c === '定闹钟') return call('set_alarm', { minutes: 30, note: '去逛逛' });
@@ -507,7 +509,13 @@ const ok = name => console.log('ok', name);
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { token, ...args } } }) });
     return (await res.json()).result.content[0].text;
   };
-  await mcp(catToken, 'join_room', { room_id: room.id });
+  // 绫 seats it herself (no room number to copy); it gets one line about it and is not woken.
+  const nSeat = seen.length;
+  assert.strictEqual((await api(OWNER, `/cats/${cat.id}/seat`, { json: { roomId: room.id } })).seat, 2);
+  await assert.rejects(api(OWNER, `/cats/${cat.id}/seat`, { json: { roomId: room.id } }), /已经在 2号/);
+  assert((await api(OWNER, `/cats/${cat.id}/messages`)).items.at(-1).text.includes('把它拉上了「下午五子棋」2号'));
+  assert.strictEqual(seen.length, nSeat, 'seating does not wake it');
+  void mcp; void catToken;
   await api(OWNER, `/rooms/${room.id}/start`, { json: {} });
   const before = seen.length;
   await api(OWNER, `/rooms/${room.id}/act`, { json: { type: 'move', row: 0, col: 0 } });
@@ -516,7 +524,8 @@ const ok = name => console.log('ok', name);
   assert(seen.slice(before).some(b => b.messages.some(m => m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('【猫窝】到你啦'))), 'woken with 到你啦');
   await until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
   w = await api(OWNER, `/cats/${cat.id}/messages`);
-  const tail = w.items.slice(-4);
+  const tail = w.items.slice(-3); // wake (with the table), act, result: no get_state, no 「下好了」 after it
+  assert.deepStrictEqual(seen.slice(before).length, 1, 'one call to the model for one move');
   assert(tail.every(i => i.kind === 'hidden' && i.room === '下午五子棋'), 'game part hidden while 绫 plays: ' + JSON.stringify(tail));
   assert(!JSON.stringify(w).includes('落在') && !JSON.stringify(w).includes('下好了'));
   assert.strictEqual((await api(OWNER, '/cats/unread')).unread, 0, 'hidden replies are not unread');
@@ -527,6 +536,7 @@ const ok = name => console.log('ok', name);
   await until(async () => seen[seen.length - 1].messages.at(-1).content.startsWith('你在干嘛'), 'asked');
   assert(seen[seen.length - 1].messages.at(-1).content.includes('也坐在这一桌'), 'the note says 绫 is at the table');
   assert(!seen[seen.length - 1].messages[0].content.includes('也坐在这一桌'), 'not in the system prompt (it would break the cache)');
+  assert(!JSON.stringify(seen[seen.length - 1].messages).includes('【现在的局面】'), 'old tables are cut from the history (or summarized away)');
   await until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
   ok('during the game the prompt tells it not to tell 绫 its secrets');
 

@@ -21,7 +21,9 @@
   .top header { display: flex; align-items: center; gap: 2px; padding: 8px 0; max-width: 560px; margin: 0 auto; }
   .top .who { display: flex; align-items: center; gap: 10px; min-width: 0; flex-grow: 1; padding-left: 2px; }
   .top .who > div { min-width: 0; }
-  .top .avatar { width: 38px; height: 38px; font-size: 15px; }
+  .top .avatar { width: 36px; height: 36px; font-size: 15px; }
+  /* six buttons up here: a little narrower, so the name still shows */
+  .top header .icon-btn { width: 36px; }
   .top .n { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .top .m { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
   .top .m span:last-child { overflow: hidden; text-overflow: ellipsis; }
@@ -172,6 +174,37 @@ function drawBanner() {
     ? `${icon('drama', 16, 1.8)}<span>番外中${order ? ' · 这条是戏外指令' : '：演完可以选要不要让它记得'}</span><button class="btn sm" id="ova-end">结束番外</button>`
     : order ? `<span>这条是<b>戏外指令</b>：它会照做，只管这一条。</span>` : '';
   const e = $('#ova-end'); if (e) e.onclick = endOva;
+}
+
+// 一起玩: a table with 绫 at 1号 and this cat next to her, then straight into the room.
+const PLAY_GAMES = [
+  { id: 'uno', name: 'UNO', sizes: [2, 3, 4, 5, 6], size: 2 },
+  { id: 'gomoku', name: '五子棋' },
+  { id: 'werewolf', name: '狼人杀', sizes: [6, 7, 8, 9, 10, 11, 12], size: 9 },
+];
+function playTogether() {
+  const f = { game: 'uno', players: 2 };
+  const panel = Maowo.sheet(`<h2>和${esc(cat.name)}一起玩</h2><div id="pt-body"></div>`);
+  const draw = () => {
+    const g = PLAY_GAMES.find(x => x.id === f.game);
+    panel.querySelector('#pt-body').innerHTML = `
+      <div class="small muted" style="margin: 4px 0 12px; line-height: 1.6;">开一桌，你坐 1号，它直接坐 2号。${g.sizes ? '人多的话，进去以后还可以「叫猫来」叫别的猫，或者把房间号给别的 AI。' : ''}</div>
+      <label class="field">玩什么</label>
+      <div class="pick">${PLAY_GAMES.map(x => `<button type="button" class="${x.id === f.game ? 'on' : ''}" data-g="${x.id}">${x.name}</button>`).join('')}</div>
+      ${g.sizes ? `<label class="field">几个人</label><div class="pick">${g.sizes.map(n => `<button type="button" class="${n === f.players ? 'on' : ''}" data-n="${n}">${n} 人</button>`).join('')}</div>` : ''}
+      <button class="btn primary block" id="pt-go" style="margin-top: 18px;">开桌，进去</button>`;
+    panel.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { f.game = b.dataset.g; const x = PLAY_GAMES.find(y => y.id === f.game); f.players = x.size || 2; draw(); });
+    panel.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { f.players = Number(b.dataset.n); draw(); });
+    panel.querySelector('#pt-go').onclick = async e => {
+      e.target.disabled = true;
+      try {
+        const room = await api('/rooms', { json: { game: f.game, options: g.sizes ? { players: f.players } : {} } });
+        await api(`/cats/${catId}/seat`, { json: { roomId: room.id } });
+        Maowo.go(`/room/${room.id}`);
+      } catch (err) { e.target.disabled = false; Maowo.toast(err.message); }
+    };
+  };
+  draw();
 }
 
 async function startOva() {
@@ -450,6 +483,7 @@ function startChat() {
     <div class="top"><header>
       <a class="icon-btn" id="back" aria-label="返回猫们">${icon('back', 22)}</a>
       <div class="who" id="who"></div>
+      <button class="icon-btn" id="play" aria-label="一起玩">${icon('gamepad', 22, 1.7)}</button>
       <button class="icon-btn" id="ova" aria-label="番外">${icon('drama', 22, 1.7)}</button>
       <button class="icon-btn" id="mute"></button>
       <button class="icon-btn" id="book" aria-label="小本本">${icon('notebook', 22, 1.7)}</button>
@@ -469,6 +503,7 @@ function startChat() {
   };
   const ta = $('#text');
   $('#ova').onclick = () => cat.ova ? endOva() : startOva();
+  $('#play').onclick = playTogether;
   // $ at the start makes it an order from outside the story: the button just adds or takes away the $.
   const drawOrder = () => { $('#dollar').classList.toggle('on', /^[$＄]/.test(ta.value)); drawBanner(); };
   $('#dollar').onclick = () => { ta.value = /^[$＄]/.test(ta.value) ? ta.value.replace(/^[$＄]\s*/, '') : '$ ' + ta.value; drawOrder(); ta.focus(); };

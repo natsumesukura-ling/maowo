@@ -531,7 +531,7 @@ function systemPromptRaw(ai, cat) {
     `你是「${ai.name}」，住在「猫窝」里的 AI，${owner.name}是你的主人。`,
     '猫窝是一个人和 AI 一起玩的地方：可以玩桌游（狼人杀、五子棋），可以在聊天区发帖、评论、投票。你用工具做这些事，身份已经自动带上了，不用填 token。',
     `- 你和${owner.name}在一个专属窗口里。她发来的消息就是她在跟你说话，你直接回复就好。`,
-    '- 以【猫窝】开头的消息是猫窝叫醒你的通知，不是主人在说话。照着做完（比如轮到你就用 get_state 看局面、再用 act 行动），最后用一两句话说说你做了什么，主人可能会看。',
+    '- 以【猫窝】开头的消息是猫窝叫醒你的通知，不是主人在说话。照着做完。轮到你玩游戏时，通知里一般已经附上了局面，直接用 act 行动就好（没附的话先用 get_state 看），行动完这次就结束了；想在桌上说话就同时用 chat。别的通知做完后用一两句话说说你做了什么，主人可能会看。',
     '- 消息末尾括号里的「猫窝备注」是猫窝写给你的：现在几点、你在哪几桌、闹钟。不是主人说的话，不用回应它。',
     `- 以【${owner.name}的戏外指令】开头的消息，是她在戏外直接告诉你怎么做（比如换个写法、写长一点、剧情往哪走）。最优先照做，但它不是剧情里的台词，不要在戏里回应或提到它。它只管这一条，之后的消息照常。`,
     '- 玩游戏时，每次被叫醒只做轮到你的这一步，做完就停，下一步猫窝会再叫你。',
@@ -599,6 +599,10 @@ function history(aiId, runStart, opts = {}) {
     if (r.id < runStart) {
       if (m.reasoning_content !== undefined) delete m.reasoning_content;
       if (r.kind === 'result' && typeof m.content === 'string' && m.content.length > 600) m.content = m.content.slice(0, 600) + '…（旧结果，已截短）';
+      if (r.kind === 'wake' && typeof m.content === 'string') {
+        const a = m.content.indexOf(VIEW_MARK), b = m.content.indexOf(VIEW_END);
+        if (a >= 0 && b > a) m.content = m.content.slice(0, a) + '\n（当时的局面，已省略）' + m.content.slice(b + VIEW_END.length);
+      }
     }
     out.push(m);
   }
@@ -810,10 +814,12 @@ async function pump(aiId) {
       }
       running.delete(aiId);
       runKind.delete(aiId);
+      flushNotes(aiId);
       if (t.done) t.done();
     }
   } finally {
     busy.delete(aiId);
+    flushNotes(aiId);
     for (const t of queues.get(aiId) || []) if (t.done) t.done();
     queues.delete(aiId);
     changed(aiId);
@@ -851,7 +857,7 @@ async function runOnce(aiId, t) {
   if (group) {
     add(aiId, 'gwake', { msg: { role: 'user', content: `【猫窝】${groupPrompt(group, ai)}${contextNote(ai, cat, '')}` }, groupId: gid, detail: JSON.stringify({ group: group.name }) });
   } else if (t.kind !== 'me') {
-    add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}${contextNote(ai, cat, t.text)}` }, text: t.shown || t.text, roomId: secret });
+    add(aiId, 'wake', { msg: { role: 'user', content: `【猫窝】${t.text}${t.roomId ? tableNow(ai, t.roomId) : ''}${contextNote(ai, cat, t.text)}` }, text: t.shown || t.text, roomId: secret });
   }
   const runStart = stmts.lastId.get(aiId).id || 0;
   activity(aiId, '正在想…');
@@ -860,6 +866,7 @@ async function runOnce(aiId, t) {
   let tools = toolsFor(cat);
   const system = systemPrompt(ai, stmts.cat.get(aiId)); // once per wake, so every step starts the same
   let said = false;
+  let acted = false;
   const opts = { flat: cat.tools_ok === 0, vision: cat.vision !== 0 };
   const ask = o => callModel(key, cat.model, [{ role: 'system', content: system }, ...withTailPreset(ai, cat, history(aiId, runStart, o))], o.flat ? [] : tools);
   // 「The request is wrong」 answers, as opposed to a wrong key, no money or a busy server.
@@ -923,12 +930,14 @@ async function runOnce(aiId, t) {
         text = `错误：${err.message}`;
       }
       lbl = lbl || label(c.function.name, args, aiId);
+      if (c.function.name === 'act' && !text.startsWith('错误：')) acted = true;
       add(aiId, 'result', {
         msg: { role: 'tool', tool_call_id: c.id, content: text }, text: lbl,
         detail: JSON.stringify({ tool: c.function.name, args, result: text.slice(0, 4000) }), roomId: secret, groupId: gid,
       });
       activity(aiId, lbl);
     }
+    if ((t.kind === 'turn' || t.kind === 'nudge') && acted && !platform.turnsFor(aiId).some(x => x.room.id === t.roomId)) break;
     if (step === MAX_STEPS - 1) add(aiId, 'error', { text: `这次想了 ${MAX_STEPS} 步还没想完，先停下了。`, groupId: gid });
   }
   activity(aiId, group ? `刚在群「${group.name}」里${said ? '说了话' : '看了看'}` : said ? (t.kind === 'me' ? '刚和你聊过' : '刚忙完') : '刚忙完');
@@ -942,6 +951,35 @@ async function runOnce(aiId, t) {
 }
 
 // ---------- wakes from the rest of 猫窝 ----------
+// What get_state would say, put right into the turn wake: one call (act) instead of three (get_state, act, 「好了」).
+// Only the newest wake keeps it; older ones are cut down in history(), between these two marks.
+const VIEW_MARK = '\n\n【现在的局面】\n';
+const VIEW_END = '\n【局面完】';
+const VIEW_MAX = 4000;
+function tableNow(ai, roomId) {
+  try {
+    const room = platform.getRoom(roomId);
+    if (room.status !== 'playing' || !platform.seatOf(room, ai.id)) return '';
+    const v = platform.textView(room, ai);
+    if (v.length > VIEW_MAX) return '';
+    return `${VIEW_MARK}${v}${VIEW_END}\n局面已经在上面了，直接用 act 行动就行，不用再 get_state。想在桌上说句话，可以同时用 chat。`;
+  } catch { return ''; }
+}
+
+// A line for its memory that does not wake it. If it is in the middle of a wake, the line waits until
+// the wake is over, so it never lands between a tool call and its result.
+const laterNotes = new Map(); // aiId -> [{ kind, row }]
+function noteFor(aiId, row) {
+  if (busy.has(aiId)) { laterNotes.set(aiId, [...(laterNotes.get(aiId) || []), row]); return; }
+  add(aiId, 'wake', row);
+}
+function flushNotes(aiId) {
+  const list = laterNotes.get(aiId);
+  if (!list) return;
+  laterNotes.delete(aiId);
+  for (const row of list) add(aiId, 'wake', row);
+}
+
 function turnShown(roomId, seat) {
   try { return `轮到它在「${platform.getRoom(roomId).name}」${seat}号行动了`; } catch { return '轮到它行动了'; }
 }
@@ -1735,6 +1773,19 @@ async function ovaGist(ai, cat) {
   ]);
   return String(msg.content || '').trim().slice(0, 300);
 }
+
+// 绫 pulls one of her cats onto a table that is still waiting, so nobody has to copy room numbers.
+router.post('/:id/seat', wrap(req => {
+  const { ai } = mine(req);
+  const room = platform.joinRoom(ai, String(req.body.roomId || ''), req.body.seat);
+  const seat = platform.seatOf(room, ai.id);
+  const g = games.get(room.game);
+  noteFor(ai.id, {
+    msg: { role: 'user', content: `【猫窝】${req.account.name}把你拉上了「${room.name}」（${g ? g.name : room.game}）这一桌，你坐 ${seat}号，房间号 ${room.id}。等人齐了开局，轮到你的时候会叫你。` },
+    text: `${req.account.name}把它拉上了「${room.name}」${seat}号`,
+  });
+  return { ok: true, seat };
+}));
 
 router.post('/:id/ova', wrap(async req => {
   const { ai, cat } = mine(req);

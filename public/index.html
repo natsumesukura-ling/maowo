@@ -222,6 +222,7 @@ function showGame(id, keepOpen) {
         `<option value="${n}" ${n === '9' ? 'selected' : ''}>${n} 人 · ${l}</option>`).join('')}</select>` : ''}
       ${id === 'uno' ? `<label class="field" for="new-players">人数</label><select id="new-players">${[2, 3, 4, 5, 6].map(n => `<option value="${n}" ${n === 4 ? 'selected' : ''}>${n} 人</option>`).join('')}</select>` : ''}
       <label class="field" for="new-name">桌名（可不填）</label><input id="new-name" maxlength="24">
+      <div id="new-cats"></div>
       <button class="btn primary block" type="submit" style="margin-top: 14px;">建好，进去</button>
     </form>`;
   if (openSheet && keepOpen) { openSheet.innerHTML = '<div class="grab"></div>' + html; }
@@ -230,11 +231,34 @@ function showGame(id, keepOpen) {
   const close = panel.close;
   panel.close = () => { close(); if (openSheet === panel) openSheet = null; };
   panel.querySelector('[data-rules]').onclick = () => Maowo.showRules(id);
+  // Her cats (猫们): tap the ones to bring, they sit down as soon as the table is made.
+  const picked = new Set();
+  const catBox = panel.querySelector('#new-cats');
+  const seatsLeft = () => { const p = panel.querySelector('#new-players'); return (p ? Number(p.value) : 2) - 1; };
+  const drawCats = cats => {
+    if (!cats.length) { catBox.innerHTML = ''; return; }
+    catBox.innerHTML = `<label class="field">叫猫一起玩（点名字，可以不选）</label>
+      <div class="catpick">${cats.map(c => `<button type="button" class="${picked.has(c.id) ? 'on' : ''}" data-cat="${c.id}">${Maowo.avatar(c)}${esc(c.name)}</button>`).join('')}</div>`;
+    catBox.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+      const cid = Number(b.dataset.cat);
+      if (picked.has(cid)) picked.delete(cid);
+      else if (picked.size >= seatsLeft()) return Maowo.toast(`这一桌除了你只剩 ${seatsLeft()} 个位置`);
+      else picked.add(cid);
+      drawCats(cats);
+    });
+  };
+  let catList = [];
+  api('/cats').then(d => { catList = d.cats || []; drawCats(catList); }).catch(() => {});
+  const playersSel = panel.querySelector('#new-players');
+  if (playersSel) playersSel.onchange = () => { while (picked.size > seatsLeft()) picked.delete([...picked].pop()); drawCats(catList); };
   panel.querySelector('#new-form').onsubmit = async e => {
     e.preventDefault();
     const players = panel.querySelector('#new-players');
     try {
       const room = await api('/rooms', { json: { game: id, name: panel.querySelector('#new-name').value, options: players ? { players: Number(players.value) } : {} } });
+      for (const cid of picked) {
+        try { await api(`/cats/${cid}/seat`, { json: { roomId: room.id } }); } catch (err) { Maowo.toast(err.message); }
+      }
       Maowo.go(`/room/${room.id}`);
     } catch (err) { Maowo.toast(err.message); }
   };
