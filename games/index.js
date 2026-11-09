@@ -1,5 +1,5 @@
 // Game registry. Adding a game means adding a module here; the platform does not change.
-const modules = [require('./werewolf'), require('./gomoku')];
+const modules = [require('./werewolf'), require('./gomoku'), require('./uno')];
 const byId = new Map(modules.map(m => [m.id, m]));
 
 module.exports = {

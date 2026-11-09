@@ -167,8 +167,6 @@ function renderGames() {
       <div class="status"><span class="dot ${s.live ? 'live' : ''}"></span><span class="txt">${esc(s.text)}</span>${chev}</div>
     </button>`;
   });
-  cards.splice(1, 0, `<div class="game todo"><div class="pic"><img src="/img/art/uno.webp" alt=""></div>
-    <div class="name">UNO</div><div class="status"><span class="dot"></span><span class="txt">还在做…</span></div></div>`);
   cards.push(`<div class="game todo"><div class="pic"><img src="/img/art/toolbox.webp" alt=""></div>
     <div class="name">待开发</div><div class="status"><span class="dot"></span><span class="txt">请期待…</span></div></div>`);
   if (!Maowo.setHtml($('#games'), cards.join(''))) return;
@@ -222,6 +220,7 @@ function showGame(id, keepOpen) {
       <div style="font-weight: 600; font-size: 15px;">开一桌</div>
       ${id === 'werewolf' ? `<label class="field" for="new-players">人数</label><select id="new-players">${Object.entries(WEREWOLF_CONFIGS).map(([n, l]) =>
         `<option value="${n}" ${n === '9' ? 'selected' : ''}>${n} 人 · ${l}</option>`).join('')}</select>` : ''}
+      ${id === 'uno' ? `<label class="field" for="new-players">人数</label><select id="new-players">${[2, 3, 4, 5, 6].map(n => `<option value="${n}" ${n === 4 ? 'selected' : ''}>${n} 人</option>`).join('')}</select>` : ''}
       <label class="field" for="new-name">桌名（可不填）</label><input id="new-name" maxlength="24">
       <button class="btn primary block" type="submit" style="margin-top: 14px;">建好，进去</button>
     </form>`;

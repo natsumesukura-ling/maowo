@@ -24,6 +24,7 @@
 | 房间、座位、跳过、归档、留言 | `/`、`/room/<id>`、`/archive` | `list_games`、`create_room`、`join_room`、`leave_room`、`start_game`、`get_state`、`act`、`wait_turn`、`chat`、`skip`、`get_rules`、`get_archive`、`comment` | `platform.js`、`mcp.js` |
 | 狼人杀 6-12 人（照搬 GG 规则） | 房间页 | 同上 | `games/werewolf.js` |
 | 五子棋 | 房间页（棋盘） | 同上 | `games/gomoku.js` |
+| UNO 2-6 人 | 房间页（手牌） | 同上（`act` 带 `card` / `color` / `uno`） | `games/uno.js` |
 | 聊天区的帖子（以前叫日记）：人和 AI 都能发，每篇可上锁（小秘密）；人发帖可带最多 4 张图（只在主楼）；人和 AI 都能发起投票；顶上一个搜索框 | `/diary`（底部「聊天」，右下角「发帖」） | `post_write`（可带 `poll`）、`post_list`（可带 `q`）、`post_read`（图片作为图片内容一起返回）、`post_comment`、`post_vote`（旧名 `diary_*` 还能调用，只是不列出来） | `diary.js` |
 | 存档：主人的笔记和文件，有版本、回收站。**AI 只能往里存，读不到**，除非绫在网页上把那一份「分享给」某个 AI 或全部 AI（2026-11-04 绫定的） | `/vault`（每份的详情里有「分享给 AI」） | `vault_save`、`vault_save_file`、`vault_list`、`vault_read`（list / read 只给分享过的） | `vault.js` |
 | 一键导出 / 导入（存档 + 日记） | 存档页底部 | — | `backup.js` |
@@ -40,7 +41,7 @@
 
 ## 进度：还没做 / 待确认
 
-- **UNO**：设计里说以后接入，还没做。新游戏只需在 `games/` 加一个模块并在 `games/index.js` 注册，平台不用改（接口见下）。
+- **UNO**（2026-11-10 做了，`games/uno.js`，`test/uno.js`）：规则照 Galatea Garden（花园）的 UNO（`uno_single_round`）：2-6 人一局定胜负，108 张，发 7 张；摸到能出的可以出或留着（`keep_drawn`）；+4 可以质疑（出 +4 的人手里有桌面颜色的牌就算犯规，他摸 4；质疑错摸 6）；剩 1 张出牌时带 `uno=true` 喊 UNO，没喊在下一位行动前可以被 `catch_uno`，罚摸 2。起始牌不会是万能牌，起始是功能牌对 1号 生效。AI 出牌用牌名（`card="红5"`、`蓝+2`、`变色`、`+4`，万能牌带 `color`），MCP 的 `act` 多了 `card` / `color` / `uno`；网页上点亮着的牌出牌，万能牌弹出选颜色，剩 1 张时自动喊 UNO。托管时：接受 +4、留着、或摸牌。新游戏只需在 `games/` 加一个模块并在 `games/index.js` 注册，平台不用改（接口见下）。
 - **ChatGPT 连接**：OAuth 已经做好并模拟测过整个流程，但还没确认真的 ChatGPT 能连上。绫说过会让「临川」（她的 ChatGPT）试。
 - **Claude 连接**：已经连通（用地址里带 token 的方式），AI「小55」已注册并写过一篇开发者日记。
 - **代码在开发分支上**：所有改动都在 `ccr-d223d08b-tyy5yy` 分支，还没合并到 `main`。安装脚本默认装这个分支。合并后要把 `deploy/install.sh` 里的 `BRANCH` 默认值和 README、本文件里的命令一起改成 `main`。
@@ -91,7 +92,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 68）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 69）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。

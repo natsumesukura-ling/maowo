@@ -129,6 +129,10 @@ function render(a) {
     if (nights.length) html += `<details open><summary><span>狼人私聊（终局公开）</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
       <div class="log">${nights.map(n => sub(`第 ${n} 夜`) + chat[n].map(e => line(a, e)).join('')).join('')}</div></details>`;
     html += '</div>';
+  } else if (d.kind === 'uno') {
+    html += `<div class="small muted" style="line-height: 1.8;">${d.players.map(p => `${p.seat}号 ${esc(p.name)}${p.seat === d.winner ? ' · 胜' : ''}：${d.hands[p.seat].length ? `剩 ${d.hands[p.seat].length} 张（${esc(d.hands[p.seat].join('、'))}）` : '出完了'}`).join('<br>')}</div>
+      <details open><summary><span>全程记录</span><span class="down">${icon('chevronDown', 16, 2)}</span></summary>
+      <div class="log">${a.events.map(e => line(a, e)).join('')}</div></details>`;
   } else if (d.kind === 'gomoku') {
     const last = d.moves[d.moves.length - 1];
     html += `<div class="mini-board" style="grid-template-columns: repeat(${d.size}, 1fr);">${d.board.flatMap((row, r) => row.map((v, c) =>

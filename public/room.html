@@ -23,6 +23,25 @@
   .top-pane { flex: none; max-height: 58%; overflow-y: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
   .top-pane::-webkit-scrollbar { display: none; }
   body.gomoku .top-pane { max-height: 78%; }
+  body.uno .top-pane { max-height: 72%; }
+  /* UNO */
+  .uno-mid { display: flex; align-items: center; gap: 14px; margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--white); border: 1px solid var(--border); }
+  .uno-mid .info { font-size: 12.5px; color: var(--text2); line-height: 1.7; }
+  .uno-mid .info b { font-weight: 700; }
+  .uno-hand-t { font-size: 12px; color: var(--muted); margin: 10px 2px 6px; }
+  .uno-hand { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ucard { width: 46px; height: 66px; border-radius: 9px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(42, 31, 23, .25); display: flex; align-items: center; justify-content: center; font: inherit; font-weight: 800; font-size: 17px; color: #fff; padding: 0; position: relative; flex-shrink: 0; }
+  .ucard.big { width: 56px; height: 80px; font-size: 20px; }
+  .ucard small { font-size: 11.5px; font-weight: 700; }
+  .ucard.red { background: #D2483A; } .ucard.yellow { background: #E3A92B; } .ucard.green { background: #4E944A; } .ucard.blue { background: #3570B8; }
+  .ucard.wild { background: conic-gradient(#D2483A 0 25%, #E3A92B 0 50%, #4E944A 0 75%, #3570B8 0); }
+  .ucard.wild span { background: #2A1F17; border-radius: 6px; padding: 2px 4px; }
+  button.ucard { cursor: pointer; }
+  .uno-hand.myturn .ucard:not(.ok) { opacity: .38; }
+  .uno-hand .ucard.ok { transform: translateY(-3px); box-shadow: 0 4px 10px rgba(184, 97, 46, .45); }
+  .cdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 3px; }
+  .colorpick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .colorpick button { height: 64px; border-radius: 14px; border: none; color: #fff; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; }
   .feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -16px; padding: 4px 16px 0; }
   .title { font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .config { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -165,7 +184,7 @@ function pickTargetType() {
 const textActions = () => view.actions.filter(a => a.text);
 // Room-level actions (leave, come back, end the game) and resigning live in their own row, not the action bar.
 const isRoomAction = a => a.room || a.type === 'resign';
-const plainActions = () => view.actions.filter(a => !a.target && !a.text && !isRoomAction(a));
+const plainActions = () => view.actions.filter(a => !a.target && !a.text && !isRoomAction(a) && !(view.game === 'uno' && a.type === 'play'));
 
 // ---------- header & notice ----------
 function renderHeader() {
@@ -268,6 +287,12 @@ function seatNote(s, p) {
   const b = view.board;
   if (view.game === 'gomoku') return s.seat === 1 ? '黑 ●' : '白 ○';
   if (!b) return s.me ? '你' : '';
+  if (view.game === 'uno') {
+    if (picked === s.seat) return '已选';
+    if (s.away && view.status === 'playing') return s.away === 'left' ? '已离开' : '托管中';
+    const n = b.counts[s.seat];
+    return `${n} 张${b.uno === s.seat ? ' · 没喊UNO' : n === 1 ? ' · UNO' : ''}`;
+  }
   if (picked === s.seat) return '已选';
   if (p && !p.alive) return p.role ? `${p.role}` : (p.cause || '出局');
   if (s.away && view.status === 'playing') return s.away === 'left' ? '已离开' : '托管中';
@@ -315,6 +340,7 @@ function renderSeats() {
 function renderExtra() {
   const box = $('#extra');
   if (view.game === 'gomoku' && view.board) return renderBoard(box);
+  if (view.game === 'uno' && view.board) return renderUno(box);
   if (!view.me || view.game !== 'werewolf') { box.innerHTML = ''; return; }
   if (covered && view.status !== 'finished') {
     box.innerHTML = `<button class="identity-cover" id="uncover">${icon('eye')}你的身份已盖住，点一下查看</button>`;
@@ -330,6 +356,34 @@ function renderExtra() {
   </div>`;
   const c = $('#cover');
   if (c) c.onclick = () => { covered = true; renderExtra(); };
+}
+
+// ---------- UNO: the table and your hand ----------
+const UNO_HEX = { red: '#D2483A', yellow: '#E3A92B', green: '#4E944A', blue: '#3570B8' };
+const UNO_CN = { red: '红', yellow: '黄', green: '绿', blue: '蓝' };
+const UNO_FACE = { skip: '禁', reverse: '⇄', draw2: '+2', wild: '<small>变色</small>', wild4: '+4' };
+const unoCard = (c, extra = '', tagName = 'div') => `<${tagName} class="ucard ${c.color || 'wild'} ${extra}" ${tagName === 'button' ? `type="button" data-card="${esc(c.id)}"` : ''} aria-label="${esc(c.name)}">${c.color ? (UNO_FACE[c.value] || esc(c.value)) : `<span>${UNO_FACE[c.value]}</span>`}</${tagName}>`;
+function renderUno(box) {
+  const b = view.board;
+  const mine = view.me && view.me.hand;
+  const myTurn = view.actions.some(a => a.type === 'play' || a.type === 'draw');
+  let html = `<div class="uno-mid">${unoCard(b.top, 'big')}
+    <div class="info">现在的颜色：<span class="cdot" style="background: ${UNO_HEX[b.color]}"></span><b>${UNO_CN[b.color]}色</b><br>
+      方向：${b.dir === 1 ? '1→2→3 顺着走' : '倒着走'}<br>牌堆还剩 ${b.deck} 张${b.stage === 'challenge' ? `<br><b>${b.turn}号 要决定接不接 +4</b>` : ''}</div></div>`;
+  if (mine) {
+    html += `<div class="uno-hand-t">你的手牌 · ${mine.length} 张${myTurn ? ' · 亮着的能出，点一下就出' : ''}</div>
+      <div class="uno-hand ${myTurn ? 'myturn' : ''}">${mine.map(c => unoCard(c, c.ok ? 'ok' : '', c.ok ? 'button' : 'div')).join('')}</div>`;
+  } else if (view.status === 'finished' && b.hands) {
+    html += Object.entries(b.hands).map(([seat, h]) => `<div class="uno-hand-t">${seat}号 剩下 ${h.length} 张</div><div class="uno-hand">${h.map(c => unoCard(c)).join('')}</div>`).join('');
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('[data-card]').forEach(el => el.onclick = () => {
+    const c = mine.find(x => x.id === el.dataset.card);
+    const send = color => act({ type: 'play', card: c.id, ...(color ? { color } : {}), uno: mine.length === 2 });
+    if (c.color) return send();
+    const panel = Maowo.sheet(`<h2>选一个颜色</h2><div class="colorpick">${Object.keys(UNO_HEX).map(k => `<button style="background: ${UNO_HEX[k]}" data-color="${k}">${UNO_CN[k]}</button>`).join('')}</div>`);
+    panel.querySelectorAll('[data-color]').forEach(x => x.onclick = () => { panel.close(); send(x.dataset.color); });
+  });
 }
 
 function renderBoard(box) {
@@ -467,7 +521,7 @@ function renderActionBar() {
     if (view.status === 'waiting') msg = view.mySeat ? '等人齐了由房主开始' : '点空位入座，或者旁观';
     else if (view.status === 'finished') msg = '这局已经结束了';
     else if (view.mySeat && view.seats.find(s => s.me)?.away) msg = '你现在托管中，系统会替你跳过。想继续玩就点上面的「我回来了」';
-    else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.some(a => a.type === 'move') ? '轮到你了，点棋盘落子' : '还没轮到你';
+    else if (view.mySeat) msg = view.game === 'gomoku' && view.actions.some(a => a.type === 'move') ? '轮到你了，点棋盘落子' : view.game === 'uno' && view.actions.some(a => a.type === 'play') ? '轮到你了，点亮着的牌出牌' : '还没轮到你';
     html = `<div class="inputbox"><div class="placeholder">${esc(msg)}</div><button class="send" disabled aria-label="发送">${icon('send', 18, 2)}</button></div>`;
   }
   // Nothing changed in the bar (e.g. the other player just moved): leave it alone, so the
@@ -552,6 +606,7 @@ function apply(v) {
   // Leave room at the bottom for the action bar, whatever its height right now.
   feed.style.paddingBottom = (document.querySelector('.actionbar').offsetHeight + 16) + 'px';
   document.body.classList.toggle('gomoku', view.game === 'gomoku');
+  document.body.classList.toggle('uno', view.game === 'uno');
   // Only the first load starts at the newest message; after that the list stays where you are.
   if (first) feed.scrollTop = feed.scrollHeight;
   else if (added.length) noteNew(added);

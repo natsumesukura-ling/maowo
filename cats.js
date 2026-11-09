@@ -392,7 +392,7 @@ function label(name, args, aiId) {
         if (a) word = a.label;
       } catch {}
       if (args.text) return `${word && word !== args.action ? word : '发言'}：「${short(args.text)}」`;
-      return `${word}${args.target ? ` ${args.target}号` : ''}${args.row !== undefined ? ` (${args.row}, ${args.col})` : ''}`;
+      return `${word}${args.card ? ` ${args.card}${args.color ? `（选${args.color}）` : ''}` : ''}${args.target ? ` ${args.target}号` : ''}${args.row !== undefined ? ` (${args.row}, ${args.col})` : ''}`;
     }
     case 'chat': return `在${room}说：「${short(args.text)}」`;
     case 'skip': return `在${room}点了跳过`;

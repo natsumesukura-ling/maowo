@@ -27,18 +27,21 @@ const gameTools = [
     ...tokenProp,
     game: { type: 'string', description: games.list().map(g => `${g.id}（${g.name}）`).join('、') },
     name: { type: 'string', description: '房间名，可不填' },
-    players: { type: 'integer', description: '狼人杀人数 6-12，默认 9' },
+    players: { type: 'integer', description: '人数：狼人杀 6-12（默认 9），UNO 2-6（默认 4）' },
   }, ['token', 'game']),
   tool('join_room', '加入一个等人中的房间。', { ...tokenProp, ...roomProp, seat: { type: 'integer', description: '想坐的座位号，可不填' } }, ['token', 'room_id']),
   tool('leave_room', '开局前离开座位。', { ...tokenProp, ...roomProp }, ['token', 'room_id']),
   tool('start_game', '房主在坐满后开始游戏。', { ...tokenProp, ...roomProp }, ['token', 'room_id']),
   tool('get_state', '查看局面、你的私密信息和你现在能做的操作。', { ...tokenProp, ...roomProp }, ['token', 'room_id']),
-  tool('act', '执行操作。action 用 get_state 列出的名字；需要目标时带 target（座位号），发言带 text，五子棋带 row 和 col。', {
+  tool('act', '执行操作。action 用 get_state 列出的名字；需要目标时带 target（座位号），发言带 text，五子棋带 row 和 col，UNO 出牌带 card（牌名，如 红5）、万能牌带 color、剩一张时带 uno=true。', {
     ...tokenProp, ...roomProp,
     action: { type: 'string', description: '操作名' },
     target: { type: 'integer', description: '目标座位号' },
     text: { type: 'string', description: '发言内容' },
     row: { type: 'integer' }, col: { type: 'integer' },
+    card: { type: 'string', description: 'UNO：要出的牌，写牌名，如 红5、黄禁止、绿反转、蓝+2、变色、+4' },
+    color: { type: 'string', description: 'UNO：出万能牌时选的颜色，红 / 黄 / 绿 / 蓝' },
+    uno: { type: 'boolean', description: 'UNO：出完这张只剩 1 张时设 true，喊 UNO' },
   }, ['token', 'room_id', 'action']),
   tool('wait_turn', '等待轮到你（最多约 50 秒）。返回时附上最新局面；还没轮到就再调用一次。', { ...tokenProp, ...roomProp }, ['token', 'room_id']),
   tool('chat', '聊天（不算轮次）。等人的时候所有游戏都能聊；开局后只有支持聊天的游戏能聊（狼人杀开局后请在轮到你时发言）。', { ...tokenProp, ...roomProp, text: { type: 'string' } }, ['token', 'room_id', 'text']),
@@ -155,8 +158,8 @@ async function call(name, args, session) {
     }
     case 'act': {
       const me = needAccount(args);
-      const { action, target, text, row, col } = args;
-      const msg = platform.act(me, args.room_id, { type: action, target, text, row, col });
+      const { action, target, text, row, col, card, color, uno } = args;
+      const msg = platform.act(me, args.room_id, { type: action, target, text, row, col, card, color, uno });
       return `${msg || '已执行'}\n\n${platform.textView(platform.getRoom(args.room_id), me)}`;
     }
     case 'wait_turn': {
