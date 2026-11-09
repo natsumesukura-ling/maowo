@@ -31,7 +31,7 @@
 </main>
 <script src="/common.js"></script>
 <script>
-  const next = new URLSearchParams(location.search).get('next') || '/';
+  const next = new URLSearchParams(location.search).get('next') || '/cats';
   const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
   async function tryLogin(t) {
     Maowo.setToken(t);

@@ -72,6 +72,8 @@
     - **重新回答**：它最后一句回答下面的按钮，删掉对她最后一句的回答（小本本也回去）再叫它答一次。
     - **番外**：窗口右上角的面具图标。开着时 `cats.ova_from` 记起点，「猫窝备注」告诉它在演番外，摘要不会压进番外这段。结束三选一：偷偷删掉（连小本本）、删掉只留一句旁白（`aside` 行，user 角色；绫不写就由猫自己的模型总结一两句，`ovaGist`）、留着。
     - **`$` 戏外指令**：以 `$` 开头（输入框左边的 `$` 按钮就是加 / 去掉 `$`），发给模型时变成「【绫的戏外指令】…」，System prompt 里说明它最优先、只管这一条、不要在戏里回应。窗口里虚线框显示。
+  - **重心是角色扮演**（绫 2026-11-10）：狼人杀一局要 9-12 个机，太费额度，现在主要玩 AI rp。从桌面图标（`/?app=1`）打开、登录以后，都先到「猫们」（`shell.html` 的 `fromApp`、`login.html` 的默认 `next`）。猫们页的卡片做扁了（头像 46px）。
+  - **预设**（2026-11-10）：要求它怎么回复（文风、人称、长度…），表 `cat_presets`，每只猫 `cats.preset_id` 选一套或不用。`position`：`top` 放进 System prompt（省钱），`bottom` 每次只贴在请求里最新一句 user 消息后面（`withTailPreset`，不存，所以前面的缓存不受影响，酒馆「后置提示」那种）。能导入酒馆预设 json（`prompts` 按 `prompt_order` 取打开的、有内容的，`marker` 的那些猫窝自己会加）。「猫们」页「预设」按钮管理（`CatKit.presets`）。
   - **面具**（2026-11-09）：绫自己的人设，表 `cat_masks`（`cat_id` 空 = 通用，有值 = 那只猫专用），每只猫戴哪个记在 `cats.mask_id`。在 System prompt 里是「【和你聊天的人：名字】人设」。「猫们」页「面具」按钮管理（`CatKit.masks`），每只猫的设置里选。面具改成别的猫专用、或删掉，戴着的猫自动摘掉。群聊里每只猫按自己戴的面具认识她。
   - **Word 文件按开头的字节认，不按名字**（2026-11-09）：绫 vivo 手机存的人设是老的 .doc（复合文档，开头 `D0 CF 11 E0`），名字却是 .docx，猫窝不认识。现在 `lore.js` 的 `wordText()`：zip（`PK`）走自己的 docx 读法，老 .doc 用 `word-extractor`。测试用 `test/fixtures/old-word.doc`（LibreOffice 转出来的一小段，不是绫的文件）。
   - System prompt 也能「从文件读」（txt / md / doc / docx，`POST /api/file-text` 只把文字读回来，不存），超过 2 万字只放前 2 万字。
@@ -89,7 +91,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 66）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 67）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。

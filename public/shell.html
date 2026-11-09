@@ -112,8 +112,10 @@ async function checkUnread() {
 setInterval(checkUnread, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUnread(); });
 
-const start = TABS.find(t => t.path === location.pathname) || TABS[1];
-show(start.id, false);
+// Opening 猫窝 from its icon (/?app=1) or after logging in starts on 猫们 (绫 2026-11-10: role-play is the main thing now).
+const fromApp = new URLSearchParams(location.search).has('app') && location.pathname === '/';
+const start = fromApp ? TABS.find(t => t.id === 'cats') : TABS.find(t => t.path === location.pathname) || TABS[1];
+show(start.id, fromApp);
 // Load the other tabs in the background so the first tap on them is instant too.
 addEventListener('load', () => setTimeout(() => TABS.forEach(frameFor), 600));
 </script>

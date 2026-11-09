@@ -177,6 +177,73 @@ window.CatKit = (() => {
     draw();
   }
 
+  // 预设: how the cats should reply (style, length, format). Each cat uses one or none (in its settings).
+  function presets(onChange = () => {}) {
+    const panel = Maowo.sheet('<h2>预设</h2><div id="cp-body"><div class="small muted">读取中…</div></div>');
+    async function draw() {
+      const list = await api('/cats/presets');
+      panel.querySelector('#cp-body').innerHTML = `
+        <div class="small muted" style="margin: 4px 0 14px; line-height: 1.6;">预设是你要求它<b>怎么回复</b>：文风、人称、长度、格式、要不要写动作描写……每只猫的设置里可以选一套，也可以不用，让它自然地说。可以自己写，也可以导入酒馆的预设 json。</div>
+        ${list.map(p => `<div class="ck-key">
+          <div class="n">${esc(p.name)}<span class="pill">${p.position === 'bottom' ? '放在最后' : '放在设定里'}</span></div>
+          <div class="u" style="white-space: pre-wrap; max-height: 4.8em; overflow: hidden;">${esc(p.content)}</div>
+          <div class="r"><span class="who">${p.usedBy.length ? esc(p.usedBy.join('、')) + ' 在用' : '还没有猫在用'}</span>
+            <button class="btn sm" data-edit="${p.id}">编辑</button><button class="btn sm danger" data-del="${p.id}">删除</button></div>
+        </div>`).join('') || '<div class="small muted" style="margin-bottom: 12px;">还没有预设。</div>'}
+        <button class="btn primary block" id="cp-new" style="margin-top: 8px;">${icon('plus', 18, 2)}新预设</button>`;
+      panel.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => edit(list.find(p => p.id === Number(b.dataset.edit))));
+      panel.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+        const p = list.find(x => x.id === Number(b.dataset.del));
+        if (!confirm(`删除预设「${p.name}」？${p.usedBy.length ? `${p.usedBy.join('、')} 就不用预设了。` : ''}`)) return;
+        try { await api(`/cats/presets/${p.id}`, { method: 'DELETE' }); draw(); onChange(); } catch (err) { Maowo.toast(err.message); }
+      });
+      panel.querySelector('#cp-new').onclick = () => edit(null);
+    }
+    function edit(p) {
+      const f = { position: p ? p.position : 'top' };
+      const sheet = Maowo.sheet(`<h2>${p ? '改预设' : '新预设'}</h2>
+        <label class="field">名字</label><textarea class="single" rows="1" id="cp-name" maxlength="30">${esc(p ? p.name : '')}</textarea>
+        <div class="row" style="justify-content: space-between; align-items: flex-end; margin-bottom: 8px;"><label class="field">要求它怎么回复</label>
+          <button type="button" class="btn sm" id="cp-up">${icon('book', 15, 1.8)}从文件读</button></div>
+        <input type="file" id="cp-file" accept=".json,.txt,.md,.markdown,.doc,.docx,application/json,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        <textarea id="cp-content" rows="9" maxlength="20000" placeholder="比如：用第三人称写，有动作和神态描写，每次 200 到 400 字，不要替{{user}}说话。" style="resize: vertical;">${esc(p ? p.content : '')}</textarea>
+        <div class="small muted" style="margin-top: 6px; line-height: 1.6;">可以写 {{user}}（你戴的面具的名字）和 {{char}}（它的名字）。「从文件读」支持 txt / md / doc / docx，还有酒馆导出的预设 json。</div>
+        <label class="field">放在哪</label>
+        <div class="ck-pick" id="cp-pos"></div>
+        <div class="small muted" id="cp-pos-hint" style="margin-top: 6px; line-height: 1.6;"></div>
+        <button class="btn primary block" id="cp-save" style="margin-top: 18px;">保存</button>`);
+      const q = s => sheet.querySelector(s);
+      oneLine(sheet);
+      const drawPos = () => {
+        q('#cp-pos').innerHTML = `<button type="button" class="${f.position === 'top' ? 'on' : ''}" data-pos="top">放在设定里</button><button type="button" class="${f.position === 'bottom' ? 'on' : ''}" data-pos="bottom">放在最后</button>`;
+        q('#cp-pos-hint').textContent = f.position === 'top' ? '和 System prompt 放在一起，省钱，大多数时候够用。' : '每次贴在你最新那句话后面，它最听话（酒馆里「破限 / 后置提示」那种），会多花一点点。';
+        q('#cp-pos').querySelectorAll('[data-pos]').forEach(b => b.onclick = () => { f.position = b.dataset.pos; drawPos(); });
+      };
+      drawPos();
+      q('#cp-up').onclick = () => q('#cp-file').click();
+      q('#cp-file').onchange = async e => {
+        const file = e.target.files[0]; e.target.value = '';
+        if (!file) return;
+        if (q('#cp-content').value.trim() && !confirm(`用「${file.name}」里的内容换掉现在写的？`)) return;
+        try {
+          const res = await fetch(`/api/cats/presets/file?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': 'application/octet-stream' }, body: file });
+          const out = await res.json(); if (!res.ok) throw new Error(out.error || res.status);
+          q('#cp-content').value = out.content;
+          if (!q('#cp-name').value.trim()) q('#cp-name').value = out.name;
+          Maowo.toast(out.cut ? '太长了，只放了前 2 万字' : `读好了，约 ${out.content.length} 字`);
+        } catch (err) { Maowo.toast(err.message); }
+      };
+      q('#cp-save').onclick = async () => {
+        const body = { name: q('#cp-name').value, content: q('#cp-content').value, position: f.position };
+        try {
+          await api(p ? `/cats/presets/${p.id}` : '/cats/presets', { method: p ? 'PUT' : 'POST', json: body });
+          sheet.close(); Maowo.toast('保存好了'); draw(); onChange();
+        } catch (err) { Maowo.toast(err.message); }
+      };
+    }
+    draw();
+  }
+
   // Styles for the two panels, added once.
   const css = document.createElement('style');
   css.textContent = `
@@ -199,5 +266,5 @@ window.CatKit = (() => {
   `;
   document.head.appendChild(css);
 
-  return { keys, models, masks, oneLine, PRESETS };
+  return { keys, models, masks, presets, oneLine, PRESETS };
 })();

@@ -114,6 +114,18 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cat_summaries ON cat_summaries(account_id, id);
 `);
+// 预设：怎么回复的要求（文风、长度、格式…），可以有好几套；每只猫选一套或者不用。
+// position: top = 放在 System prompt 里（便宜，缓存得住）；bottom = 每次贴在最新一句后面（更管用，酒馆的「破限 / 后置」那种）。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cat_presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    position TEXT NOT NULL DEFAULT 'top',
+    created_at TEXT NOT NULL
+  );
+`);
 // 面具：绫自己的人设，可以有好几个；cat_id 为空是通用，有值就只给那只猫用。每只猫戴哪个记在 cats.mask_id。
 db.exec(`
   CREATE TABLE IF NOT EXISTS cat_masks (
@@ -130,7 +142,7 @@ for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings
   // notebook as it was when she sent a message, so going back can put the notebook back too.
   ['cat_messages', 'run_kind TEXT'], ['cat_messages', 'nb_before TEXT'], ['cats', 'ova_from INTEGER'], ['cats', 'ova_nb TEXT'],
   // 前情提要 may be written by another (cheaper) key and model; empty = the chat one.
-  ['cats', 'summary_key_id INTEGER'], ['cats', 'summary_model TEXT']]) {
+  ['cats', 'summary_key_id INTEGER'], ['cats', 'summary_model TEXT'], ['cats', 'preset_id INTEGER']]) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -488,10 +500,28 @@ function fillNames(text, ai, cat) {
 }
 
 function systemPrompt(ai, cat) { return fillNames(systemPromptRaw(ai, cat), ai, cat); }
+function presetOf(ai, cat) {
+  const p = cat.preset_id && presetStmts.get.get(cat.preset_id);
+  return p && p.owner_id === ai.owner_id ? p : null;
+}
+// A 「放在最后」 preset rides on the newest message of her (or 猫窝) in this request only; it is never stored,
+// so only the very end of the request changes and everything before it stays cached.
+function withTailPreset(ai, cat, messages) {
+  const p = presetOf(ai, cat);
+  if (!p || p.position !== 'bottom' || !p.content.trim()) return messages;
+  const i = messages.map(m => m.role).lastIndexOf('user');
+  if (i < 0) return messages;
+  const note = `\n\n（回复要求，预设「${p.name}」：\n${fillNames(p.content.trim(), ai, cat)}）`;
+  const m = { ...messages[i] };
+  m.content = Array.isArray(m.content) ? m.content.map((x, k) => (k === 0 && x.type === 'text' ? { ...x, text: x.text + note } : x)) : `${m.content || ''}${note}`;
+  return [...messages.slice(0, i), m, ...messages.slice(i + 1)];
+}
 function systemPromptRaw(ai, cat) {
   const owner = accounts.byId(ai.owner_id);
   const parts = [];
   if (cat.system_prompt.trim()) parts.push(cat.system_prompt.trim(), '');
+  const preset = presetOf(ai, cat);
+  if (preset && preset.position !== 'bottom' && preset.content.trim()) parts.push(`【回复要求（预设「${preset.name}」）】`, preset.content.trim(), '');
   const mask = maskOf(ai, cat);
   if (mask) {
     parts.push(`【和你聊天的人：${mask.name}】`, mask.content.trim() || '（没写别的）',
@@ -831,7 +861,7 @@ async function runOnce(aiId, t) {
   const system = systemPrompt(ai, stmts.cat.get(aiId)); // once per wake, so every step starts the same
   let said = false;
   const opts = { flat: cat.tools_ok === 0, vision: cat.vision !== 0 };
-  const ask = o => callModel(key, cat.model, [{ role: 'system', content: system }, ...history(aiId, runStart, o)], o.flat ? [] : tools);
+  const ask = o => callModel(key, cat.model, [{ role: 'system', content: system }, ...withTailPreset(ai, cat, history(aiId, runStart, o))], o.flat ? [] : tools);
   // 「The request is wrong」 answers, as opposed to a wrong key, no money or a busy server.
   const refused = err => /对方回了 (400|415|422)/.test(err.message);
   for (let step = 0; step < MAX_STEPS; step++) {
@@ -1090,6 +1120,7 @@ function settings(ai, cat) {
     ...card(ai, cat), keyId: cat.key_id, systemPrompt: cat.system_prompt, wakeOnTurn: !!cat.wake_on_turn, alarms: !!cat.alarms,
     dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id), vision: cat.vision !== 0, toolsOk: cat.tools_ok !== 0,
     maskId: maskOf(ai, cat)?.id || null,
+    presetId: presetOf(ai, cat)?.id || null, presets: presetStmts.of.all(ai.owner_id).map(presetInfo),
     summaryKeyId: cat.summary_model ? (cat.summary_key_id || cat.key_id) : null, summaryModel: cat.summary_model || '',
     masks: maskStmts.of.all(ai.owner_id).filter(m => !m.cat_id || m.cat_id === ai.id).map(maskInfo),
   };
@@ -1160,6 +1191,7 @@ router.get('/', wrap(req => {
     todayWakes: list.reduce((n, x) => n + (x.cat.day === d ? x.cat.day_wakes : 0), 0),
     keys: stmts.keysOf.all(req.account.id).map(keyInfo),
     masks: maskStmts.of.all(req.account.id).length,
+    presets: presetStmts.of.all(req.account.id).length,
     cats, groups, items: ordered(req.account, cats, groups),
   };
 }));
@@ -1337,6 +1369,14 @@ function applySettings(ai, b) {
       f.summary_model = m; f.summary_key_id = k.id;
     }
   }
+  if (b.presetId !== undefined) {
+    if (!b.presetId) f.preset_id = null;
+    else {
+      const pr = presetStmts.get.get(Number(b.presetId));
+      if (!pr || pr.owner_id !== ai.owner_id) throw new Error('找不到这个预设');
+      f.preset_id = pr.id;
+    }
+  }
   if (b.maskId !== undefined) {
     if (!b.maskId) f.mask_id = null;
     else {
@@ -1396,6 +1436,74 @@ router.put('/masks/:mid', wrap(req => {
 router.delete('/masks/:mid', wrap(req => {
   const m = ownMask(req);
   db.transaction(() => { maskStmts.unwear.run(m.id); maskStmts.remove.run(m.id); })();
+  return { ok: true };
+}));
+
+// ---------- 预设 ----------
+const presetStmts = {
+  of: db.prepare('SELECT * FROM cat_presets WHERE owner_id = ? ORDER BY id'),
+  get: db.prepare('SELECT * FROM cat_presets WHERE id = ?'),
+  add: db.prepare('INSERT INTO cat_presets (owner_id, name, content, position, created_at) VALUES (?, ?, ?, ?, ?)'),
+  set: db.prepare('UPDATE cat_presets SET name = ?, content = ?, position = ? WHERE id = ?'),
+  remove: db.prepare('DELETE FROM cat_presets WHERE id = ?'),
+  unuse: db.prepare('UPDATE cats SET preset_id = NULL WHERE preset_id = ?'),
+};
+function presetInfo(p) {
+  const usedBy = db.prepare('SELECT account_id FROM cats WHERE preset_id = ?').all(p.id).map(r => accounts.byId(r.account_id)?.name).filter(Boolean);
+  return { id: p.id, name: p.name, content: p.content, position: p.position, usedBy };
+}
+function cleanPreset(b) {
+  const name = String(b.name || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  if (!name) throw new Error('给预设起个名字');
+  const content = String(b.content || '').replace(/\r\n/g, '\n').trim();
+  if (!content) throw new Error('预设里写点要求吧');
+  if (content.length > 20000) throw new Error('预设太长了（最多 2 万字）');
+  return { name, content, position: b.position === 'bottom' ? 'bottom' : 'top' };
+}
+function ownPreset(req) {
+  const p = presetStmts.get.get(Number(req.params.pid));
+  if (!p || p.owner_id !== req.account.id) throw new Error('找不到这个预设');
+  return p;
+}
+// 酒馆（SillyTavern）导出的预设 json: prompts[] in the order of prompt_order, only the enabled ones that have
+// words of their own (the markers for chat history, the card, the world book… are left out: 猫窝 adds those itself).
+function tavernPreset(json) {
+  if (!json || !Array.isArray(json.prompts)) return null;
+  const byId = new Map(json.prompts.map(p => [p.identifier, p]));
+  const orders = Array.isArray(json.prompt_order) ? json.prompt_order : [];
+  const order = (orders.find(o => o.character_id === 100001) || orders[orders.length - 1] || {}).order;
+  const list = Array.isArray(order) ? order.filter(o => o.enabled !== false).map(o => byId.get(o.identifier)).filter(Boolean)
+    : json.prompts.filter(p => p.enabled !== false);
+  const text = list.filter(p => !p.marker && typeof p.content === 'string' && p.content.trim()).map(p => p.content.trim()).join('\n\n');
+  return text || null;
+}
+router.get('/presets', wrap(req => presetStmts.of.all(req.account.id).map(presetInfo)));
+router.post('/presets', wrap(req => {
+  const p = cleanPreset(req.body || {});
+  const id = presetStmts.add.run(req.account.id, p.name, p.content, p.position, nowIso()).lastInsertRowid;
+  return presetInfo(presetStmts.get.get(id));
+}));
+// A file: txt / md / doc / docx (its words), or a 酒馆 preset json.
+router.post('/presets/file', express.raw({ type: () => true, limit: lore.FILE_MAX + 1024 }), wrap(async req => {
+  const name = String(req.query.name || '');
+  let content = null;
+  if (/\.json$/i.test(name)) {
+    let json;
+    try { json = JSON.parse(req.body.toString('utf8').replace(/^\uFEFF/, '')); } catch { throw new Error('这个 json 读不懂'); }
+    content = tavernPreset(json);
+    if (!content) throw new Error('这个 json 不像酒馆的预设（里面没有 prompts），或者里面没有打开的条目');
+  } else content = await lore.plainText(name, req.body);
+  return { name: name.replace(/^.*[\\/]/, '').replace(/\.[a-z0-9]+$/i, '').slice(0, 30), content: content.slice(0, 20000), cut: content.length > 20000 };
+}));
+router.put('/presets/:pid', wrap(req => {
+  const old = ownPreset(req);
+  const p = cleanPreset(req.body || {});
+  presetStmts.set.run(p.name, p.content, p.position, old.id);
+  return presetInfo(presetStmts.get.get(old.id));
+}));
+router.delete('/presets/:pid', wrap(req => {
+  const p = ownPreset(req);
+  db.transaction(() => { presetStmts.unuse.run(p.id); presetStmts.remove.run(p.id); })();
   return { ok: true };
 }));
 

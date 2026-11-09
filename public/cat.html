@@ -527,11 +527,12 @@ function startChat() {
 // Settings (and a new cat)
 // ============================================================
 async function startSettings() {
-  const [list, c, allMasks] = await Promise.all([api('/cats'), isNew ? null : api(`/cats/${catId}`), api('/cats/masks')]);
+  const [list, c, allMasks, allPresets] = await Promise.all([api('/cats'), isNew ? null : api(`/cats/${catId}`), api('/cats/masks'), api('/cats/presets')]);
+  let presets = c ? c.presets : allPresets;
   let keys = list.keys;
   let masks = c ? c.masks : allMasks.filter(m => !m.catId);
-  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision, toolsOk: c.toolsOk, maskId: c.maskId, summaryKeyId: c.summaryKeyId, summaryModel: c.summaryModel }
-    : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60, maskId: null, summaryKeyId: null, summaryModel: '' };
+  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision, toolsOk: c.toolsOk, maskId: c.maskId, presetId: c.presetId, summaryKeyId: c.summaryKeyId, summaryModel: c.summaryModel }
+    : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60, maskId: null, presetId: null, summaryKeyId: null, summaryModel: '' };
   let card = null;     // a read 酒馆角色卡: { cardId, loreCount, firstMes, isPng, file }
   document.title = `${c ? c.name + ' · 设置' : '新的猫'} · 猫窝`;
 
@@ -555,6 +556,10 @@ async function startSettings() {
         <button type="button" class="btn sm" id="masks-manage">${icon('card', 15, 1.8)}管理面具</button></div>
       <div class="pick">${[{ id: null, name: '不戴面具' }, ...masks].map(m => `<button type="button" class="${(f.maskId || null) === m.id ? 'on' : ''}" data-mask="${m.id || ''}">${esc(m.name)}${m.catId ? '（专用）' : ''}</button>`).join('')}</div>
       <div class="hint">面具是你自己的人设，它会按这个认识你。${masks.length ? '' : '还没有面具，点「管理面具」写一个。'}</div>
+      <div class="row" style="justify-content: space-between; align-items: flex-end; margin: 16px 0 8px;"><label class="field" style="margin: 0;">预设（要求它怎么回复）</label>
+        <button type="button" class="btn sm" id="presets-manage">${icon('sliders', 15, 1.8)}管理预设</button></div>
+      <div class="pick">${[{ id: null, name: '不用预设' }, ...presets].map(p => `<button type="button" class="${(f.presetId || null) === p.id ? 'on' : ''}" data-preset="${p.id || ''}">${esc(p.name)}</button>`).join('')}</div>
+      <div class="hint">不用预设，它就照自己的性子自然地说。${presets.length ? '' : '还没有预设，点「管理预设」写一套或者导入酒馆的预设。'}</div>
       ${c ? `<a class="lorelink" href="/cats/${c.id}/lore">${icon('book', 22, 1.6)}<span class="t">世界书<span class="s">设定资料：可以自己写，也可以上传 txt / md / doc / docx</span></span><span class="v">${c.loreCount} 条</span>${icon('chevronRight', 18, 2)}</a>` : '<div class="hint">搬进来以后，可以在这里给它加世界书（设定资料）。</div>'}
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">用哪个模型</span><span class="rule"></span></div>
@@ -584,6 +589,12 @@ async function startSettings() {
     Maowo.backTo($('#back'), c ? `/cats/${c.id}` : '/cats');
     const keep = () => { f.name = $('#f-name').value; f.bio = $('#f-bio').value; f.systemPrompt = $('#f-prompt').value; };
     document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => { keep(); const id = Number(b.dataset.key); if (id !== f.keyId) { f.keyId = id; f.model = ''; } draw(); });
+    document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => { keep(); f.presetId = b.dataset.preset ? Number(b.dataset.preset) : null; draw(); });
+    $('#presets-manage').onclick = () => { keep(); CatKit.presets(async () => {
+      presets = c ? (await api(`/cats/${c.id}`)).presets : await api('/cats/presets');
+      if (f.presetId && !presets.some(p => p.id === f.presetId)) f.presetId = null;
+      draw();
+    }); };
     document.querySelectorAll('[data-mask]').forEach(b => b.onclick = () => { keep(); f.maskId = b.dataset.mask ? Number(b.dataset.mask) : null; draw(); });
     $('#masks-manage').onclick = () => { keep(); CatKit.masks(async () => {
       masks = c ? (await api(`/cats/${c.id}`)).masks : (await api('/cats/masks')).filter(m => !m.catId);

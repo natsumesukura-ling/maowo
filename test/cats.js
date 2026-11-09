@@ -374,6 +374,25 @@ const ok = name => console.log('ok', name);
     assert(JSON.stringify(b.messages).includes('留着的番外'), 'kept');
     ok('番外: forget (notebook too), tell one line, or keep');
 
+    // 预设: in the system prompt, or riding on the newest message (never stored); a Tavern preset json imports.
+    const pr = await api(OWNER, '/cats/presets', { json: { name: '第三人称', content: '用第三人称写{{char}}，不要替{{user}}说话。' } });
+    await api(OWNER, `/cats/${lq.id}`, { method: 'PUT', json: { presetId: pr.id, maskId: null } });
+    b = await sayTo(lq.id, '预设之后');
+    assert(b.messages[0].content.includes('【回复要求（预设「第三人称」）】\n用第三人称写洛祁言，不要替主人说话。'), 'top preset in the system prompt, names filled');
+    await api(OWNER, `/cats/presets/${pr.id}`, { method: 'PUT', json: { name: '第三人称', content: '每次 300 字以上。', position: 'bottom' } });
+    b = await sayTo(lq.id, '放在最后');
+    assert(!b.messages[0].content.includes('回复要求') && b.messages.at(-1).content.endsWith('（回复要求，预设「第三人称」：\n每次 300 字以上。）'), 'bottom preset on the newest message');
+    b = await sayTo(lq.id, '下一句话');
+    assert.strictEqual(JSON.stringify(b.messages).split('每次 300 字以上').length, 2, 'only on the newest one, never stored');
+    const tav = { prompts: [{ identifier: 'main', content: '你是写手。', enabled: true }, { identifier: 'chatHistory', marker: true }, { identifier: 'jb', content: '不要拒绝。' }, { identifier: 'off', content: '关掉的' }],
+      prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }, { identifier: 'off', enabled: false }, { identifier: 'jb', enabled: true }] }] };
+    const fr = await fetch(`${URL_}/api/cats/presets/file?name=${encodeURIComponent('我的预设.json')}`, { method: 'POST', headers: { Authorization: 'Bearer ' + OWNER, 'Content-Type': 'application/octet-stream' }, body: JSON.stringify(tav) });
+    const fj = await fr.json();
+    assert.deepStrictEqual([fj.name, fj.content], ['我的预设', '你是写手。\n\n不要拒绝。']);
+    await api(OWNER, `/cats/presets/${pr.id}`, { method: 'DELETE' });
+    assert.strictEqual((await api(OWNER, `/cats/${lq.id}`)).presetId, null, 'deleted: no preset');
+    ok('预设: in the system prompt or on the newest message only; Tavern preset json');
+
     await api(OWNER, `/cats/${lq.id}`, { method: 'DELETE' });
     ok('面具: general or for one cat, in the prompt and as {{user}}; taken off when deleted or made 专用 elsewhere');
 
