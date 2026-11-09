@@ -1164,6 +1164,9 @@ function card(ai, cat) {
   return {
     ...accounts.publicInfo(ai), model: cat.model, keyName: key ? key.name : null, mute: !!cat.mute, ova: !!cat.ova_from,
     unread: unreadOf(ai, cat), status: status(ai, cat),
+    // For the table: is it thinking right now, or did something stop it (an error, today's limit)?
+    thinking: busy.has(ai.id) || (queues.get(ai.id) || []).length > 0,
+    trouble: /^(出错了|今天叫醒)/.test(cat.activity || '') && Date.now() - Date.parse(cat.activity_at || 0) < 15 * 60 * 1000 ? cat.activity : null,
   };
 }
 
@@ -1787,6 +1790,18 @@ async function ovaGist(ai, cat) {
   ]);
   return String(msg.content || '').trim().slice(0, 300);
 }
+
+// 「叫醒它」 on the table: its turn, but it is not thinking (a lost wake, an error before): wake it for that turn now.
+router.post('/:id/poke', wrap(req => {
+  const { ai, cat } = mine(req);
+  const t = platform.turnsFor(ai.id).find(x => !req.body.roomId || x.room.id === req.body.roomId);
+  if (!t) throw new Error('现在没轮到它');
+  if (pausedFor(ai.owner_id)) throw new Error('「猫们」页的总开关（让大家自己玩）关着，先打开');
+  if (!cat.wake_on_turn) throw new Error('它设置里的「轮到它就叫醒」关着，先打开');
+  if (busy.has(ai.id) || (queues.get(ai.id) || []).length) return { ok: true, already: true };
+  enqueue(ai.id, { kind: 'turn', roomId: t.room.id, text: wake.turnMessage(t.room, t.seat), key: `turn:${t.room.id}:poke${Date.now().toString(36)}`, shown: turnShown(t.room.id, t.seat) });
+  return { ok: true };
+}));
 
 // 绫 pulls one of her cats onto a table that is still waiting, so nobody has to copy room numbers.
 router.post('/:id/seat', wrap(req => {

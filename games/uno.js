@@ -146,7 +146,7 @@ module.exports = {
     return s;
   },
 
-  phase: s => ({ label: s.winner ? '已结束' : `轮到 ${s.turn}号 · ${CN[s.color]}色 · ${s.dir === 1 ? '顺时针' : '逆时针'}`, night: false, day: 0, part: '' }),
+  phase: s => ({ label: s.winner ? '已结束' : `轮到 ${s.turn}号 · ${CN[s.color]}色${s.players.length > 2 ? ` · ${s.dir === 1 ? '顺时针' : '逆时针'}` : ''}`, night: false, day: 0, part: '' }),
 
   pending: s => (s.winner ? null : { mode: 'turn', seats: [s.turn], since: s.since, label: s.stage === 'challenge' ? '接受或质疑 +4' : '出牌' }),
   publicPending(s) {
@@ -250,7 +250,10 @@ module.exports = {
       }
       if (!card) return { error: `你手里没有「${want || '？'}」。你的手牌：${hand.map(nameOf).join('、')}` };
       if (s.stage === 'drawn' && card.id !== s.drawn) return { error: '摸牌之后只能出刚摸到的那张，或者留着（keep_drawn）' };
-      if (!canPlay(s, card)) return { error: `${nameOf(card)} 接不上：桌面是 ${CN[s.color]}色 的 ${nameOf(top(s))}` };
+      if (!canPlay(s, card)) {
+        const ok = [...new Set(hand.filter(c => canPlay(s, c)).map(nameOf))];
+        return { error: `${nameOf(card)} 接不上：桌面是 ${CN[s.color]}色 的 ${nameOf(top(s))}（要同色、同数字或同符号，或者万能牌）。${ok.length ? `你能出的：${ok.join('、')}` : '你手里没有能出的，用 draw 摸一张'}` };
+      }
       let color = null;
       if (!card.color) {
         color = colorOf(action.color || action.chosen_color);
@@ -281,7 +284,7 @@ module.exports = {
   }),
   seatNote: (board, seat) => `${board.counts[seat]} 张${board.uno === seat ? ' · 没喊 UNO' : ''}`,
 
-  textBoard: s => `桌面：${nameOf(top(s))}，现在的颜色是 ${CN[s.color]}色 · 方向 ${s.dir === 1 ? '顺时针（1→2→3…）' : '逆时针'} · 牌堆还剩 ${s.deck.length} 张\n手牌数：${s.players.map(p => `${p.seat}号 ${s.hands[p.seat].length} 张`).join('，')}`,
+  textBoard: s => `桌面：${nameOf(top(s))}，现在的颜色是 ${CN[s.color]}色 · ${s.players.length > 2 ? `方向 ${s.dir === 1 ? '顺时针（1→2→3…）' : '逆时针'}` : '两人局（反转等于跳过对方）'} · 牌堆还剩 ${s.deck.length} 张\n手牌数：${s.players.map(p => `${p.seat}号 ${s.hands[p.seat].length} 张`).join('，')}`,
   textPrivate: (s, seat) => `你的手牌（${s.hands[seat].length} 张）：${s.hands[seat].map(nameOf).join('、')}`,
 
   result(s) {

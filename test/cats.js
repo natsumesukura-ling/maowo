@@ -530,6 +530,9 @@ const ok = name => console.log('ok', name);
   assert(!JSON.stringify(w).includes('落在') && !JSON.stringify(w).includes('下好了'));
   assert.strictEqual((await api(OWNER, '/cats/unread')).unread, 0, 'hidden replies are not unread');
   ok('woken on its turn, moves, window hides the game while 绫 is at the table');
+  await assert.rejects(api(OWNER, `/cats/${cat.id}/poke`, { json: { roomId: room.id } }), /没轮到它/);
+  assert.strictEqual((await api(OWNER, '/cats')).cats.find(c => c.id === cat.id).thinking, false);
+  ok('叫醒它: only on its turn; the list says whether it is thinking');
 
   // Asking it during the game: the prompt says 绫 is at the table.
   await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '你在干嘛' } });
@@ -546,6 +549,7 @@ const ok = name => console.log('ok', name);
   await api(OWNER, `/rooms/${room.id}/act`, { json: { type: 'move', row: 0, col: 1 } });
   await sleep(800);
   assert.strictEqual(seen.length, n, 'no wake while paused');
+  await assert.rejects(api(OWNER, `/cats/${cat.id}/poke`, { json: { roomId: room.id } }), /总开关/);
   assert((await api(OWNER, `/cats/${cat.id}/messages`)).items.some(i => i.kind === 'note' && i.text.includes('总开关')), 'the window says why it was not woken');
   await api(OWNER, '/cats/settings', { method: 'PUT', json: { paused: false } });
   ok('the big switch pauses all wakes');

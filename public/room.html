@@ -266,11 +266,13 @@ function renderNotice() {
   box.innerHTML = `<div class="notice ${mine ? 'mine' : ''}"><div class="grow">
       <div>${mine ? '<b>轮到你了</b> · ' : ''}${esc(p.text)}</div>
       <div class="sub" id="silence">已静默 ${Maowo.fmtSilence(elapsed)}</div>
+      <div class="sub catnow" id="catnow">${catNowHtml()}</div>
     </div>${canSkip ? `<button class="btn sm" id="skip" ${ready ? '' : 'disabled'} title="静默够久以后可以跳过">${skipLabel}</button>` : ''}</div>
     ${ev ? `<div class="endvote"><div><b>${ev.by}号 提议终止对局</b> · 同意 ${ev.yes} / 需要 ${ev.need}</div>
       <div class="sub">终止即解散游戏，不算输赢。还在的 ${ev.total} 人里过半同意才终止，3 分钟内没表态算不同意${ev.mine !== null ? ` · 你已${ev.mine ? '同意' : '不同意'}` : ''}</div>
       ${view.actions.some(a => a.type === 'room_end_yes') ? `<div class="row" style="margin-top: 10px;"><button class="btn sm danger" data-room="room_end_yes">同意终止</button><button class="btn sm" data-room="room_end_no">不同意，继续玩</button></div>` : ''}</div>` : ''}`;
   box.querySelectorAll('[data-room]').forEach(b => b.onclick = () => roomAct(b.dataset.room));
+  bindCatNow();
   const skip = $('#skip');
   if (skip) skip.onclick = async () => {
     if (!confirm(ends ? '对方很久没动了。结束这局？掉线的一方判负。' : p.hidden ? '跳过夜里还没行动的人？他们会执行默认操作。' : `跳过 ${p.text}？会执行默认操作。`)) return;
@@ -302,7 +304,39 @@ async function roomAct(type) {
   catch (err) { Maowo.toast(err.message); }
 }
 
+// ---------- her cats at this table: awake or not ----------
+// Only whether it is thinking and whether something stopped it, never what it did (that could show its hand).
+let myCats = null;   // her cats, from /api/cats; null until loaded, [] for a friend
+let catFetch = 0;
+function waitingCats() {
+  const p = view && view.pending;
+  if (!p || p.hidden || view.status !== 'playing' || !myCats) return [];
+  return p.seats.map(n => view.seats.find(s => s.seat === n)).filter(s => s && s.account && !s.away)
+    .map(s => myCats.find(c => c.id === s.account.id)).filter(Boolean);
+}
+function catNowHtml() {
+  return waitingCats().map(c => c.thinking ? `${esc(c.name)} 醒着，正在想…`
+    : `${esc(c.trouble || `${c.name} 现在没在想`)} <button class="btn sm" data-poke="${c.id}" style="height: 26px; margin-left: 4px;">叫醒它</button>`).join('<br>');
+}
+function bindCatNow() {
+  document.querySelectorAll('[data-poke]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api(`/cats/${b.dataset.poke}/poke`, { json: { roomId } }); Maowo.toast('叫它了'); await loadCats(); }
+    catch (err) { b.disabled = false; Maowo.toast(err.message); }
+  });
+}
+async function loadCats() {
+  try { myCats = (await api('/cats')).cats || []; } catch { myCats = myCats || []; }
+  const el = $('#catnow');
+  if (el) { const html = catNowHtml(); if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; bindCatNow(); } }
+}
+
 function tick() {
+  // While one of her cats is the one to act, look every 4 seconds whether it is thinking.
+  if (view && view.status === 'playing' && view.pending && !view.pending.hidden && Date.now() - catFetch > 4000
+      && (myCats === null || view.pending.seats.some(n => myCats.some(c => c.id === view.seats.find(s => s.seat === n)?.account?.id)))) {
+    catFetch = Date.now(); loadCats();
+  }
   if (!view || !view.pending) return;
   const el = $('#silence');
   if (el) el.textContent = `已静默 ${Maowo.fmtSilence(Date.now() - view.pending.since)}`;
@@ -401,7 +435,7 @@ function renderUno(box) {
   if (!picked) unoPick = null;
   let html = `<div class="uno-mid">${unoCard(b.top, 'big')}
     <div class="info">现在的颜色：<span class="cdot" style="background: ${UNO_HEX[b.color]}"></span><b>${UNO_CN[b.color]}色</b><br>
-      方向：${b.dir === 1 ? '1→2→3 顺着走' : '倒着走'}<br>牌堆还剩 ${b.deck} 张${b.stage === 'challenge' ? `<br><b>${b.turn}号 要决定接不接 +4</b>` : ''}</div></div>`;
+      ${view.seats.length > 2 ? `方向：${b.dir === 1 ? '1→2→3 顺着走' : '倒着走（3→2→1）'}` : '两个人玩：反转 = 跳过对方'}<br>牌堆还剩 ${b.deck} 张${b.stage === 'challenge' ? `<br><b>${b.turn}号 要决定接不接 +4</b>` : ''}</div></div>`;
   if (mine) {
     html += `<div class="uno-hand-t">你的手牌 · ${mine.length} 张${myTurn ? ' · 亮着的能出，点一下选中' : ''}</div>
       <div class="uno-hand ${myTurn ? 'myturn' : ''}">${mine.map(c => unoCard(c, `${c.ok ? 'ok' : ''} ${c.id === unoPick ? 'sel' : ''}`, c.ok ? 'button' : 'div')).join('')}</div>
