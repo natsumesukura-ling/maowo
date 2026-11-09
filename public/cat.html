@@ -240,6 +240,23 @@ function mineMenu(id) {
     } catch (err) { Maowo.toast(err.message); }
   };
 }
+// Every version of the 前情提要: read one, put it back.
+async function summaryVersions(onChange) {
+  let d;
+  try { d = await api(`/cats/${catId}/summaries`); } catch (err) { return Maowo.toast(err.message); }
+  const SRC = { auto: '自动整理', now: '手动整理', again: '重新总结', edit: '你改的' };
+  const panel = Maowo.sheet(`<h2>前情提要 · 以前的版本</h2>
+    <div class="small muted" style="margin: 6px 0 12px;">写它用的模型：${esc(d.model || '还没选')}${d.own ? '' : '（和聊天的一样）'}</div>
+    ${d.versions.length ? d.versions.map(v => `<div class="ck-key">
+      <div class="n" style="font-size: 14px;">${esc(SRC[v.source] || v.source)} · ${timeOf(v.createdAt)}${v.current ? '<span class="pill ok">正在用</span>' : ''}</div>
+      <div class="u" style="white-space: pre-wrap; max-height: 9em; overflow-y: auto; color: var(--text2); font-size: 13px; line-height: 1.6;">${esc(v.summary)}</div>
+      ${v.current ? '' : `<div class="r"><span class="who"></span><button class="btn sm" data-use="${v.id}">用这一版</button></div>`}
+    </div>`).join('') : '<div class="small muted">还没有。</div>'}`);
+  panel.querySelectorAll('[data-use]').forEach(b => b.onclick = async () => {
+    try { await api(`/cats/${catId}/summaries/${b.dataset.use}/use`, { json: {} }); panel.close(); Maowo.toast('换好了'); onChange(); } catch (err) { Maowo.toast(err.message); }
+  });
+}
+
 async function regenerate() {
   try { await api(`/cats/${catId}/regenerate`, { json: {} }); await reload(); } catch (err) { Maowo.toast(err.message); }
 }
@@ -399,16 +416,26 @@ function showNotebook() {
     body.innerHTML = editing ? `
       <div class="small muted" style="margin-bottom: 10px; line-height: 1.6;">一行一条。改完点保存，它下次醒来就会看到新的。</div>
       <textarea id="nb-text" rows="9" style="resize: vertical; font-size: 14px; line-height: 1.6;">${esc(data.notebook)}</textarea>
-      <label class="field">很久以前的事（旧对话的摘要）</label>
+      <label class="field">前情提要（它自己写的更早的经历）</label>
       <textarea id="nb-sum" rows="6" style="resize: vertical; font-size: 13px; line-height: 1.6;">${esc(data.summary)}</textarea>
       <div class="row" style="margin-top: 12px;"><button class="btn primary" id="nb-save">保存</button><button class="btn" id="nb-cancel">不改了</button></div>`
       : `<div class="small muted" style="margin-bottom: 10px; line-height: 1.6;">它自己觉得重要、想一直记着的事。你也可以改、可以删。</div>
       ${lines.length ? `<div class="nb">${lines.map(l => { const m = l.match(/^(\d{1,2}\/\d{1,2})\s+(.*)$/); return `<div class="nb-line">${m ? `<span class="muted small" style="flex-shrink: 0; width: 38px; padding-top: 2px;">${esc(m[1])}</span>${esc(m[2])}` : esc(l)}</div>`; }).join('')}</div>` : '<div class="empty" style="padding: 14px 0;">还什么都没记</div>'}
       <div class="row" style="margin-top: 12px;"><button class="btn sm" id="nb-edit">改一改</button></div>
-      <div class="ribbon" style="margin-top: 22px;"><span class="tag" style="font-size: 16px;">很久以前的事</span><span class="rule"></span></div>
-      ${data.summary ? `<div class="sum">${esc(data.summary)}</div>` : '<div class="small muted" style="line-height: 1.6;">聊天太长时，旧的部分会压成一段摘要放在这里，它每次醒来都会看到。现在还没有。</div>'}`;
+      <div class="ribbon" style="margin-top: 22px;"><span class="tag" style="font-size: 16px;">前情提要</span><span class="rule"></span></div>
+      ${data.summary ? `<div class="sum">${esc(data.summary)}</div>` : '<div class="small muted" style="line-height: 1.6;">聊天太长时，它会把旧的部分写成一段「前情提要」放在这里（留住感情、画面和原话，写上日期），每次醒来都会看到。现在还没有。</div>'}
+      <div class="row" style="margin-top: 12px;"><button class="btn sm" id="sum-now">现在就整理</button><button class="btn sm" id="sum-again">重新总结</button><button class="btn sm" id="sum-list">以前的版本</button></div>
+      <div class="small muted" style="margin-top: 8px; line-height: 1.6;">「现在就整理」把一半旧对话写进前情提要；「重新总结」把最近一次整理重写一遍；写坏了可以在「以前的版本」里换回去。</div>`;
     const e = body.querySelector('#nb-edit'); if (e) e.onclick = () => { editing = true; draw(); };
     const c = body.querySelector('#nb-cancel'); if (c) c.onclick = () => { editing = false; draw(); };
+    const run = async (btn, path, msg) => {
+      btn.disabled = true; btn.textContent = '在写…';
+      try { await api(`/cats/${catId}/summaries/${path}`, { json: {} }); data = await api(`/cats/${catId}/notebook`); draw(); Maowo.toast(msg); reload().catch(() => {}); }
+      catch (err) { Maowo.toast(err.message); draw(); }
+    };
+    const sn = body.querySelector('#sum-now'); if (sn) sn.onclick = () => run(sn, 'now', '整理好了');
+    const sa = body.querySelector('#sum-again'); if (sa) sa.onclick = () => run(sa, 'again', '重新写好了');
+    const sl = body.querySelector('#sum-list'); if (sl) sl.onclick = () => summaryVersions(async () => { data = await api(`/cats/${catId}/notebook`); draw(); });
     const s = body.querySelector('#nb-save'); if (s) s.onclick = async () => {
       try { data = await api(`/cats/${catId}/notebook`, { method: 'PUT', json: { notebook: body.querySelector('#nb-text').value, summary: body.querySelector('#nb-sum').value } }); editing = false; draw(); Maowo.toast('保存好了'); }
       catch (err) { Maowo.toast(err.message); }
@@ -503,8 +530,8 @@ async function startSettings() {
   const [list, c, allMasks] = await Promise.all([api('/cats'), isNew ? null : api(`/cats/${catId}`), api('/cats/masks')]);
   let keys = list.keys;
   let masks = c ? c.masks : allMasks.filter(m => !m.catId);
-  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision, toolsOk: c.toolsOk, maskId: c.maskId }
-    : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60, maskId: null };
+  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision, toolsOk: c.toolsOk, maskId: c.maskId, summaryKeyId: c.summaryKeyId, summaryModel: c.summaryModel }
+    : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60, maskId: null, summaryKeyId: null, summaryModel: '' };
   let card = null;     // a read 酒馆角色卡: { cardId, loreCount, firstMes, isPng, file }
   document.title = `${c ? c.name + ' · 设置' : '新的猫'} · 猫窝`;
 
@@ -537,6 +564,10 @@ async function startSettings() {
       <label class="field">模型</label>
       <div style="display: flex; gap: 8px; align-items: stretch;"><div class="modelbox ${f.model ? 'mono' : 'empty-m'}">${f.model ? esc(f.model) : '还没选'}</div><button class="btn soft" id="pickmodel" ${key ? '' : 'disabled'}>选择模型</button></div>
       <div class="row" style="margin-top: 10px; align-items: center;"><button class="btn sm" id="test" ${key && f.model ? '' : 'disabled'}>测试一下</button><span id="test-out" class="small muted"></span></div>
+      <label class="field">写前情提要用的模型</label>
+      <div style="display: flex; gap: 8px; align-items: stretch;"><div class="modelbox ${f.summaryModel ? 'mono' : 'empty-m'}">${f.summaryModel ? esc((keys.find(k => k.id === f.summaryKeyId) || {}).name || '') + ' · ' + esc(f.summaryModel) : '和聊天的一样'}</div>
+        ${f.summaryModel ? '<button class="btn soft" id="sum-same">用一样的</button>' : `<button class="btn soft" id="sum-pick" ${keys.length ? '' : 'disabled'}>换一个</button>`}</div>
+      <div class="hint">聊天太长时它会写「前情提要」，可以交给更便宜的模型写。要选写得稳、不乱编的（有人发现 DeepSeek 写摘要会编故事）。</div>
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">自己玩</span><span class="rule"></span></div>
       <button type="button" class="opt" id="o-turn"><div class="t">轮到它就叫醒<div class="s">游戏轮到它、有人评论它的帖子时，猫窝自己叫它</div></div><span class="switch ${f.wakeOnTurn ? '' : 'off'}"></span></button>
@@ -593,6 +624,16 @@ async function startSettings() {
       } catch (err) { Maowo.toast(err.message); }
     };
     $('#addkey').onclick = () => { keep(); CatKit.keys(async () => { keys = (await api('/cats')).keys; if (!f.keyId && keys[0]) f.keyId = keys[0].id; draw(); }); };
+    const ss = $('#sum-same'); if (ss) ss.onclick = () => { keep(); f.summaryModel = ''; f.summaryKeyId = null; draw(); };
+    const sp = $('#sum-pick'); if (sp) sp.onclick = () => {
+      keep();
+      const panel = Maowo.sheet(`<h2>用哪把钥匙写前情提要</h2><div class="pick" style="margin-top: 12px;">${keys.map(k => `<button type="button" data-skey="${k.id}">${esc(k.name)}</button>`).join('')}</div>`);
+      panel.querySelectorAll('[data-skey]').forEach(b => b.onclick = () => {
+        const k = keys.find(x => x.id === Number(b.dataset.skey));
+        panel.close();
+        CatKit.models(k.id, k.name, '', m => { f.summaryKeyId = k.id; f.summaryModel = m; draw(); });
+      });
+    };
     $('#pickmodel').onclick = () => { keep(); CatKit.models(f.keyId, key.name, f.model, m => { f.model = m; draw(); }); };
     $('#test').onclick = async () => {
       const out = $('#test-out');

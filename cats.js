@@ -99,6 +99,21 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cat_group_messages ON cat_group_messages(group_id, id);
 `);
+// 前情提要的每一版都留着（滚动摘要，思路来自 Lentlily22/rolling-summary-tutorial）：重新总结、换回旧版、手改都有记录。
+// from_id..upto_id 是这一版压进去的那段对话；prev_id 是它接着写的上一版。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cat_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    from_id INTEGER,
+    upto_id INTEGER,
+    prev_id INTEGER,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_cat_summaries ON cat_summaries(account_id, id);
+`);
 // 面具：绫自己的人设，可以有好几个；cat_id 为空是通用，有值就只给那只猫用。每只猫戴哪个记在 cats.mask_id。
 db.exec(`
   CREATE TABLE IF NOT EXISTS cat_masks (
@@ -113,7 +128,9 @@ db.exec(`
 for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1'], ['cats', 'tools_ok INTEGER NOT NULL DEFAULT 1'], ['cats', 'mask_id INTEGER'],
   // 回溯 / 番外: which kind of wake wrote a row (her chat 'me', or a game / alarm / group wake), and the
   // notebook as it was when she sent a message, so going back can put the notebook back too.
-  ['cat_messages', 'run_kind TEXT'], ['cat_messages', 'nb_before TEXT'], ['cats', 'ova_from INTEGER'], ['cats', 'ova_nb TEXT']]) {
+  ['cat_messages', 'run_kind TEXT'], ['cat_messages', 'nb_before TEXT'], ['cats', 'ova_from INTEGER'], ['cats', 'ova_nb TEXT'],
+  // 前情提要 may be written by another (cheaper) key and model; empty = the chat one.
+  ['cats', 'summary_key_id INTEGER'], ['cats', 'summary_model TEXT']]) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -168,7 +185,7 @@ const setCat = (id, fields) => {
 };
 
 const NOTEBOOK_MAX = 3000;
-const SUMMARY_MAX = 2500;
+const SUMMARY_MAX = 4000;     // 前情提要: a target of 1500–3000 characters, cut here at most
 // Past this, the oldest part is summarized. Kept small on purpose: every wake sends the whole window,
 // and what fell out can still be found with the recall tool.
 const CONTEXT_CHARS = Number(process.env.MAOWO_CATS_CONTEXT) || 16000;
@@ -498,7 +515,7 @@ function systemPromptRaw(ai, cat) {
   }
   const book = lore.alwaysText(ai.id);
   if (book) parts.push('', '世界书（主人给你的设定资料，一直有效）：', book);
-  if (cat.summary.trim()) parts.push('', '很久以前的事（旧对话的摘要）：', cat.summary.trim());
+  if (cat.summary.trim()) parts.push('', '前情提要（你自己写的，更早的经历；近的事在后面）：', cat.summary.trim());
   parts.push('', cat.notebook.trim() ? `你的小本本：\n${cat.notebook.trim()}` : '你的小本本还是空的。');
   return parts.filter(p => p !== null).join('\n');
 }
@@ -597,41 +614,96 @@ function history(aiId, runStart, opts = {}) {
 }
 
 // When the window gets too long, the oldest part becomes a few lines of summary.
-async function maybeSummarize(ai, cat, key) {
+// ---------- 前情提要 (rolling summary) ----------
+// When the window grows past CONTEXT_CHARS, the oldest part (about half) is folded into the 前情提要, written by
+// the cat itself in the first person: feelings, scenes, tone, pet words, lines worth keeping word for word and the
+// turning points; recent things clear, older ones vaguer; real dates, never 「昨天」; nothing made up. Every
+// version is kept, so a bad one can be written again or swapped back. Ideas from Lentlily22/rolling-summary-tutorial.
+const sumStmts = {
+  add: db.prepare('INSERT INTO cat_summaries (account_id, summary, from_id, upto_id, prev_id, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+  latest: db.prepare('SELECT * FROM cat_summaries WHERE account_id = ? ORDER BY id DESC LIMIT 1'),
+  latestRun: db.prepare("SELECT * FROM cat_summaries WHERE account_id = ? AND source IN ('auto', 'now', 'again') ORDER BY id DESC LIMIT 1"),
+  get: db.prepare('SELECT * FROM cat_summaries WHERE id = ? AND account_id = ?'),
+  list: db.prepare('SELECT * FROM cat_summaries WHERE account_id = ? ORDER BY id DESC LIMIT 30'),
+  rows: db.prepare('SELECT * FROM cat_messages WHERE account_id = ? AND id >= ? AND id <= ? AND msg IS NOT NULL ORDER BY id'),
+  seam: db.prepare('SELECT * FROM cat_messages WHERE account_id = ? AND id > ? AND msg IS NOT NULL ORDER BY id LIMIT 2'),
+};
+const stampOf = iso => new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+function lineOf(ai, owner, r) {
+  const m = JSON.parse(r.msg);
+  const c = textOf(m.content).replace(NOTE_RE, '') + (Array.isArray(m.content) && m.content.some(x => x.type === 'image_url') ? '（还发了图片）' : '');
+  const t = `[${stampOf(r.created_at)}] `;
+  if (r.kind === 'me') return `${t}${owner.name}：${c}`;
+  if (r.kind === 'wake' || r.kind === 'gwake') return `${t}猫窝：${c}`;
+  if (r.kind === 'group') return `${t}${c}`;
+  if (r.kind === 'gsay') return `${t}我（在群里）：${c}`;
+  if (r.kind === 'say') return `${t}我：${c}`;
+  if (r.kind === 'call') return c ? `${t}我：${c}` : '';
+  if (r.kind === 'result') return `（${r.text}）`;
+  if (r.kind === 'aside') return `（${c}）`;
+  return '';
+}
+const summaryLine = cat => cat.summary_model ? { keyId: cat.summary_key_id || cat.key_id, model: cat.summary_model } : { keyId: cat.key_id, model: cat.model };
+async function writeSummary(ai, cat, prev, rows, seam) {
+  const owner = accounts.byId(ai.owner_id);
+  const line = summaryLine(cat);
+  const key = line.keyId && stmts.key.get(line.keyId);
+  if (!key || !line.model) throw new Error('没有能用的钥匙和模型来写前情提要');
+  const task = `你是「${ai.name}」。请把下面这段你在猫窝里的经历，和已有的前情提要合在一起，重新写成一份新的「前情提要」，给以后的自己看。
+要求：
+- 用第一人称（「我」），像回忆一样写成连贯的叙述，不要列表。
+- 留住情绪、画面、语气、你们之间的暗号和称呼、值得一字不差记住的原话（加引号）、关系和剧情的转折点；也记下约定、游戏结果。
+- 近的事写清楚，远的事可以写得模糊一些、短一些。
+- 时间写具体日期（比如「11月9日晚」），不要写「今天」「昨天」，以后再看就不对了。
+- 只写真的发生过的事，不要编，不要补充没有的细节。
+- 写 1500 到 3000 字。只输出前情提要本身，不要问问题，不要加说明。`;
+  const transcript = rows.map(r => lineOf(ai, owner, r)).filter(Boolean).join('\n').slice(-40000);
+  const after = seam.map(r => lineOf(ai, owner, r)).filter(Boolean).join('\n');
+  const msg = await callModel(key, line.model, [
+    { role: 'system', content: task },
+    { role: 'user', content: `${task}\n\n——已有的前情提要——\n${prev || '（还没有）'}\n\n——这段经历（每行开头是北京时间）——\n${transcript}`
+      + (after ? `\n\n——紧接着的对话（只用来接上，不用写进去）——\n${after}` : '') + `\n\n${task}` },
+  ]);
+  const out = String(msg.content || '').trim();
+  if (!out) throw new Error('它没写出前情提要，再试一次吧');
+  return out.length > SUMMARY_MAX ? out.slice(0, SUMMARY_MAX) : out;
+}
+// force: 现在就整理 (from the page), folding about half of what is in the window even when it is not long yet.
+async function maybeSummarize(ai, cat, key, { force = false } = {}) {
   const rows = stmts.live.all(ai.id);
   let total = rows.reduce((n, r) => n + r.msg.length, 0);
-  if (total <= CONTEXT_CHARS) return;
-  // Cut where a new message from 绫 or a new wake starts, keeping about KEEP_CHARS of the newest.
+  if (!force && total <= CONTEXT_CHARS) return false;
+  const keep = force ? Math.min(KEEP_CHARS, Math.round(total / 2)) : KEEP_CHARS;
+  // Cut where a new message from 绫 or a new wake starts, keeping about `keep` of the newest.
   let cut = null;
   for (const r of rows) {
-    if (total <= KEEP_CHARS) break;
+    if (total <= keep) break;
     total -= r.msg.length;
     cut = r;
   }
+  if (!cut) return false;
   const next = rows.find(r => r.id > cut.id && (r.kind === 'me' || r.kind === 'wake'));
-  if (!next) return;
-  if (cat.ova_from && next.id > cat.ova_from) return; // a 番外 is going on: it is never folded into the summary
+  if (!next) return false;
+  if (cat.ova_from && next.id > cat.ova_from) return false; // a 番外 is going on: it is never folded into the summary
   const old = rows.filter(r => r.id < next.id);
-  const transcript = old.map(r => {
-    const m = JSON.parse(r.msg);
-    const c = textOf(m.content).replace(NOTE_RE, '') + (Array.isArray(m.content) && m.content.some(x => x.type === 'image_url') ? '（还发了图片）' : '');
-    if (r.kind === 'me') return `主人：${c}`;
-    if (r.kind === 'wake' || r.kind === 'gwake') return `猫窝：${c}`;
-    if (r.kind === 'group') return c;
-    if (r.kind === 'gsay') return `我（在群里）：${c}`;
-    if (r.kind === 'say') return `我：${m.content}`;
-    if (r.kind === 'call') return m.content ? `我：${m.content}` : '';
-    if (r.kind === 'result') return `（${r.text}）`;
-    if (r.kind === 'aside') return `（${c}）`;
-    return '';
-  }).filter(Boolean).join('\n').slice(-30000);
-  const msg = await callModel(key, cat.model, [
-    { role: 'system', content: `你是「${ai.name}」。下面是你在猫窝里更早的一段经历。请用第一人称，把值得记住的东西压成简短的摘要（谁、发生了什么、约定、游戏结果、你的感受），接在已有摘要后面，整体不超过 800 字。只输出摘要本身。` },
-    { role: 'user', content: `已有摘要：\n${cat.summary || '（没有）'}\n\n更早的经历：\n${transcript}` },
-  ]);
-  const summary = String(msg.content || '').trim().slice(-SUMMARY_MAX);
-  if (!summary) return;
-  db.transaction(() => { setCat(ai.id, { summary }); stmts.markSummarized.run(ai.id, next.id - 1); })();
+  const seam = rows.filter(r => r.id >= next.id).slice(0, 2);
+  const summary = await writeSummary(ai, cat, cat.summary, old, seam);
+  const prev = sumStmts.latest.get(ai.id);
+  db.transaction(() => {
+    sumStmts.add.run(ai.id, summary, old[0].id, next.id - 1, prev ? prev.id : null, force ? 'now' : 'auto', nowIso());
+    setCat(ai.id, { summary });
+    stmts.markSummarized.run(ai.id, next.id - 1);
+  })();
+  return true;
+}
+// 重新总结: the newest written version again, from the version before it and the same stretch of talk.
+async function summarizeAgain(ai, cat) {
+  const v = sumStmts.latestRun.get(ai.id);
+  if (!v) throw new Error('还没有自动整理过的前情提要');
+  const before = v.prev_id ? sumStmts.get.get(v.prev_id, ai.id) : null;
+  const rows = sumStmts.rows.all(ai.id, v.from_id, v.upto_id);
+  const summary = await writeSummary(ai, cat, before ? before.summary : '', rows, sumStmts.seam.all(ai.id, v.upto_id));
+  db.transaction(() => { sumStmts.add.run(ai.id, summary, v.from_id, v.upto_id, v.prev_id, 'again', nowIso()); setCat(ai.id, { summary }); })();
 }
 
 // ---------- running a cat ----------
@@ -1018,6 +1090,7 @@ function settings(ai, cat) {
     ...card(ai, cat), keyId: cat.key_id, systemPrompt: cat.system_prompt, wakeOnTurn: !!cat.wake_on_turn, alarms: !!cat.alarms,
     dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id), vision: cat.vision !== 0, toolsOk: cat.tools_ok !== 0,
     maskId: maskOf(ai, cat)?.id || null,
+    summaryKeyId: cat.summary_model ? (cat.summary_key_id || cat.key_id) : null, summaryModel: cat.summary_model || '',
     masks: maskStmts.of.all(ai.owner_id).filter(m => !m.cat_id || m.cat_id === ai.id).map(maskInfo),
   };
 }
@@ -1254,6 +1327,16 @@ function applySettings(ai, b) {
   if (b.wakeOnTurn !== undefined) f.wake_on_turn = b.wakeOnTurn ? 1 : 0;
   if (b.alarms !== undefined) { f.alarms = b.alarms ? 1 : 0; if (!b.alarms) { f.alarm_at = null; f.alarm_note = null; } }
   if (b.dailyLimit !== undefined) { const n = Math.round(Number(b.dailyLimit)); if (!(n >= 1 && n <= 1000)) throw new Error('每天最多叫醒 1 到 1000 次'); f.daily_limit = n; }
+  if (b.summaryModel !== undefined) {
+    const m = String(b.summaryModel || '').trim().slice(0, 120);
+    if (/\s/.test(m)) throw new Error('模型名里不能有空格');
+    if (!m) { f.summary_model = null; f.summary_key_id = null; }
+    else {
+      const k = stmts.key.get(Number(b.summaryKeyId));
+      if (!k || k.owner_id !== ai.owner_id) throw new Error('写前情提要用的钥匙找不到');
+      f.summary_model = m; f.summary_key_id = k.id;
+    }
+  }
   if (b.maskId !== undefined) {
     if (!b.maskId) f.mask_id = null;
     else {
@@ -1399,9 +1482,50 @@ router.put('/:id/notebook', wrap(req => {
   const { ai } = mine(req);
   const f = {};
   if (req.body.notebook !== undefined) { f.notebook = String(req.body.notebook).trim(); if (f.notebook.length > NOTEBOOK_MAX) throw new Error(`小本本最多 ${NOTEBOOK_MAX} 字`); }
-  if (req.body.summary !== undefined) { f.summary = String(req.body.summary).trim(); if (f.summary.length > SUMMARY_MAX) throw new Error(`摘要最多 ${SUMMARY_MAX} 字`); }
+  if (req.body.summary !== undefined) { f.summary = String(req.body.summary).trim(); if (f.summary.length > SUMMARY_MAX) throw new Error(`前情提要最多 ${SUMMARY_MAX} 字`); }
+  const was = stmts.cat.get(ai.id).summary;
   setCat(ai.id, f);
+  if (f.summary !== undefined && f.summary !== was) {
+    const v = sumStmts.latest.get(ai.id);
+    sumStmts.add.run(ai.id, f.summary, v ? v.from_id : null, v ? v.upto_id : null, v ? v.prev_id : null, 'edit', nowIso());
+  }
   return { notebook: stmts.cat.get(ai.id).notebook, summary: stmts.cat.get(ai.id).summary };
+}));
+
+// 前情提要: its versions, 现在就整理, 重新总结, 用这一版.
+router.get('/:id/summaries', wrap(req => {
+  const { ai, cat } = mine(req);
+  const line = summaryLine(cat);
+  return {
+    current: cat.summary,
+    model: line.model, own: !!cat.summary_model,
+    canAgain: !!sumStmts.latestRun.get(ai.id),
+    versions: (() => { let found = false; return sumStmts.list.all(ai.id).map(v => { const current = !found && v.summary === cat.summary; if (current) found = true; return { id: v.id, summary: v.summary, source: v.source, createdAt: v.created_at, current }; }); })(),
+  };
+}));
+// Runs while the cat is not thinking, and holds its queue meanwhile (her messages wait, then go).
+async function holding(ai, fn) {
+  notIdle(ai);
+  busy.add(ai.id); changed(ai.id);
+  try { return await fn(); } finally { busy.delete(ai.id); changed(ai.id); pump(ai.id); }
+}
+router.post('/:id/summaries/now', wrap(async req => {
+  const { ai, cat } = mine(req);
+  const done = await holding(ai, () => maybeSummarize(ai, cat, null, { force: true }));
+  if (!done) throw new Error(cat.ova_from ? '番外还没结束，番外那段不能整理' : '现在要整理的还不多，多聊一会儿再来');
+  return { ok: true };
+}));
+router.post('/:id/summaries/again', wrap(async req => {
+  const { ai, cat } = mine(req);
+  await holding(ai, () => summarizeAgain(ai, cat));
+  return { ok: true };
+}));
+router.post('/:id/summaries/:sid/use', wrap(req => {
+  const { ai } = mine(req);
+  const v = sumStmts.get.get(Number(req.params.sid), ai.id);
+  if (!v) throw new Error('找不到这一版');
+  setCat(ai.id, { summary: v.summary });
+  return { ok: true };
 }));
 
 // The window: messages after an id (or the newest ones), and whether the cat is thinking right now.

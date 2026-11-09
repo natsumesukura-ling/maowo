@@ -24,7 +24,7 @@ function reply(body) {
     if (body.tools || msgs.some(m => m.role === 'tool' || m.tool_calls)) return { error: 400 };
     return { role: 'assistant', content: '只能聊天啦', tool_calls: [{ id: 'x1', type: 'function', function: { name: 'forum_list_posts', arguments: '{}' } }] };
   }
-  if (!body.tools) return { role: 'assistant', content: sys.includes('压成简短的摘要') ? '摘要：主人和我聊了很多次天。' : '嗯' };
+  if (!body.tools) return { role: 'assistant', content: sys.includes('前情提要') && !body.tools ? '摘要：主人和我聊了很多次天。' : '嗯' };
   if (mode === 'broken') return { role: 'assistant', content: '我不会用工具' };
   if (last.role === 'user' && last.content === '请调用 ping 工具。') {
     // like some relays: the forced form is refused, and the answer comes in the old `function_call` shape
@@ -621,10 +621,39 @@ const ok = name => console.log('ok', name);
   const nb = await api(OWNER, `/cats/${cat.id}/notebook`);
   assert(nb.summary.includes('摘要'), 'summary written: ' + nb.summary);
   const lastBody = seen[seen.length - 1];
-  assert(lastBody.messages[0].content.includes('很久以前的事'));
+  assert(lastBody.messages[0].content.includes('前情提要（你自己写的'));
   assert(JSON.stringify(lastBody.messages).length < 14000, 'context stays small');
   assert(lastBody.messages[1].role === 'user', 'starts at a message, not mid tool call');
   ok('long windows fold into a summary');
+  // How it was written: first person, feelings and original lines, real dates, a seam, the task at both ends.
+  const sumReq = seen.filter(q => !q.tools && q.messages[0].content.includes('前情提要')).at(-1);
+  const sumIn = sumReq.messages[1].content;
+  assert(/第一人称/.test(sumReq.messages[0].content) && /原话/.test(sumIn) && /不要写「今天」「昨天」/.test(sumIn));
+  assert(/\[\d{1,2}\/\d{1,2} \d{2}:\d{2}\] /.test(sumIn), 'each line has a Beijing date');
+  assert(sumIn.includes('——紧接着的对话（只用来接上，不用写进去）——'), 'seam');
+  assert(sumIn.trim().endsWith('只输出前情提要本身，不要问问题，不要加说明。'), 'the task again at the end');
+  let sv = await api(OWNER, `/cats/${cat.id}/summaries`);
+  assert(sv.versions.length >= 1 && sv.versions[0].current && sv.canAgain);
+  // 重新总结 makes a new version; an older one can be put back; a hand edit is a version too.
+  await api(OWNER, `/cats/${cat.id}/summaries/again`, { json: {} });
+  sv = await api(OWNER, `/cats/${cat.id}/summaries`);
+  assert.strictEqual(sv.versions[0].source, 'again');
+  await api(OWNER, `/cats/${cat.id}/notebook`, { method: 'PUT', json: { summary: '我手改的前情提要' } });
+  sv = await api(OWNER, `/cats/${cat.id}/summaries`);
+  assert(sv.versions[0].source === 'edit' && sv.current === '我手改的前情提要');
+  await api(OWNER, `/cats/${cat.id}/summaries/${sv.versions[1].id}/use`, { json: {} });
+  assert.notStrictEqual((await api(OWNER, `/cats/${cat.id}/notebook`)).summary, '我手改的前情提要');
+  // A cheaper line for writing it.
+  await api(OWNER, `/cats/${cat.id}`, { method: 'PUT', json: { summaryKeyId: key.id, summaryModel: 'fake-2' } });
+  assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).summaryModel, 'fake-2');
+  await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '再说一句 ' + '喵'.repeat(300) } });
+  await until(async () => !(await api(OWNER, `/cats/${cat.id}/messages`)).busy, 'idle');
+  await api(OWNER, `/cats/${cat.id}/summaries/now`, { json: {} });
+  assert.strictEqual(seen.filter(q => !q.tools && q.messages[0].content.includes('前情提要')).at(-1).model, 'fake-2', 'written by the chosen model');
+  assert.strictEqual((await api(OWNER, `/cats/${cat.id}/summaries`)).versions[0].source, 'now');
+  await api(OWNER, `/cats/${cat.id}`, { method: 'PUT', json: { summaryModel: '' } });
+  assert.strictEqual((await api(OWNER, `/cats/${cat.id}`)).summaryModel, '');
+  ok('前情提要: written with dates and a seam, versions kept, again / use / edit, 现在就整理, its own model');
   assert(!lastBody.messages.some(m => typeof m.content === 'string' && m.content.includes('记住绫喜欢草莓')), 'the old message fell out of the window');
   await api(OWNER, `/cats/${cat.id}/messages`, { json: { text: '翻旧账 草莓' } });
   w = await until(async () => { const d = await api(OWNER, `/cats/${cat.id}/messages`); return !d.busy && d.items.at(-1).kind === 'say' && d.items.at(-1).text.startsWith('翻到了') && d; }, 'recall');
