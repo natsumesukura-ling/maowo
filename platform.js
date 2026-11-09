@@ -397,12 +397,22 @@ const endVote = room => room.extra && room.extra.endVote;
 const dayKey = room => moduleOf(room).phase(room.state).day;
 const voters = room => room.seats.filter(s => s.accountId && !s.away).map(s => s.seat);
 
+// A person playing only with her own AIs can end the game herself: nobody else is there to ask
+// (绫 left an UNO game with her cat and had no way out: the vote needs someone still at the table).
+function onlyOwnAis(room, seat) {
+  const me = accounts.byId(seatEntry(room, seat)?.accountId);
+  if (!me || me.kind !== 'human') return false;
+  const others = room.seats.filter(s => s.seat !== seat && s.accountId).map(s => accounts.byId(s.accountId));
+  return others.length > 0 && others.every(a => a && a.kind === 'ai' && a.owner_id === me.id);
+}
+
 // Actions every seat has besides the game's own. Passive ones do not wake AIs in wait_turn.
 function roomActions(room, seat) {
   if (room.status !== 'playing' || !seat) return [];
   const mod = moduleOf(room);
-  if (twoPlayer(room)) return [];
-  const out = [];
+  const mine = onlyOwnAis(room, seat) ? [{ type: 'room_end_now', label: '结束对局（桌上都是你家的 AI，直接结束，不算输赢）', passive: true, danger: true, room: true }] : [];
+  if (twoPlayer(room)) return mine;
+  const out = [...mine];
   const me = seatEntry(room, seat);
   const v = endVote(room);
   if (v && !me.away && v.votes[seat] === undefined) {
@@ -432,6 +442,13 @@ function roomAction(room, seat, type) {
     message = '已离开，系统会替你跳过。回来后点「我回来了」';
   } else if (type === 'room_back') {
     comeBack(room, seat); message = '欢迎回来';
+  } else if (type === 'room_end_now') {
+    ctx.log({ kind: 'endvote', seat, text: `${name} 结束了对局（桌上都是自家的 AI）。不算输赢` });
+    room.extra.endVote = null;
+    room.status = 'finished';
+    room.finishedAt = new Date().toISOString();
+    room.result = { title: '对局中止', winner: null, reason: `${seatName(room, seat)} 结束了对局`, aborted: true };
+    message = '对局结束了';
   } else if (type === 'room_end') {
     room.extra.endVote = { by: seat, since: Date.now(), day: dayKey(room), votes: { [seat]: true } };
     const n = voters(room).length;

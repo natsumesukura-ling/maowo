@@ -766,6 +766,18 @@ function activity(aiId, text) { setCat(aiId, { activity: text, activity_at: nowI
 
 const pausedFor = ownerId => !!stmts.settings.get(ownerId)?.paused;
 
+// A game turn it was not woken for: one line in its window per table (shown, never sent to the model),
+// so 绫 is not left watching 「思考中」 with no idea why.
+const warnedTables = new Set();
+function notWoken(aiId, roomId, why) {
+  const k = `${aiId}:${roomId}:${why}`;
+  if (warnedTables.has(k)) return;
+  warnedTables.add(k);
+  let name = '';
+  try { name = `「${platform.getRoom(roomId).name}」`; } catch {}
+  add(aiId, 'note', { text: `${name}轮到它了，但${why}，所以没叫它。可以去打开，或者在桌上跳过它。` });
+}
+
 // Wakes the cat unless 绫 turned things off or today's limit is used up. Messages from 绫 always go.
 function enqueue(aiId, trigger) {
   const cat = stmts.cat.get(aiId);
@@ -773,8 +785,10 @@ function enqueue(aiId, trigger) {
   if (!cat || !ai) return false;
   // 绫 talking (in its window or in a group) always goes; everything else obeys the switches.
   if (trigger.kind !== 'me' && trigger.kind !== 'group') {
-    if (pausedFor(ai.owner_id)) return false;
-    if ((trigger.kind === 'turn' || trigger.kind === 'inbox' || trigger.kind === 'nudge') && !cat.wake_on_turn) return false;
+    // A turn it will not be woken for: say why where 绫 looks (its status in 猫们), instead of silence.
+    const game = trigger.kind === 'turn' || trigger.kind === 'nudge';
+    if (pausedFor(ai.owner_id)) { if (game) notWoken(aiId, trigger.roomId, '「猫们」页的总开关（暂停全部叫醒）开着'); return false; }
+    if ((game || trigger.kind === 'inbox') && !cat.wake_on_turn) { if (game) notWoken(aiId, trigger.roomId, '它设置里的「轮到它就叫醒」关着'); return false; }
   }
   const q = queues.get(aiId) || [];
   // The same thing waiting twice is one wake: several messages from 绫 are answered together.

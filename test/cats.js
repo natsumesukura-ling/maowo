@@ -546,6 +546,7 @@ const ok = name => console.log('ok', name);
   await api(OWNER, `/rooms/${room.id}/act`, { json: { type: 'move', row: 0, col: 1 } });
   await sleep(800);
   assert.strictEqual(seen.length, n, 'no wake while paused');
+  assert((await api(OWNER, `/cats/${cat.id}/messages`)).items.some(i => i.kind === 'note' && i.text.includes('总开关')), 'the window says why it was not woken');
   await api(OWNER, '/cats/settings', { method: 'PUT', json: { paused: false } });
   ok('the big switch pauses all wakes');
 

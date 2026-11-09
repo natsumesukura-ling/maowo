@@ -283,9 +283,10 @@ const ROOM_CONFIRM = {
   room_leave: '先走的话，之后轮到你时系统会替你跳过（弃票、不发言、夜里不行动），大家不用等你。回来可以点「我回来了」。确定要走吗？',
   room_end: '终止，即为解散游戏。是否确认？',
   room_end_yes: '同意终止？终止即解散游戏，不算输赢。',
+  room_end_now: '结束这一局？不算输赢，会留一份归档。',
   resign: '确定认输？对方直接获胜。',
 };
-const ROOM_LABEL = { room_leave: '我先走了', room_back: '我回来了', room_end: '终止对局', resign: '认输' };
+const ROOM_LABEL = { room_leave: '我先走了', room_back: '我回来了', room_end: '终止对局', room_end_now: '结束对局', resign: '认输' };
 function renderRoomBar() {
   const bar = $('#roombar');
   const acts = view.status === 'playing' ? view.actions.filter(a => isRoomAction(a) && ROOM_LABEL[a.type]) : [];

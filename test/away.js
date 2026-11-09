@@ -230,5 +230,29 @@ const voteFor = target => (v, seat, req) => (req.some(a => a.type === 'vote') &&
   ok('G 五子棋：认输对方赢；对方 3 分钟不动可以结束，掉线判负，系统不代下');
 }
 
+// ---------- H. playing only with your own AIs: end it yourself, even after leaving ----------
+{
+  const has = (id, who) => platform.view(room(id), who).actions.some(a => a.type === 'room_end_now');
+  const r1 = platform.createRoom(owner, { game: 'uno', options: { players: 2 } });
+  platform.joinRoom(ais[0], r1.id);
+  platform.startGame(owner, r1.id);
+  assert(has(r1.id, owner), 'owner with only her AIs can end it');
+  assert(!has(r1.id, ais[0]), 'the AI cannot');
+  platform.act(owner, r1.id, { type: 'room_leave' });
+  assert(has(r1.id, owner), 'still there after 我先走了');
+  platform.act(owner, r1.id, { type: 'room_end_now' });
+  assert.strictEqual(room(r1.id).status, 'finished');
+  assert(room(r1.id).result.aborted);
+  // a friend at the table: no shortcut, the usual vote
+  const r2 = platform.createRoom(owner, { game: 'uno', options: { players: 3 } });
+  platform.joinRoom(ais[1], r2.id); platform.joinRoom(friend, r2.id);
+  platform.startGame(owner, r2.id);
+  assert(!has(r2.id, owner) && !has(r2.id, friend));
+  // gomoku with her own AI: there too (besides 认输)
+  const g = newGame([owner, ais[2]]);
+  assert(has(g, owner));
+  ok('H 桌上只有自家的 AI：主人可以直接结束对局（离开后也行），有别人在就不行');
+}
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('all away checks passed');
