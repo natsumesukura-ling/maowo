@@ -1464,7 +1464,28 @@ router.post('/:id/regenerate', wrap(req => {
   return { ok: true };
 }));
 // 番外: on, then off in one of three ways — forget it (as if it never happened), leave one line, or keep it.
-router.post('/:id/ova', wrap(req => {
+// One or two sentences about a 番外, written by the cat's own model, for 「只告诉它一句」 when she leaves it to the cat.
+async function ovaGist(ai, cat) {
+  const key = cat.key_id && stmts.key.get(cat.key_id);
+  if (!key || !cat.model) throw new Error('它还没有钥匙或模型，没法总结。可以自己写一句');
+  const owner = accounts.byId(ai.owner_id);
+  const ids = new Set(chatRowsFrom(ai.id, cat.ova_from));
+  const lines = stmts.live.all(ai.id).filter(r => ids.has(r.id)).map(r => {
+    const m = JSON.parse(r.msg);
+    const c = textOf(m.content).replace(NOTE_RE, '');
+    if (r.kind === 'me') return `${owner.name}：${c}`;
+    if (r.kind === 'say' || (r.kind === 'call' && c)) return `${ai.name}：${c}`;
+    return '';
+  }).filter(Boolean).join('\n').slice(-20000);
+  if (!lines) return '';
+  const msg = await callModel(key, cat.model, [
+    { role: 'system', content: `下面是「${ai.name}」和${owner.name}刚演完的一段番外小剧场。用一两句话概括演了什么（谁扮演谁、大概发生了什么），不超过 80 字。只输出这一两句话。` },
+    { role: 'user', content: lines },
+  ]);
+  return String(msg.content || '').trim().slice(0, 300);
+}
+
+router.post('/:id/ova', wrap(async req => {
   const { ai, cat } = mine(req);
   if (req.body.on) {
     if (cat.ova_from) return { ova: true };
@@ -1476,7 +1497,9 @@ router.post('/:id/ova', wrap(req => {
   notIdle(ai);
   const how = String(req.body.end || 'keep');
   if (!['forget', 'tell', 'keep'].includes(how)) throw new Error('不知道要怎么结束番外');
-  const line = String(req.body.line || '').trim().slice(0, 500);
+  let line = String(req.body.line || '').trim().slice(0, 500);
+  let byCat = false;
+  if (how === 'tell' && !line) { line = await ovaGist(ai, cat); byCat = !!line; }
   db.transaction(() => {
     if (how !== 'keep') {
       dropRows(ai.id, chatRowsFrom(ai.id, cat.ova_from));
@@ -1485,7 +1508,7 @@ router.post('/:id/ova', wrap(req => {
     }
     setCat(ai.id, { ova_from: null, ova_nb: null });
     if (how === 'tell') {
-      const say = `（猫窝旁白：刚才你们演了一段番外小剧场，已经结束了，回到正篇。${line ? `${accounts.byId(ai.owner_id).name}说：${line}` : ''}）`;
+      const say = `（猫窝旁白：刚才你们演了一段番外小剧场，已经结束了，回到正篇。${line ? (byCat ? `演的是：${line}` : `${accounts.byId(ai.owner_id).name}说：${line}`) : ''}）`;
       add(ai.id, 'aside', { msg: { role: 'user', content: say }, text: line ? `番外结束了：${line}` : '番外结束了' });
     }
   })();

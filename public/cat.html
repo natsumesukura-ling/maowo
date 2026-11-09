@@ -182,10 +182,11 @@ function endOva() {
   const panel = Maowo.sheet(`<h2>结束番外</h2>
     <div class="small muted" style="margin: 6px 0 14px; line-height: 1.6;">这一段番外要让${esc(cat.name)}记得吗？游戏里它被叫醒做的事不受影响。</div>
     <button class="opt" data-end="forget" style="width: 100%;"><div class="t">偷偷删掉<div class="s">它什么都不记得，小本本也回到番外之前，假装没发生过</div></div></button>
-    <button class="opt" data-end="tell" style="width: 100%;"><div class="t">只告诉它一句<div class="s">删掉这一段，只留下你写的一句话</div></div></button>
-    <textarea id="ova-line" rows="2" maxlength="500" placeholder="比如：我们演了一段校园番外，你是学长" style="margin: -2px 0 10px;"></textarea>
+    <button class="opt" data-end="tell" style="width: 100%;"><div class="t">只告诉它一句<div class="s">删掉这一段，只留一两句概括。下面不写就让它自己总结，写了就用你写的</div></div></button>
+    <textarea id="ova-line" rows="2" maxlength="500" placeholder="不写：它自己总结。也可以自己写，比如：我们演了一段校园番外，你是学长" style="margin: -2px 0 10px;"></textarea>
     <button class="opt" data-end="keep" style="width: 100%;"><div class="t">留着<div class="s">当成正常聊天，它会记得这一段</div></div></button>`);
   panel.querySelectorAll('[data-end]').forEach(b => b.onclick = async () => {
+    if (b.dataset.end === 'tell' && !panel.querySelector('#ova-line').value.trim()) Maowo.toast('它在总结…');
     try {
       await api(`/cats/${catId}/ova`, { json: { on: false, end: b.dataset.end, line: panel.querySelector('#ova-line').value } });
       panel.close(); await reload();
