@@ -399,10 +399,10 @@ async function startSettings() {
       <label class="field">一句话介绍（别人在猫窝里能看到，可以不填）</label><textarea class="single" rows="1" id="f-bio" maxlength="40">${esc(f.bio)}</textarea>
       <div class="row" style="justify-content: space-between; align-items: flex-end; margin-bottom: 8px;"><label class="field">System prompt（只有它自己看得到）</label>
         <button type="button" class="btn sm" id="prompt-up">${icon('book', 15, 1.8)}从文件读</button></div>
-      <input type="file" id="prompt-file" accept=".txt,.md,.markdown,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      <input type="file" id="prompt-file" accept=".txt,.md,.markdown,.doc,.docx,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
       <textarea class="big" id="f-prompt" placeholder="比如：你叫阿栗，说话轻快，有点小骄傲……">${esc(f.systemPrompt)}</textarea>
-      <div class="hint">可以直接写，也可以点「从文件读」导入 txt / md / docx（会换掉框里现在的字，导入后还能改，点保存才算数）。猫窝会在后面自动加上「怎么用猫窝」的说明、它的小本本和现在的时间，你不用写这些。</div>
-      ${c ? `<a class="lorelink" href="/cats/${c.id}/lore">${icon('book', 22, 1.6)}<span class="t">世界书<span class="s">设定资料：可以自己写，也可以上传 txt / md / docx</span></span><span class="v">${c.loreCount} 条</span>${icon('chevronRight', 18, 2)}</a>` : '<div class="hint">搬进来以后，可以在这里给它加世界书（设定资料）。</div>'}
+      <div class="hint">可以直接写，也可以点「从文件读」导入 txt / md / doc / docx（会换掉框里现在的字，导入后还能改，点保存才算数）。猫窝会在后面自动加上「怎么用猫窝」的说明、它的小本本和现在的时间，你不用写这些。</div>
+      ${c ? `<a class="lorelink" href="/cats/${c.id}/lore">${icon('book', 22, 1.6)}<span class="t">世界书<span class="s">设定资料：可以自己写，也可以上传 txt / md / doc / docx</span></span><span class="v">${c.loreCount} 条</span>${icon('chevronRight', 18, 2)}</a>` : '<div class="hint">搬进来以后，可以在这里给它加世界书（设定资料）。</div>'}
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">用哪个模型</span><span class="rule"></span></div>
       <label class="field">钥匙</label>
@@ -498,8 +498,8 @@ async function startLore() {
       <div class="ribbon"><span class="tag">${esc(c.name)}的世界书</span><span class="rule"></span></div>
       <div class="small muted" style="line-height: 1.7;">放它该知道的设定：人物、地点、关系、规矩……<br><b style="color: var(--text2);">常驻</b>的每次都带上；<b style="color: var(--text2);">关键词触发</b>的，聊天里出现关键词才带上，更省钱。只有 ${esc(c.name)} 自己看得到。</div>
       <div class="lore-tools"><button class="btn" id="lore-new">${icon('plus', 16, 2)}写一条</button><button class="btn" id="lore-up">${icon('archive', 16, 1.8)}上传文件</button></div>
-      <input type="file" id="lore-file" accept=".txt,.md,.markdown,.docx,.json,text/plain,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
-      <div class="hint" style="margin: -2px 0 14px;">支持 txt、md、docx（Word / WPS），也能导入酒馆导出的世界书 json。老的 .doc 要先另存为 .docx。</div>
+      <input type="file" id="lore-file" accept=".txt,.md,.markdown,.doc,.docx,.json,text/plain,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      <div class="hint" style="margin: -2px 0 14px;">支持 txt、md、doc、docx（Word / WPS），也能导入酒馆导出的世界书 json。</div>
       ${d.alwaysLength > 3000 ? `<div class="warn">常驻的一共约 ${d.alwaysLength} 字，每次叫醒都会带上，比较费钱${d.alwaysLength > d.alwaysMax ? `（超过 ${d.alwaysMax} 字的部分不会带上）` : ''}。不是每次都要用的，可以改成「关键词触发」。</div>` : ''}
       ${d.entries.map(e => `<button class="lore ${e.enabled ? '' : 'off'}" data-lore="${e.id}">
         <div class="h"><b>${esc(e.title)}</b><span class="pill ${e.mode === 'always' ? 'ok' : ''}">${esc(modeText(e).length > 18 ? modeText(e).slice(0, 18) + '…' : modeText(e))}</span>${e.enabled ? '' : '<span class="pill">关着</span>'}</div>

@@ -153,16 +153,30 @@ function tavernEntries(json) {
   });
 }
 
-// Just the words of a txt / md / docx, for filling in a System prompt from a file.
+// Word files are told apart by their first bytes, not the name: phones (绫's vivo) save the old
+// binary .doc format under a .docx name. A .docx is a zip (PK..), an old .doc a compound file (D0 CF 11 E0).
+const isZip = buf => buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4b;
+const isOldDoc = buf => buf.length > 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1;
+async function oldDocText(buf) {
+  const WordExtractor = require('word-extractor');
+  try { return (await new WordExtractor().extract(buf)).getBody(); }
+  catch { throw new Error('这个 Word 文件打不开，可能坏了。可以在 WPS 里「另存为」docx 再试'); }
+}
+async function wordText(buf) {
+  if (isOldDoc(buf)) return oldDocText(buf);
+  if (isZip(buf)) return docxText(buf);
+  throw new Error('这个文件不像 Word 文件，可能坏了，或者只是改了名字');
+}
+
+// Just the words of a txt / md / doc / docx, for filling in a System prompt from a file.
 async function plainText(name, buf) {
   if (!buf || !buf.length) throw new Error('没有收到文件');
   if (buf.length > FILE_MAX) throw new Error('文件太大了（最多 10MB）');
   const ext = (String(name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
   let text;
-  if (ext === 'docx') text = await docxText(buf);
-  else if (ext === 'doc') throw new Error('老的 .doc 格式读不了，请在 Word 或 WPS 里「另存为」.docx 再上传');
+  if (ext === 'docx' || ext === 'doc' || isOldDoc(buf)) text = await wordText(buf);
   else if (['txt', 'md', 'markdown', ''].includes(ext)) text = buf.toString('utf8').replace(/^\uFEFF/, '');
-  else throw new Error('只支持 txt、md、docx');
+  else throw new Error('只支持 txt、md、doc、docx');
   text = text.replace(/\r\n/g, '\n').trim();
   if (!text) throw new Error('文件里没有文字');
   return text;
@@ -175,10 +189,9 @@ async function fromFile(accountId, name, buf) {
   const ext = (base.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
   const title = base.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || '文件';
   let text;
-  if (ext === 'docx') text = await docxText(buf);
-  else if (ext === 'doc') throw new Error('老的 .doc 格式读不了，请在 Word 或 WPS 里「另存为」.docx 再上传');
+  if (ext === 'docx' || ext === 'doc' || isOldDoc(buf)) text = await wordText(buf);
   else if (['txt', 'md', 'markdown', 'json', ''].includes(ext)) text = buf.toString('utf8').replace(/^\uFEFF/, '');
-  else throw new Error('只支持 txt、md、docx，还有酒馆导出的世界书 json');
+  else throw new Error('只支持 txt、md、doc、docx，还有酒馆导出的世界书 json');
   if (ext === 'json') {
     let json;
     try { json = JSON.parse(text); } catch { throw new Error('这个 json 读不懂'); }

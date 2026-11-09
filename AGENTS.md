@@ -65,7 +65,8 @@
   - 测试时用 `test/cats.js` 里的假模型（本地起一个 OpenAI 格式的小服务器），不花钱。要连本地地址得设 `MAOWO_WAKE_ALLOW_LOCAL=1`（钥匙的网址和唤醒网址共用同一套「只许公网 https」检查）。
   - 叫醒走 `wake.js` 的 `onWake` 监听：猫们自己接住，不再发给唤醒桥。
   - 窗口里存的是发给模型的原样消息（`cat_messages.msg`），加一行给人看的字（`text`）。工具结果太旧的会截短；思考内容（`reasoning_content`，DeepSeek 要）只在同一次叫醒里传回去。对话超过 `MAOWO_CATS_CONTEXT`（默认 1.6 万字）就把旧的一半压成摘要，掉出去的它可以用 `recall` 自己翻。**别往 System prompt 里放会变的东西**（时间、桌子）：会让缓存失效、多花钱，放进「猫窝备注」（`contextNote`），见 docs/DESIGN.md 第 18 节。
-  - System prompt 也能「从文件读」（txt / md / docx，`POST /api/file-text` 只把文字读回来，不存），超过 2 万字只放前 2 万字。
+  - **Word 文件按开头的字节认，不按名字**（2026-11-09）：绫 vivo 手机存的人设是老的 .doc（复合文档，开头 `D0 CF 11 E0`），名字却是 .docx，猫窝不认识。现在 `lore.js` 的 `wordText()`：zip（`PK`）走自己的 docx 读法，老 .doc 用 `word-extractor`。测试用 `test/fixtures/old-word.doc`（LibreOffice 转出来的一小段，不是绫的文件）。
+  - System prompt 也能「从文件读」（txt / md / doc / docx，`POST /api/file-text` 只把文字读回来，不存），超过 2 万字只放前 2 万字。
   - 世界书（`lore.js`，docs/DESIGN.md 第 19 节）：常驻的进 System prompt，关键词触发的进「猫窝备注」。docx 用 yauzl 读 word/document.xml。
   - 群聊（docs/DESIGN.md 第 17 节）：群里一轮是一个接一个说的（`chain`），每只猫自己的队列保证它不会同时在私聊和群里想事情。群里轮到它时加一条 `gwake`，它最后说的话就是群里的发言（`gsay`），再抄给别的成员（`group`）。
   - 私聊窗口能发图片（docs/DESIGN.md 第 20 节）：只发最新 3 张，看不了图的模型自动改成文字。消息内容可能是字符串也可能是数组（文字 + 图片），取文字用 `textOf()`。
@@ -80,7 +81,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 61）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 62）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。

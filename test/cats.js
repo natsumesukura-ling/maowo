@@ -201,10 +201,16 @@ const ok = name => console.log('ok', name);
     assert.strictEqual(lb.added, 2);
     const hx = lb.entries.find(e => e.title === '星野'), zs = lb.entries.find(e => e.title === '总设定');
     assert(hx.mode === 'keyword' && hx.keywords[0] === '星野' && zs.mode === 'always' && !zs.enabled);
-    await assert.rejects(up('old.doc', Buffer.from('x')), /另存为/);
+    // An old binary Word file, even when a phone saved it under a .docx name (绫's vivo did).
+    const oldDoc = fs.readFileSync(path.join(__dirname, 'fixtures', 'old-word.doc'));
+    lb = await up('阿栗.docx', oldDoc);
+    assert.strictEqual(lb.entries.find(e => e.title === '阿栗').content, '【阿栗人设】\n说话轻快，有点小骄傲。');
+    lb = await up('阿栗2.doc', oldDoc);
+    assert(lb.entries.find(e => e.title === '阿栗2'));
+    await assert.rejects(up('old.doc', Buffer.from('x')), /不像 Word/);
     await assert.rejects(up('pic.png', Buffer.from('x')), /只支持/);
-    await assert.rejects(up('bad.docx', Buffer.from('not a zip')), /打不开/);
-    ok('uploads: docx (paragraphs, tabs, &amp;), txt, Tavern json; .doc and others refused');
+    await assert.rejects(up('bad.docx', Buffer.from('not a zip')), /不像 Word/);
+    ok('uploads: docx (paragraphs, tabs, &amp;), old .doc (even named .docx), txt, Tavern json; others refused');
 
     // The System prompt box reads a file too (nothing stored, just the words back).
     const fileText = async (name, body) => {
@@ -212,6 +218,7 @@ const ok = name => console.log('ok', name);
       const out = await res.json(); if (!res.ok) throw new Error(out.error); return out.text;
     };
     assert.strictEqual(await fileText('人设.docx', docx), '第一段 A&B\t尾巴\n第二段');
+    assert.strictEqual(await fileText('人设.docx', oldDoc), '【阿栗人设】\n说话轻快，有点小骄傲。', 'old .doc under a .docx name');
     assert.strictEqual(await fileText('人设.md', Buffer.from('﻿# 阿栗\r\n轻快')), '# 阿栗\n轻快');
     await assert.rejects(fileText('世界书.json', Buffer.from('{}')), /只支持/);
     ok('System prompt from a file: docx, md');
