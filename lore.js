@@ -26,6 +26,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cat_lore ON cat_lore(account_id, id);
 `);
 
+const cards = require('./cards');
 const ENTRY_MAX = 100000;     // characters in one entry
 const ALWAYS_MAX = 30000;     // all 常驻 entries together, in the system prompt
 const TRIGGER_MAX = 8000;     // keyword entries added to one message
@@ -142,7 +143,7 @@ function tavernEntries(json) {
   if (!raw) return null;
   const list = Array.isArray(raw) ? raw : Object.values(raw);
   return list.filter(e => e && typeof e.content === 'string' && e.content.trim()).map((e, i) => {
-    const keys = [...(e.key || e.keys || []), ...(e.keysecondary || [])].map(String).filter(Boolean);
+    const keys = [...(e.key || e.keys || []), ...(e.keysecondary || e.secondary_keys || [])].map(String).filter(Boolean);
     return {
       title: String(e.comment || e.name || keys[0] || `条目 ${i + 1}`).slice(0, 40),
       content: e.content,
@@ -182,6 +183,19 @@ async function plainText(name, buf) {
   return text;
 }
 
+// A character card's own world book (酒馆角色卡自带的世界书), as entries of this cat.
+function importBook(accountId, book, source) {
+  const entries = tavernEntries(book) || [];
+  const good = entries.filter(e => String(e.content || '').trim());
+  return db.transaction(() => good.map(e => add(accountId, { ...e, title: e.title || '设定', content: String(e.content).slice(0, ENTRY_MAX) }, source)))();
+}
+const cardBook = (accountId, card, base) => {
+  if (!card.book) throw new Error('这张角色卡没有自带世界书。角色卡本身请在新建猫的时候导入');
+  const rows = importBook(accountId, card.book, base);
+  if (!rows.length) throw new Error('这张角色卡自带的世界书是空的');
+  return rows;
+};
+
 async function fromFile(accountId, name, buf) {
   if (!buf || !buf.length) throw new Error('没有收到文件');
   if (buf.length > FILE_MAX) throw new Error('文件太大了（最多 10MB）');
@@ -189,12 +203,14 @@ async function fromFile(accountId, name, buf) {
   const ext = (base.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
   const title = base.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || '文件';
   let text;
+  if (cards.pngTexts(buf)) return cardBook(accountId, cards.read(buf, base), base); // a card PNG: its world book
   if (ext === 'docx' || ext === 'doc' || isOldDoc(buf)) text = await wordText(buf);
   else if (['txt', 'md', 'markdown', 'json', ''].includes(ext)) text = buf.toString('utf8').replace(/^\uFEFF/, '');
-  else throw new Error('只支持 txt、md、doc、docx，还有酒馆导出的世界书 json');
+  else throw new Error('只支持 txt、md、doc、docx，还有酒馆导出的世界书 json、角色卡 json / png');
   if (ext === 'json') {
     let json;
     try { json = JSON.parse(text); } catch { throw new Error('这个 json 读不懂'); }
+    if (cards.isCard(json)) return cardBook(accountId, cards.read(buf, base), base);
     const entries = tavernEntries(json);
     if (!entries) throw new Error('这个 json 不像酒馆的世界书（里面没有 entries）');
     if (!entries.length) throw new Error('这本世界书里没有内容');
@@ -245,4 +261,4 @@ router.put('/:lid', wrap(req => {
 }));
 router.delete('/:lid', wrap(req => { const ai = owned(req); stmts.remove.run(entry(req, ai).id); return listOf(ai); }));
 
-module.exports = { router, alwaysText, triggeredText, removeAll: id => stmts.removeAll.run(id), docxText, plainText, FILE_MAX, tavernEntries, count: id => stmts.list.all(id).length };
+module.exports = { router, alwaysText, triggeredText, removeAll: id => stmts.removeAll.run(id), importBook, docxText, plainText, FILE_MAX, tavernEntries, count: id => stmts.list.all(id).length };

@@ -18,7 +18,8 @@
   .hero img { width: 104px; flex-shrink: 0; }
   .hero h1 { font-family: "Noto Serif SC", serif; font-size: 28px; margin: 0; }
   .hero .d { font-size: 13px; color: var(--text2); line-height: 1.6; padding: 4px 40px 6px 0; }
-  .tools { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tools { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tools .count { flex: 0 0 100%; height: auto; border: none; background: none; justify-content: flex-end; font-size: 12px; color: var(--muted); margin-top: -4px; }
   .tools > * { flex: 1; min-width: 0; }
   .resident .st > span:last-child { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .count { height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; color: var(--text2); white-space: nowrap; }
@@ -106,6 +107,7 @@ function render(d) {
   const html = `
     <div class="tools">
       <button class="btn" id="keys">${icon('key', 18, 1.8)}钥匙 · ${d.keys.length} 把</button>
+      <button class="btn" id="masks">${icon('card', 18, 1.8)}面具 · ${d.masks || 0} 个</button>
       <div class="count">今天叫醒了 ${d.todayWakes} 次</div>
     </div>
     <button class="pause" id="pause" aria-pressed="${!d.paused}"><div class="t">让大家自己玩<div class="s">${d.paused ? '现在全部暂停了：谁也不会被叫醒，你跟它们说话还是会回' : '关掉就全部暂停，谁也不会被叫醒'}</div></div><span class="switch ${d.paused ? 'off' : ''}"></span></button>
@@ -116,6 +118,7 @@ function render(d) {
     <div class="adds"><a class="new" href="/cats/new">${icon('plus', 18, 2)}搬进来一个新 AI</a>${d.cats.length ? `<button class="new" id="newgroup">${icon('plus', 18, 2)}拉一个群</button>` : ''}</div>`;
   if (!Maowo.setHtml($('#content'), html)) return;
   $('#keys').onclick = () => CatKit.keys(load);
+  $('#masks').onclick = () => CatKit.masks(load);
   $('#pause').onclick = async () => {
     try { await api('/cats/settings', { method: 'PUT', json: { paused: !d.paused } }); Maowo.toast(d.paused ? '好，大家可以自己玩了' : '全部暂停了，谁也不会被叫醒'); load(); }
     catch (err) { Maowo.toast(err.message); }

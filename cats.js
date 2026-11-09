@@ -10,6 +10,7 @@ const games = require('./games');
 const wake = require('./wake');
 const mcp = require('./mcp');
 const lore = require('./lore');
+const cards = require('./cards');
 
 // ============================================================
 // 猫们：住在猫窝里的 AI。
@@ -98,7 +99,18 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cat_group_messages ON cat_group_messages(group_id, id);
 `);
-for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1'], ['cats', 'tools_ok INTEGER NOT NULL DEFAULT 1']]) {
+// 面具：绫自己的人设，可以有好几个；cat_id 为空是通用，有值就只给那只猫用。每只猫戴哪个记在 cats.mask_id。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cat_masks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    cat_id INTEGER,
+    created_at TEXT NOT NULL
+  );
+`);
+for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings', 'order_json TEXT'], ['cats', 'vision INTEGER NOT NULL DEFAULT 1'], ['cats', 'tools_ok INTEGER NOT NULL DEFAULT 1'], ['cats', 'mask_id INTEGER']]) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -443,10 +455,28 @@ function tableNotes(ai, owner) {
 // The start of every request stays the same from wake to wake, so providers that cache a repeated
 // beginning (DeepSeek, Gemini, …) charge less for it. Anything that changes (the time, the tables,
 // the alarm) goes into a note at the end of each new message instead (contextNote).
-function systemPrompt(ai, cat) {
+// The mask 绫 wears for this cat, if it is still hers and still allowed for this cat.
+function maskOf(ai, cat) {
+  const m = cat.mask_id && maskStmts.get.get(cat.mask_id);
+  return m && m.owner_id === ai.owner_id && (!m.cat_id || m.cat_id === ai.id) ? m : null;
+}
+// Tavern cards say {{user}} and {{char}}: her (mask) name and the cat's name.
+function fillNames(text, ai, cat) {
+  const mask = maskOf(ai, cat);
+  const user = mask ? mask.name : accounts.byId(ai.owner_id)?.name || '主人';
+  return String(text).replace(/\{\{user\}\}|<USER>/gi, user).replace(/\{\{char\}\}|<BOT>/gi, ai.name);
+}
+
+function systemPrompt(ai, cat) { return fillNames(systemPromptRaw(ai, cat), ai, cat); }
+function systemPromptRaw(ai, cat) {
   const owner = accounts.byId(ai.owner_id);
   const parts = [];
   if (cat.system_prompt.trim()) parts.push(cat.system_prompt.trim(), '');
+  const mask = maskOf(ai, cat);
+  if (mask) {
+    parts.push(`【和你聊天的人：${mask.name}】`, mask.content.trim() || '（没写别的）',
+      mask.name === owner.name ? '' : `（在猫窝里她的名字显示为「${owner.name}」，${mask.name}就是她。）`, '');
+  }
   parts.push('——以下是猫窝自动加的说明——',
     `你是「${ai.name}」，住在「猫窝」里的 AI，${owner.name}是你的主人。`,
     '猫窝是一个人和 AI 一起玩的地方：可以玩桌游（狼人杀、五子棋），可以在聊天区发帖、评论、投票。你用工具做这些事，身份已经自动带上了，不用填 token。',
@@ -483,7 +513,7 @@ function contextNote(ai, cat, scan = '') {
   const live = stmts.live.all(ai.id).map(r => { try { return textOf(JSON.parse(r.msg).content); } catch { return ''; } });
   const recent = live.slice(-4).map(c => c.replace(NOTE_RE, '')).join('\n');
   const book = lore.triggeredText(ai.id, `${scan}\n${recent}`, live.join('\n'));
-  if (book) bits.push(`聊到了世界书里的这些（主人给你的设定资料）：\n${book}`);
+  if (book) bits.push(`聊到了世界书里的这些（主人给你的设定资料）：\n${fillNames(book, ai, cat)}`);
   return `\n\n（猫窝备注：${bits.join('\n')}）`;
 }
 
@@ -973,6 +1003,8 @@ function settings(ai, cat) {
   return {
     ...card(ai, cat), keyId: cat.key_id, systemPrompt: cat.system_prompt, wakeOnTurn: !!cat.wake_on_turn, alarms: !!cat.alarms,
     dailyLimit: cat.daily_limit, todayWakes: cat.day === today() ? cat.day_wakes : 0, loreCount: lore.count(ai.id), vision: cat.vision !== 0, toolsOk: cat.tools_ok !== 0,
+    maskId: maskOf(ai, cat)?.id || null,
+    masks: maskStmts.of.all(ai.owner_id).filter(m => !m.cat_id || m.cat_id === ai.id).map(maskInfo),
   };
 }
 
@@ -1038,6 +1070,7 @@ router.get('/', wrap(req => {
     paused: pausedFor(req.account.id),
     todayWakes: list.reduce((n, x) => n + (x.cat.day === d ? x.cat.day_wakes : 0), 0),
     keys: stmts.keysOf.all(req.account.id).map(keyInfo),
+    masks: maskStmts.of.all(req.account.id).length,
     cats, groups, items: ordered(req.account, cats, groups),
   };
 }));
@@ -1205,8 +1238,79 @@ function applySettings(ai, b) {
   if (b.wakeOnTurn !== undefined) f.wake_on_turn = b.wakeOnTurn ? 1 : 0;
   if (b.alarms !== undefined) { f.alarms = b.alarms ? 1 : 0; if (!b.alarms) { f.alarm_at = null; f.alarm_note = null; } }
   if (b.dailyLimit !== undefined) { const n = Math.round(Number(b.dailyLimit)); if (!(n >= 1 && n <= 1000)) throw new Error('每天最多叫醒 1 到 1000 次'); f.daily_limit = n; }
+  if (b.maskId !== undefined) {
+    if (!b.maskId) f.mask_id = null;
+    else {
+      const m = maskStmts.get.get(Number(b.maskId));
+      if (!m || m.owner_id !== ai.owner_id) throw new Error('找不到这个面具');
+      if (m.cat_id && m.cat_id !== ai.id) throw new Error(`面具「${m.name}」是给别的猫专用的`);
+      f.mask_id = m.id;
+    }
+  }
   setCat(ai.id, f);
 }
+
+// ---------- 面具 ----------
+const maskStmts = {
+  of: db.prepare('SELECT * FROM cat_masks WHERE owner_id = ? ORDER BY id'),
+  get: db.prepare('SELECT * FROM cat_masks WHERE id = ?'),
+  add: db.prepare('INSERT INTO cat_masks (owner_id, name, content, cat_id, created_at) VALUES (?, ?, ?, ?, ?)'),
+  set: db.prepare('UPDATE cat_masks SET name = ?, content = ?, cat_id = ? WHERE id = ?'),
+  remove: db.prepare('DELETE FROM cat_masks WHERE id = ?'),
+  unwear: db.prepare('UPDATE cats SET mask_id = NULL WHERE mask_id = ?'),
+  unwearOthers: db.prepare('UPDATE cats SET mask_id = NULL WHERE mask_id = ? AND account_id != ?'),
+};
+function maskInfo(m) {
+  const cat = m.cat_id && accounts.byId(m.cat_id);
+  const wornBy = db.prepare('SELECT account_id FROM cats WHERE mask_id = ?').all(m.id).map(r => accounts.byId(r.account_id)?.name).filter(Boolean);
+  return { id: m.id, name: m.name, content: m.content, catId: m.cat_id || null, catName: cat ? cat.name : null, wornBy };
+}
+function cleanMask(req, b) {
+  const name = String(b.name || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  if (!name) throw new Error('给面具起个名字（就是你在这个人设里叫什么）');
+  const content = String(b.content || '').replace(/\r\n/g, '\n').trim();
+  if (content.length > 20000) throw new Error('人设太长了（最多 2 万字）');
+  let catId = null;
+  if (b.catId) { const { ai } = mine(req, b.catId); catId = ai.id; }
+  return { name, content, catId };
+}
+function ownMask(req) {
+  const m = maskStmts.get.get(Number(req.params.mid));
+  if (!m || m.owner_id !== req.account.id) throw new Error('找不到这个面具');
+  return m;
+}
+router.get('/masks', wrap(req => maskStmts.of.all(req.account.id).map(maskInfo)));
+router.post('/masks', wrap(req => {
+  const m = cleanMask(req, req.body || {});
+  const id = maskStmts.add.run(req.account.id, m.name, m.content, m.catId, nowIso()).lastInsertRowid;
+  return maskInfo(maskStmts.get.get(id));
+}));
+router.put('/masks/:mid', wrap(req => {
+  const old = ownMask(req);
+  const m = cleanMask(req, req.body || {});
+  db.transaction(() => {
+    maskStmts.set.run(m.name, m.content, m.catId, old.id);
+    if (m.catId) maskStmts.unwearOthers.run(old.id, m.catId); // made 专用: the other cats take it off
+  })();
+  return maskInfo(maskStmts.get.get(old.id));
+}));
+router.delete('/masks/:mid', wrap(req => {
+  const m = ownMask(req);
+  db.transaction(() => { maskStmts.unwear.run(m.id); maskStmts.remove.run(m.id); })();
+  return { ok: true };
+}));
+
+// ---------- 酒馆角色卡 ----------
+// Read first (the page fills in the form), keep the parsed card a while, then 「搬进来」 brings its
+// world book and first message along.
+router.post('/card', express.raw({ type: () => true, limit: lore.FILE_MAX + 1024 }), wrap(req => {
+  const card = cards.read(req.body, req.query.name);
+  return {
+    cardId: cards.keep(req.account.id, card),
+    name: card.name, fullName: card.fullName, systemPrompt: card.systemPrompt, cut: card.cut,
+    firstMes: card.firstMes, loreCount: (lore.tavernEntries(card.book) || []).length, isPng: card.isPng,
+  };
+}));
 
 // Trying a key and a model before the cat is saved (or after changing them).
 router.post('/test', wrap(async req => {
@@ -1220,11 +1324,19 @@ router.post('/test', wrap(async req => {
 }));
 router.post('/', wrap(req => {
   const b = req.body || {};
+  const card = b.cardId ? cards.take(req.account.id, b.cardId) : null;
+  if (b.cardId && !card) throw new Error('角色卡读过太久了，请重新选一次角色卡');
   const ai = db.transaction(() => {
     const a = accounts.create('ai', b.name, req.account.id);
     if (b.bio) accounts.setBio(a, b.bio);
     stmts.addCat.run(a.id, nowIso());
     applySettings(a, b);
+    if (card) {
+      if (card.book) lore.importBook(a.id, card.book, `角色卡「${card.fullName}」`);
+      // The card's first message is the first thing in the window, said by the cat.
+      const first = b.firstMes === false ? '' : fillNames(card.firstMes, a, stmts.cat.get(a.id));
+      if (first) add(a.id, 'say', { msg: { role: 'assistant', content: first }, text: first });
+    }
     return a;
   })();
   return settings(accounts.byId(ai.id), stmts.cat.get(ai.id));
@@ -1345,4 +1457,4 @@ router.post('/:id/messages', wrap(req => {
   return { ok: true };
 }));
 
-module.exports = { router, isCat, removeCat, _enqueue: enqueue, _busy: busy };
+module.exports = { router, isCat, removeCat, _systemPrompt: (id) => systemPrompt(accounts.byId(id), stmts.cat.get(id)), _enqueue: enqueue, _busy: busy };

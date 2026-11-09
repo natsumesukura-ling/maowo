@@ -383,10 +383,12 @@ function startChat() {
 // Settings (and a new cat)
 // ============================================================
 async function startSettings() {
-  const [list, c] = await Promise.all([api('/cats'), isNew ? null : api(`/cats/${catId}`)]);
+  const [list, c, allMasks] = await Promise.all([api('/cats'), isNew ? null : api(`/cats/${catId}`), api('/cats/masks')]);
   let keys = list.keys;
-  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision, toolsOk: c.toolsOk }
-    : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60 };
+  let masks = c ? c.masks : allMasks.filter(m => !m.catId);
+  const f = c ? { name: c.name, bio: c.bio, systemPrompt: c.systemPrompt, keyId: c.keyId, model: c.model, wakeOnTurn: c.wakeOnTurn, alarms: c.alarms, dailyLimit: c.dailyLimit, vision: c.vision, toolsOk: c.toolsOk, maskId: c.maskId }
+    : { name: '', bio: '', systemPrompt: '', keyId: keys[0]?.id || null, model: '', wakeOnTurn: true, alarms: true, dailyLimit: 60, maskId: null };
+  let card = null;     // a read 酒馆角色卡: { cardId, loreCount, firstMes, isPng, file }
   document.title = `${c ? c.name + ' · 设置' : '新的猫'} · 猫窝`;
 
   const draw = () => {
@@ -394,7 +396,10 @@ async function startSettings() {
     $('#app').innerHTML = `<main class="wrap">
       <header class="bar"><a class="icon-btn" id="back" aria-label="返回">${icon('back', 22)}</a><div class="muted" style="font-size: 13px;">${c ? esc(c.name) + ' · 设置' : '搬进来一个新 AI'}</div></header>
       <div class="ribbon"><span class="tag">它是谁</span><span class="rule"></span></div>
-      ${c ? `<div class="pic">${Maowo.avatar(c)}<button class="btn sm" id="pic">${icon('camera', 16)}换头像</button></div>` : ''}
+      ${c ? `<div class="pic">${Maowo.avatar(c)}<button class="btn sm" id="pic">${icon('camera', 16)}换头像</button></div>`
+        : `<button type="button" class="lorelink" id="card-up" style="width: 100%; font: inherit; color: inherit; cursor: pointer; text-align: left;">${icon('card', 22, 1.6)}<span class="t">从角色卡导入<span class="s">酒馆导出的角色卡（.json 或 .png）：名字、设定、开场白、自带的世界书一起带进来</span></span>${icon('chevronRight', 18, 2)}</button>
+          <input type="file" id="card-file" accept=".json,.png,application/json,image/png" hidden>
+          ${card ? `<div class="hint" style="margin: 2px 0 6px; color: var(--text2);">读好了「${esc(card.fullName)}」。设定里的 {{user}} 会换成你面具的名字（不戴面具就是你的名字）。下面的名字和 System prompt 已经填好，可以再改；搬进来时还会带上：${[card.firstMes ? '开场白' : '', card.loreCount ? `世界书 ${card.loreCount} 条` : '', card.isPng ? '头像' : ''].filter(Boolean).join('、') || '没有别的'}。${card.cut ? '设定超过 2 万字，只放了前 2 万字。' : ''}</div>` : ''}`}
       <label class="field">名字（最多 16 个字，猫窝里不能重名）</label><textarea class="single" rows="1" id="f-name" maxlength="16">${esc(f.name)}</textarea>
       <label class="field">一句话介绍（别人在猫窝里能看到，可以不填）</label><textarea class="single" rows="1" id="f-bio" maxlength="40">${esc(f.bio)}</textarea>
       <div class="row" style="justify-content: space-between; align-items: flex-end; margin-bottom: 8px;"><label class="field">System prompt（只有它自己看得到）</label>
@@ -402,6 +407,10 @@ async function startSettings() {
       <input type="file" id="prompt-file" accept=".txt,.md,.markdown,.doc,.docx,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
       <textarea class="big" id="f-prompt" placeholder="比如：你叫阿栗，说话轻快，有点小骄傲……">${esc(f.systemPrompt)}</textarea>
       <div class="hint">可以直接写，也可以点「从文件读」导入 txt / md / doc / docx（会换掉框里现在的字，导入后还能改，点保存才算数）。猫窝会在后面自动加上「怎么用猫窝」的说明、它的小本本和现在的时间，你不用写这些。</div>
+      <div class="row" style="justify-content: space-between; align-items: flex-end; margin: 16px 0 8px;"><label class="field" style="margin: 0;">你在它面前戴的面具</label>
+        <button type="button" class="btn sm" id="masks-manage">${icon('card', 15, 1.8)}管理面具</button></div>
+      <div class="pick">${[{ id: null, name: '不戴面具' }, ...masks].map(m => `<button type="button" class="${(f.maskId || null) === m.id ? 'on' : ''}" data-mask="${m.id || ''}">${esc(m.name)}${m.catId ? '（专用）' : ''}</button>`).join('')}</div>
+      <div class="hint">面具是你自己的人设，它会按这个认识你。${masks.length ? '' : '还没有面具，点「管理面具」写一个。'}</div>
       ${c ? `<a class="lorelink" href="/cats/${c.id}/lore">${icon('book', 22, 1.6)}<span class="t">世界书<span class="s">设定资料：可以自己写，也可以上传 txt / md / doc / docx</span></span><span class="v">${c.loreCount} 条</span>${icon('chevronRight', 18, 2)}</a>` : '<div class="hint">搬进来以后，可以在这里给它加世界书（设定资料）。</div>'}
 
       <div class="ribbon" style="margin-top: 26px;"><span class="tag">用哪个模型</span><span class="rule"></span></div>
@@ -427,6 +436,28 @@ async function startSettings() {
     Maowo.backTo($('#back'), c ? `/cats/${c.id}` : '/cats');
     const keep = () => { f.name = $('#f-name').value; f.bio = $('#f-bio').value; f.systemPrompt = $('#f-prompt').value; };
     document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => { keep(); const id = Number(b.dataset.key); if (id !== f.keyId) { f.keyId = id; f.model = ''; } draw(); });
+    document.querySelectorAll('[data-mask]').forEach(b => b.onclick = () => { keep(); f.maskId = b.dataset.mask ? Number(b.dataset.mask) : null; draw(); });
+    $('#masks-manage').onclick = () => { keep(); CatKit.masks(async () => {
+      masks = c ? (await api(`/cats/${c.id}`)).masks : (await api('/cats/masks')).filter(m => !m.catId);
+      if (f.maskId && !masks.some(m => m.id === f.maskId)) f.maskId = null;
+      draw();
+    }); };
+    const cu = $('#card-up'); if (cu) cu.onclick = () => $('#card-file').click();
+    const cf = $('#card-file'); if (cf) cf.onchange = async e => {
+      const file = e.target.files[0]; e.target.value = '';
+      if (!file) return;
+      keep();
+      if ((f.name.trim() || f.systemPrompt.trim()) && !confirm('用角色卡里的名字和设定换掉现在填的？')) return;
+      Maowo.toast('读取中…');
+      try {
+        const res = await fetch(`/api/cats/card?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': 'application/octet-stream' }, body: file });
+        const out = await res.json(); if (!res.ok) throw new Error(out.error || res.status);
+        card = { ...out, file };
+        f.name = out.name; f.systemPrompt = out.systemPrompt;
+        draw();
+        Maowo.toast(out.fullName.length > 16 ? '名字超过 16 个字，截短了，可以再改' : '读好了，看看对不对');
+      } catch (err) { Maowo.toast(err.message); }
+    };
     $('#prompt-up').onclick = () => $('#prompt-file').click();
     $('#prompt-file').onchange = async e => {
       const file = e.target.files[0];
@@ -469,7 +500,11 @@ async function startSettings() {
       e.currentTarget.disabled = true;
       try {
         if (c) { await api(`/cats/${c.id}`, { method: 'PUT', json: f }); Maowo.toast('保存好了'); setTimeout(() => Maowo.go(`/cats/${c.id}`), 500); }
-        else { const n = await api('/cats', { json: f }); location.replace(`/cats/${n.id}`); }
+        else {
+          const n = await api('/cats', { json: { ...f, cardId: card ? card.cardId : undefined } });
+          if (card && card.isPng) await cardAvatar(n.id, card.file).catch(() => Maowo.toast('头像没传上，可以在设置里自己换'));
+          location.replace(`/cats/${n.id}`);
+        }
       } catch (err) { Maowo.toast(err.message); e.currentTarget.disabled = false; }
     };
     const forget = $('#forget'); if (forget) forget.onclick = async () => {
@@ -482,6 +517,18 @@ async function startSettings() {
     };
   };
   draw();
+}
+
+// A card PNG is a tall picture: its avatar is a square from near the top (where the face usually is), 320px.
+async function cardAvatar(id, file) {
+  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = URL.createObjectURL(file); });
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const sx = (img.naturalWidth - side) / 2, sy = Math.max(0, (img.naturalHeight - side) * 0.15);
+  const cv = document.createElement('canvas'); cv.width = cv.height = Math.min(320, side);
+  cv.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, cv.width, cv.height);
+  const blob = await new Promise(ok => cv.toBlob(ok, 'image/jpeg', 0.9));
+  const res = await fetch(`/api/avatar/${id}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': 'image/jpeg' }, body: blob });
+  if (!res.ok) throw new Error('avatar');
 }
 
 // ============================================================
@@ -498,8 +545,8 @@ async function startLore() {
       <div class="ribbon"><span class="tag">${esc(c.name)}的世界书</span><span class="rule"></span></div>
       <div class="small muted" style="line-height: 1.7;">放它该知道的设定：人物、地点、关系、规矩……<br><b style="color: var(--text2);">常驻</b>的每次都带上；<b style="color: var(--text2);">关键词触发</b>的，聊天里出现关键词才带上，更省钱。只有 ${esc(c.name)} 自己看得到。</div>
       <div class="lore-tools"><button class="btn" id="lore-new">${icon('plus', 16, 2)}写一条</button><button class="btn" id="lore-up">${icon('archive', 16, 1.8)}上传文件</button></div>
-      <input type="file" id="lore-file" accept=".txt,.md,.markdown,.doc,.docx,.json,text/plain,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
-      <div class="hint" style="margin: -2px 0 14px;">支持 txt、md、doc、docx（Word / WPS），也能导入酒馆导出的世界书 json。</div>
+      <input type="file" id="lore-file" accept=".txt,.md,.markdown,.doc,.docx,.json,.png,text/plain,application/json,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      <div class="hint" style="margin: -2px 0 14px;">支持 txt、md、doc、docx（Word / WPS），也能导入酒馆导出的世界书 json；角色卡（json / png）会导入它自带的世界书。</div>
       ${d.alwaysLength > 3000 ? `<div class="warn">常驻的一共约 ${d.alwaysLength} 字，每次叫醒都会带上，比较费钱${d.alwaysLength > d.alwaysMax ? `（超过 ${d.alwaysMax} 字的部分不会带上）` : ''}。不是每次都要用的，可以改成「关键词触发」。</div>` : ''}
       ${d.entries.map(e => `<button class="lore ${e.enabled ? '' : 'off'}" data-lore="${e.id}">
         <div class="h"><b>${esc(e.title)}</b><span class="pill ${e.mode === 'always' ? 'ok' : ''}">${esc(modeText(e).length > 18 ? modeText(e).slice(0, 18) + '…' : modeText(e))}</span>${e.enabled ? '' : '<span class="pill">关着</span>'}</div>

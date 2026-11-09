@@ -113,6 +113,70 @@ window.CatKit = (() => {
     return panel;
   }
 
+  // 面具: 绫's own personas. Each is 通用 or for one cat; each cat wears one (chosen in its settings).
+  function masks(onChange = () => {}) {
+    const panel = Maowo.sheet('<h2>我的面具</h2><div id="cm-body"><div class="small muted">读取中…</div></div>');
+    async function draw() {
+      const [list, d] = await Promise.all([api('/cats/masks'), api('/cats')]);
+      panel.querySelector('#cm-body').innerHTML = `
+        <div class="small muted" style="margin: 4px 0 14px; line-height: 1.6;">面具是<b>你自己</b>的人设：你叫什么、什么样子、和它是什么关系。可以写好几个；每只猫的设置里选一个戴上，它就按这个认识你。角色卡里的 {{user}} 也会换成面具的名字。</div>
+        ${list.map(m => `<div class="ck-key">
+          <div class="n">${esc(m.name)}<span class="pill">${m.catId ? `只给 ${esc(m.catName || '')}` : '通用'}</span></div>
+          <div class="u" style="white-space: pre-wrap; max-height: 4.8em; overflow: hidden;">${esc(m.content || '（没写人设）')}</div>
+          <div class="r"><span class="who">${m.wornBy.length ? esc(m.wornBy.join('、')) + ' 面前戴着' : '还没有猫面前戴着'}</span>
+            <button class="btn sm" data-edit="${m.id}">编辑</button><button class="btn sm danger" data-del="${m.id}">删除</button></div>
+        </div>`).join('') || '<div class="small muted" style="margin-bottom: 12px;">还没有面具。</div>'}
+        <button class="btn primary block" id="cm-new" style="margin-top: 8px;">${icon('plus', 18, 2)}新面具</button>`;
+      panel.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => edit(list.find(m => m.id === Number(b.dataset.edit)), d.cats));
+      panel.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+        const m = list.find(x => x.id === Number(b.dataset.del));
+        if (!confirm(`删除面具「${m.name}」？${m.wornBy.length ? `${m.wornBy.join('、')} 面前就不戴面具了。` : ''}`)) return;
+        try { await api(`/cats/masks/${m.id}`, { method: 'DELETE' }); draw(); onChange(); } catch (err) { Maowo.toast(err.message); }
+      });
+      panel.querySelector('#cm-new').onclick = () => edit(null, d.cats);
+    }
+    function edit(m, cats) {
+      const f = { name: m ? m.name : '', content: m ? m.content : '', catId: m ? m.catId : null };
+      const sheet = Maowo.sheet(`<h2>${m ? '改面具' : '新面具'}</h2>
+        <label class="field">名字（你在这个人设里叫什么）</label><textarea class="single" rows="1" id="cm-name" maxlength="30">${esc(f.name)}</textarea>
+        <div class="row" style="justify-content: space-between; align-items: flex-end; margin-bottom: 8px;"><label class="field">你的人设</label>
+          <button type="button" class="btn sm" id="cm-up">${icon('book', 15, 1.8)}从文件读</button></div>
+        <input type="file" id="cm-file" accept=".txt,.md,.markdown,.doc,.docx,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        <textarea id="cm-content" rows="7" maxlength="20000" placeholder="比如：高二学生，怕黑，喜欢草莓牛奶。和他是青梅竹马。" style="resize: vertical;">${esc(f.content)}</textarea>
+        <label class="field">给谁用</label>
+        <div class="ck-pick" id="cm-who"></div>
+        <button class="btn primary block" id="cm-save" style="margin-top: 18px;">保存</button>`);
+      const q = s => sheet.querySelector(s);
+      oneLine(sheet);
+      const drawWho = () => {
+        q('#cm-who').innerHTML = `<button type="button" class="${f.catId ? '' : 'on'}" data-cat="">通用（每只猫都能用）</button>`
+          + cats.map(c => `<button type="button" class="${f.catId === c.id ? 'on' : ''}" data-cat="${c.id}">只给 ${esc(c.name)}</button>`).join('');
+        q('#cm-who').querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { f.catId = b.dataset.cat ? Number(b.dataset.cat) : null; drawWho(); });
+      };
+      drawWho();
+      q('#cm-up').onclick = () => q('#cm-file').click();
+      q('#cm-file').onchange = async e => {
+        const file = e.target.files[0]; e.target.value = '';
+        if (!file) return;
+        if (q('#cm-content').value.trim() && !confirm(`用「${file.name}」里的文字换掉现在写的人设？`)) return;
+        try {
+          const res = await fetch(`/api/file-text?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': 'application/octet-stream' }, body: file });
+          const out = await res.json(); if (!res.ok) throw new Error(out.error || res.status);
+          q('#cm-content').value = out.text.slice(0, 20000);
+          Maowo.toast(out.text.length > 20000 ? '太长了，只放了前 2 万字' : `读好了，约 ${out.text.length} 字`);
+        } catch (err) { Maowo.toast(err.message); }
+      };
+      q('#cm-save').onclick = async () => {
+        const body = { name: q('#cm-name').value, content: q('#cm-content').value, catId: f.catId };
+        try {
+          await api(m ? `/cats/masks/${m.id}` : '/cats/masks', { method: m ? 'PUT' : 'POST', json: body });
+          sheet.close(); Maowo.toast('保存好了'); draw(); onChange();
+        } catch (err) { Maowo.toast(err.message); }
+      };
+    }
+    draw();
+  }
+
   // Styles for the two panels, added once.
   const css = document.createElement('style');
   css.textContent = `
@@ -135,5 +199,5 @@ window.CatKit = (() => {
   `;
   document.head.appendChild(css);
 
-  return { keys, models, oneLine, PRESETS };
+  return { keys, models, masks, oneLine, PRESETS };
 })();

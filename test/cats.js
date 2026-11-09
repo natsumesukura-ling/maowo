@@ -223,6 +223,68 @@ const ok = name => console.log('ok', name);
     await assert.rejects(fileText('世界书.json', Buffer.from('{}')), /只支持/);
     ok('System prompt from a file: docx, md');
 
+    // 酒馆角色卡: JSON (V2) and the same card hidden in a PNG; its world book and first message come along.
+    const cardJson = { spec: 'chara_card_v2', spec_version: '2.0', data: {
+      name: '洛祁言', description: '{{char}}是{{user}}的青梅竹马。', personality: '温柔，嘴硬', scenario: '放学后的天台',
+      first_mes: '*{{char}}靠在栏杆上* {{user}}，你来了。', mes_example: '<START>\n{{user}}: 早\n{{char}}: 嗯。',
+      character_book: { entries: [
+        { keys: ['天台'], content: '天台的门总是锁着，只有{{char}}有钥匙。', enabled: true, constant: false, comment: '天台' },
+        { keys: [], content: '{{char}}喜欢猫。', enabled: true, constant: true, name: '喜好' },
+      ] } } };
+    const readCard = async (name, body) => {
+      const res = await fetch(`${URL_}/api/cats/card?name=${encodeURIComponent(name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + OWNER, 'Content-Type': 'application/octet-stream' }, body });
+      const out = await res.json(); if (!res.ok) throw new Error(out.error); return out;
+    };
+    const pngChunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]); };
+    const cardPng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk('IHDR', Buffer.alloc(13)),
+      pngChunk('tEXt', Buffer.concat([Buffer.from('chara\0', 'latin1'), Buffer.from(Buffer.from(JSON.stringify(cardJson)).toString('base64'), 'latin1')])), pngChunk('IEND', Buffer.alloc(0))]);
+    const fromPng = await readCard('洛祁言.png', cardPng);
+    assert(fromPng.isPng && fromPng.name === '洛祁言' && fromPng.loreCount === 2);
+    const rc = await readCard('洛祁言.json', Buffer.from(JSON.stringify(cardJson)));
+    assert.strictEqual(rc.name, '洛祁言');
+    assert(rc.systemPrompt.includes('【洛祁言】\n洛祁言是{{user}}的青梅竹马。') && rc.systemPrompt.includes('【性格】\n温柔，嘴硬'), rc.systemPrompt);
+    assert(!rc.isPng);
+    await assert.rejects(readCard('世界书.json', Buffer.from(JSON.stringify({ entries: { 0: { key: ['a'], content: 'b' } } }))), /不像角色卡/);
+    await assert.rejects(readCard('pic.png', Buffer.concat([cardPng.subarray(0, 8 + 25), pngChunk('IEND', Buffer.alloc(0))])), /没有角色卡/);
+    const lq = await api(OWNER, '/cats', { json: { name: rc.name, systemPrompt: rc.systemPrompt, keyId: key.id, model: 'fake-1', cardId: rc.cardId } });
+    await assert.rejects(api(OWNER, '/cats', { json: { name: '再来一次', keyId: key.id, model: 'fake-1', cardId: rc.cardId } }), /重新选/);
+    const lqLore = await api(OWNER, `/cats/${lq.id}/lore`);
+    assert.deepStrictEqual(lqLore.entries.map(e => [e.title, e.mode]).sort(), [['喜好', 'always'], ['天台', 'keyword']]);
+    let lw = await api(OWNER, `/cats/${lq.id}/messages`);
+    assert.strictEqual(lw.items[0].text, '*洛祁言靠在栏杆上* 主人，你来了。', 'first message, {{user}} = her name');
+    const sayTo = async (id, text) => { await api(OWNER, `/cats/${id}/messages`, { json: { text } }); await until(async () => seen.at(-1).messages.at(-1).content.startsWith(text), 'asked'); await until(async () => !(await api(OWNER, `/cats/${id}/messages`)).busy, 'idle'); return seen.at(-1); };
+    b = await sayTo(lq.id, '在天台吗');
+    assert(b.messages[0].content.includes('洛祁言是主人的青梅竹马') && b.messages[0].content.includes('洛祁言喜欢猫'), 'names filled in the prompt and the 常驻 book');
+    assert(!/\{\{(user|char)\}\}/i.test(JSON.stringify(b.messages)), 'no {{…}} left anywhere');
+    assert(b.messages.at(-1).content.includes('天台的门总是锁着，只有洛祁言有钥匙'), 'keyword entry with names filled');
+    assert.strictEqual(b.messages[1].role, 'assistant', 'the first message is in its history');
+    ok('角色卡: JSON and PNG, world book and first message come along, {{char}} {{user}} filled');
+
+    // 面具: 绫's own personas, general or for one cat.
+    const m1 = await api(OWNER, '/cats/masks', { json: { name: '林夏', content: '高二学生，怕黑。' } });
+    const m2 = await api(OWNER, '/cats/masks', { json: { name: '小绫', content: '只给阿栗的人设', catId: cat.id } });
+    let st = await api(OWNER, `/cats/${lq.id}`);
+    assert.deepStrictEqual(st.masks.map(m => m.name), ['林夏'], 'a mask for another cat is not offered');
+    await assert.rejects(api(OWNER, `/cats/${lq.id}`, { method: 'PUT', json: { maskId: m2.id } }), /专用/);
+    st = await api(OWNER, `/cats/${lq.id}`, { method: 'PUT', json: { maskId: m1.id } });
+    assert.strictEqual(st.maskId, m1.id);
+    b = await sayTo(lq.id, '是我');
+    assert(b.messages[0].content.includes('【和你聊天的人：林夏】\n高二学生，怕黑。') && b.messages[0].content.includes('洛祁言是林夏的青梅竹马'), 'mask in the prompt, {{user}} = mask name');
+    assert((await api(OWNER, '/cats/masks')).find(m => m.id === m1.id).wornBy.includes('洛祁言'));
+    await api(OWNER, `/cats/masks/${m1.id}`, { method: 'PUT', json: { name: '林夏', content: '高二学生', catId: cat.id } });
+    assert.strictEqual((await api(OWNER, `/cats/${lq.id}`)).maskId, null, 'made 专用 for another cat: taken off');
+    await api(OWNER, `/cats/masks/${m1.id}`, { method: 'PUT', json: { name: '林夏', content: '高二学生' } });
+    await api(OWNER, `/cats/${lq.id}`, { method: 'PUT', json: { maskId: m1.id } });
+    await api(OWNER, `/cats/masks/${m1.id}`, { method: 'DELETE' });
+    assert.strictEqual((await api(OWNER, `/cats/${lq.id}`)).maskId, null, 'deleted: taken off');
+    await api(OWNER, `/cats/masks/${m2.id}`, { method: 'DELETE' });
+
+    // A card's world book can also go into an existing cat's 世界书.
+    lb = await up('洛祁言.png', cardPng);
+    assert(lb.entries.some(e => e.content.includes('天台的门')), 'card PNG into 世界书: its book');
+    await api(OWNER, `/cats/${lq.id}`, { method: 'DELETE' });
+    ok('面具: general or for one cat, in the prompt and as {{user}}; taken off when deleted or made 专用 elsewhere');
+
     lb = await api(OWNER, `/cats/${cat.id}/lore/${zs.id}`, { method: 'PUT', json: { enabled: true, content: '总设定改过了' } });
     assert(lb.entries.find(e => e.id === zs.id).enabled);
     lb = await api(OWNER, `/cats/${cat.id}/lore/${zs.id}`, { method: 'DELETE' });
