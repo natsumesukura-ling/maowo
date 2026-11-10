@@ -204,6 +204,7 @@ const CONTEXT_CHARS = Number(process.env.MAOWO_CATS_CONTEXT) || 16000;
 const KEEP_CHARS = Math.round(CONTEXT_CHARS / 2);
 const MAX_STEPS = 12;           // tool calls in one wake, so a confused model cannot loop forever
 const MODEL_TIMEOUT = 180 * 1000;
+const STREAM_GAP = 120 * 1000;   // while it is writing: the longest quiet between two pieces
 const ALARM_MIN = Number(process.env.MAOWO_CATS_ALARM_MIN ?? 10);   // minutes
 const ALARM_MAX = 3 * 24 * 60;
 const INBOX_GAP = 2 * 60 * 1000;
@@ -283,25 +284,114 @@ async function readError(res) {
   return `对方回了 ${res.status}${hint ? `（${hint}）` : ''}${msg ? `：${msg}` : ''}`;
 }
 
-async function callModel(key, model, messages, tools, toolChoice = 'auto') {
+// Lines that refused `stream: true` once (in memory; asked again after a restart).
+const noStream = new Set();
+// With `live` ({ onText(text, thinking) }) the answer is read as it is written (SSE): the wait is per piece,
+// not for the whole answer, and what was written before a break is kept. The message that comes back
+// may carry `_finish` (the model's finish_reason) and `_cut` ('length' | 'filter' | 'broken').
+async function callModel(key, model, messages, tools, toolChoice = 'auto', live = null) {
   const url = await wake.checkHookUrl(key.base_url, '网址');
   const body = { model, messages };
   if (tools && tools.length) { body.tools = tools; body.tool_choice = toolChoice; }
-  let res;
+  const streaming = !!live && !noStream.has(key.id);
+  if (streaming) body.stream = true;
+  const ctl = new AbortController();
+  let timedOut = false;
+  let timer;
+  const wait = ms => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ctl.abort(); }, ms); };
+  wait(MODEL_TIMEOUT);
   try {
-    res = await fetch(`${cleanBaseUrl(url)}/chat/completions`, {
-      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(MODEL_TIMEOUT),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key.api_key}`, 'User-Agent': 'maowo-cats/1' },
-      body: JSON.stringify(body),
-    });
+    let res;
+    try {
+      res = await fetch(`${cleanBaseUrl(url)}/chat/completions`, {
+        method: 'POST', redirect: 'manual', signal: ctl.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key.api_key}`, 'User-Agent': 'maowo-cats/1' },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error(timedOut ? `等了 ${MODEL_TIMEOUT / 1000} 秒模型还没回` : `连不上：${err.cause?.code || err.cause?.message || err.message}`);
+    }
+    if (!res.ok) {
+      const why = await readError(res);
+      // A line that does not know `stream`: once more the old way, and remember.
+      if (streaming && res.status === 400 && /stream/i.test(why)) {
+        noStream.add(key.id);
+        clearTimeout(timer);
+        return await callModel(key, model, messages, tools, toolChoice, live);
+      }
+      throw new Error(why);
+    }
+    if (streaming && /event-stream/i.test(res.headers.get('content-type') || '')) return await readStream(res, live, wait, () => timedOut);
+    let data;
+    try { data = await res.json(); } catch (err) {
+      if (timedOut) throw new Error(`等了 ${MODEL_TIMEOUT / 1000} 秒模型还没回`);
+      data = null;
+    }
+    const choice = data?.choices?.[0];
+    const msg = choice?.message;
+    if (!msg) throw new Error(data?.error?.message ? `模型说：${String(data.error.message).slice(0, 200)}` : '模型的回答看不懂（不是 OpenAI 格式？）');
+    return finished(normalize(msg), choice.finish_reason);
+  } finally { clearTimeout(timer); }
+}
+function finished(msg, reason) {
+  if (reason) msg._finish = String(reason);
+  if (reason === 'length') msg._cut = 'length';
+  else if (reason === 'content_filter') msg._cut = 'filter';
+  return msg;
+}
+// Reads an OpenAI-style stream into one message. A break in the middle keeps what was written.
+async function readStream(res, live, wait, timedOut) {
+  const dec = new TextDecoder();
+  let buf = '', content = '', thinking = '', finish = null, broken = null, got = false;
+  const calls = [];
+  const take = line => {
+    if (!line.startsWith('data:')) return;
+    const raw = line.slice(5).trim();
+    if (!raw || raw === '[DONE]') return;
+    let j;
+    try { j = JSON.parse(raw); } catch { return; }
+    if (j.error && !got) throw new Error(`模型说：${String(j.error.message || JSON.stringify(j.error)).slice(0, 200)}`);
+    const c = j.choices && j.choices[0];
+    if (!c) return;
+    got = true;
+    const d = c.delta || c.message || {};
+    const text = Array.isArray(d.content) ? d.content.map(x => (typeof x === 'string' ? x : x?.text || '')).join('') : typeof d.content === 'string' ? d.content : '';
+    const think = typeof d.reasoning_content === 'string' ? d.reasoning_content : typeof d.reasoning === 'string' ? d.reasoning : '';
+    if (think) thinking += think;
+    if (text) content += text;
+    for (const t of Array.isArray(d.tool_calls) ? d.tool_calls : []) {
+      // Pieces of one call share an index; lines that send no index send whole calls.
+      const i = Number.isInteger(t.index) ? t.index : calls.length;
+      const cur = calls[i] || (calls[i] = { id: '', type: 'function', function: { name: '', arguments: '' } });
+      if (t.id) cur.id = t.id;
+      if (t.function?.name) cur.function.name += t.function.name;
+      const a = t.function?.arguments;
+      if (a !== undefined && a !== null) cur.function.arguments += typeof a === 'string' ? a : JSON.stringify(a);
+    }
+    if (c.finish_reason) finish = c.finish_reason;
+    if (text || think) live.onText(content, !content);
+  };
+  try {
+    for await (const chunk of res.body) {
+      wait(STREAM_GAP);
+      buf += dec.decode(chunk, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) { take(buf.slice(0, i).trim()); buf = buf.slice(i + 1); }
+    }
+    if (buf.trim()) take(buf.trim());
   } catch (err) {
-    throw new Error(err.name === 'TimeoutError' ? `等了 ${MODEL_TIMEOUT / 1000} 秒模型还没回` : `连不上：${err.cause?.code || err.cause?.message || err.message}`);
+    if (/^模型说/.test(err.message)) throw err;
+    broken = timedOut() ? `等了 ${STREAM_GAP / 1000} 秒没有新的字` : '连接中途断了';
   }
-  if (!res.ok) throw new Error(await readError(res));
-  const data = await res.json().catch(() => null);
-  const msg = data?.choices?.[0]?.message;
-  if (!msg) throw new Error(data?.error?.message ? `模型说：${String(data.error.message).slice(0, 200)}` : '模型的回答看不懂（不是 OpenAI 格式？）');
-  return normalize(msg);
+  const whole = calls.filter(Boolean).filter(c => { if (!c.function.name) return false; try { JSON.parse(c.function.arguments || '{}'); return true; } catch { return false; } });
+  if (broken && !content.trim()) throw new Error(`${broken}，一个字都还没写出来`);
+  if (!got && !broken) throw new Error('模型的回答看不懂（不是 OpenAI 格式？）');
+  const msg = { role: 'assistant', content: content || null };
+  if (thinking) msg.reasoning_content = thinking;
+  if (whole.length && !broken) msg.tool_calls = whole;
+  finished(msg, finish);
+  if (broken) { msg._cut = 'broken'; msg._why = broken; }
+  return msg;
 }
 
 // Relays do not all answer the same way: text as a list of parts, the old single `function_call`,
@@ -743,6 +833,7 @@ async function summarizeAgain(ai, cat) {
 // ---------- running a cat ----------
 const queues = new Map();      // aiId -> [{kind, text, roomId}]
 const busy = new Set();
+const liveText = new Map();    // aiId -> { text, thinking }: what it is writing right now, for her window only
 const running = new Map();     // aiId -> the trigger it is working on
 const nudged = new Set();      // turn keys already nudged once
 const lastInbox = new Map();
@@ -828,6 +919,7 @@ async function pump(aiId) {
       }
       running.delete(aiId);
       runKind.delete(aiId);
+      liveText.delete(aiId);
       flushNotes(aiId);
       if (t.done) t.done();
     }
@@ -882,7 +974,12 @@ async function runOnce(aiId, t) {
   let said = false;
   let acted = false;
   const opts = { flat: cat.tools_ok === 0, vision: cat.vision !== 0 };
-  const ask = o => callModel(key, cat.model, [{ role: 'system', content: system }, ...withTailPreset(ai, cat, history(aiId, runStart, o))], o.flat ? [] : tools);
+  // Answers to her in the private window are shown while they are written.
+  const live = t.kind === 'me' ? { onText: (text, thinking) => { liveText.set(aiId, { text, thinking }); } } : null;
+  const ask = o => {
+    liveText.delete(aiId);
+    return callModel(key, cat.model, [{ role: 'system', content: system }, ...withTailPreset(ai, cat, history(aiId, runStart, o))], o.flat ? [] : tools, 'auto', live);
+  };
   // 「The request is wrong」 answers, as opposed to a wrong key, no money or a busy server.
   const refused = err => /对方回了 (400|415|422)/.test(err.message);
   for (let step = 0; step < MAX_STEPS; step++) {
@@ -911,6 +1008,9 @@ async function runOnce(aiId, t) {
       }
       if (!msg) throw last;
     }
+    liveText.delete(aiId);
+    const cut = msg._cut || null, cutWhy = msg._why || '', finish = msg._finish || '';
+    delete msg._cut; delete msg._why; delete msg._finish;
     // Without tools, a made-up tool call is just ignored.
     const calls = !opts.flat && Array.isArray(msg.tool_calls) ? msg.tool_calls.filter(c => c && c.function && c.function.name) : [];
     const content = typeof msg.content === 'string' ? msg.content.trim() : '';
@@ -922,7 +1022,16 @@ async function runOnce(aiId, t) {
         const quiet = !content || /^[（(]?\s*不说话\s*[)）]?[。.]?$/.test(content);
         add(aiId, 'gsay', { msg: { ...keep, content: content || '（不说话）' }, text: quiet ? '' : content, groupId: gid, detail: JSON.stringify({ group: group.name }) });
         if (!quiet) { postGroup(gid, aiId, 'say', content); said = true; }
-      } else if (content) { add(aiId, 'say', { msg: keep, text: content, roomId: t.kind === 'me' ? null : secret }); said = true; }
+      } else if (content) {
+        add(aiId, 'say', { msg: keep, text: content, roomId: t.kind === 'me' ? null : secret, detail: cut ? JSON.stringify({ cut, why: cutWhy }) : null });
+        said = true;
+      } else if (t.kind === 'me') {
+        // Nothing came back: say so, with the reason if there is one, instead of silence.
+        const why = cut === 'length' ? '字数用到上限了，还没开始写正文就停了（多半是思考把额度用光了）。可以让它写短一点、分几次写，或者换一个不带思考的模型'
+          : cut === 'filter' ? '被模型那边的内容审查拦下了'
+          : msg.reasoning_content ? '它想了一阵，但没有写出正文' : `模型回了一段空的${finish && finish !== 'stop' ? `（结束原因：${finish}）` : ''}`;
+        add(aiId, 'error', { text: `它这次一个字都没回：${why}。可以点「重新回答」再试一次。` });
+      }
       break;
     }
     keep.tool_calls = calls.map(c => ({ ...c, id: c.id || `call_${Math.random().toString(36).slice(2, 10)}`, type: c.type || 'function' }));
@@ -1207,6 +1316,7 @@ function shapeRows(ai, rows) {
     if (r.kind === 'me' && r.detail) { try { const d = JSON.parse(r.detail); if (d.images) item.images = d.images; if (d.order) item.order = true; if (d.ova) item.ova = true; } catch {} }
     if (r.kind !== 'me' && cat_ova(ai) && r.id >= cat_ova(ai)) item.ova = true;
     if (r.kind === 'result' && r.detail) { try { item.detail = JSON.parse(r.detail); } catch {} }
+    if (r.kind === 'say' && r.detail) { try { const d = JSON.parse(r.detail); if (d.cut) item.cut = d.cut; } catch {} }
     return item;
   }).filter(Boolean);
 }
@@ -1854,6 +1964,12 @@ router.get('/:id/messages', wrap(req => {
   const out = windowData(ai, cat, Number(req.query.after) || 0, Number(req.query.before) || 0);
   if (!req.query.before) markRead(ai);
   return out;
+}));
+// What it is writing right now (only answers to her in this window are streamed).
+router.get('/:id/live', wrap(req => {
+  const { ai } = mine(req);
+  const l = liveText.get(ai.id);
+  return { busy: busy.has(ai.id), text: l ? l.text : '', thinking: l ? !!l.thinking : false };
 }));
 // Long polling: waits up to 25 s for something new.
 router.get('/:id/wait', wrap(async (req, res) => {

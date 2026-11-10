@@ -64,6 +64,11 @@
   .err { align-self: center; max-width: 92%; font-size: 12.5px; color: var(--danger); background: var(--secret-bg); padding: 8px 12px; border-radius: 12px; line-height: 1.6; text-align: center; }
   .typing { align-self: flex-start; font-size: 13px; color: var(--muted); padding: 8px 13px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); }
   .typing i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); margin: 0 1.5px; animation: blink 1.2s infinite; vertical-align: middle; }
+  .b.say.live { white-space: pre-wrap; }
+  .b.say.live::after { content: '▍'; color: var(--accent-line); animation: blink 1s infinite; margin-left: 1px; }
+  .cutline { align-self: flex-start; font-size: 12px; color: var(--secret-text, #A9503C); padding: 0 4px; margin-top: -4px; line-height: 1.5; }
+  .tools-row { align-self: flex-start; display: flex; gap: 14px; margin-top: -4px; }
+  .tools-row .regen { margin-top: 0; }
   .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
   .older { align-self: center; }
   .bottom { border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); }
@@ -290,16 +295,50 @@ async function summaryVersions(onChange) {
   });
 }
 
+// 接着写: an order from outside the story, so it continues where it stopped instead of answering her.
+async function goOn() {
+  try { await api(`/cats/${catId}/messages`, { json: { text: '$ 接着写：从上面停下的地方直接往下写，不要重复，不要重新开头。' } }); }
+  catch (err) { Maowo.toast(err.message); }
+}
+// While it answers: what it has written so far, asked for every 0.7 s.
+let liveNow = { text: '', thinking: false }, liveTimer = null;
+async function liveTick() {
+  liveTimer = null;
+  if (!busy || document.hidden) { liveNow = { text: '', thinking: false }; return; }
+  try {
+    const d = await api(`/cats/${catId}/live`);
+    if (busy && (d.text !== liveNow.text || d.thinking !== liveNow.thinking)) {
+      const stick = atBottom();
+      liveNow = { text: d.text, thinking: d.thinking };
+      const box = $('#livebox');
+      // Only this one box changes: redrawing the whole list would make pictures blink.
+      if (box && box.classList.contains('live') && d.text) box.textContent = d.text;
+      else drawFeed();
+      if (stick) toBottom();
+    }
+  } catch {}
+  if (busy) liveTimer = setTimeout(liveTick, 700);
+}
+function watchLive() {
+  if (!busy) { liveNow = { text: '', thinking: false }; return; }
+  if (!liveTimer) liveTimer = setTimeout(liveTick, 300);
+}
 async function regenerate() {
   try { await api(`/cats/${catId}/regenerate`, { json: {} }); await reload(); } catch (err) { Maowo.toast(err.message); }
 }
 
+const CUT_WHY = {
+  length: '写到这里停了：一次能写的字数到上限了。点「接着写」让它往下写。',
+  filter: '写到这里被模型那边的内容审查拦下了。',
+  broken: '写到这里断了（连接中途断开，或者太久没有新的字）。前面写好的都留着，点「接着写」让它往下写。',
+};
 function rowHtml(it, prev) {
   let out = '';
   if (!prev || Date.parse(it.createdAt) - Date.parse(prev.createdAt) > 10 * 60000) out += `<div class="stamp">${timeOf(it.createdAt)}</div>`;
   if (it.kind === 'me') return out + (it.images && it.images.length ? `<div class="mepics ${it.images.length === 1 ? 'one' : ''}" data-mine="${it.id}">${it.images.map(f => `<button type="button" data-big="${esc(f)}" aria-label="看大图"><img data-img="${esc(f)}" alt="图片"></button>`).join('')}</div>` : '')
     + (it.text ? `<div class="b me ${it.order ? 'order' : ''} ${it.ova ? 'ova' : ''}" data-mine="${it.id}">${it.order ? '<span class="tag">戏外指令</span>' : ''}${esc(it.text)}</div>` : '');
-  if (it.kind === 'say') return out + `<div class="b say ${it.ova ? 'ova' : ''}" data-theirs="${it.id}">${esc(it.text)}</div>`;
+  if (it.kind === 'say') return out + `<div class="b say ${it.ova ? 'ova' : ''}" data-theirs="${it.id}">${esc(it.text)}</div>`
+    + (it.cut ? `<div class="cutline">${CUT_WHY[it.cut] || CUT_WHY.broken}</div>` : '');
   if (it.kind === 'note') return out + `<div class="noteline">${esc(it.text)}</div>`;
   if (it.kind === 'aside') return out + `<div class="noteline aside">${esc(it.text)}</div>`;
   if (it.kind === 'wake') return out + `<div class="wakeline"><span>${esc(it.text)}</span></div>`;
@@ -329,11 +368,12 @@ function feedHtml() {
     html += rowHtml(it, prev);
     prev = it;
   }
-  if (busy) html += '<div class="typing">正在想 <i></i><i></i><i></i></div>';
+  if (busy) html += liveNow.text ? `<div class="b say live" id="livebox">${esc(liveNow.text)}</div>`
+    : `<div class="typing" id="livebox">${liveNow.thinking ? '在打腹稿' : '正在想'} <i></i><i></i><i></i></div>`;
   // 重新回答 under its last answer to her newest message.
   const last = items[items.length - 1];
-  if (!busy && last && last.kind === 'say' && rewindable.length && items.some(i => i.kind === 'me' && i.id === rewindable[0]) && !items.some(i => i.id > rewindable[0] && i.kind === 'wake'))
-    html += `<button class="regen" id="regen">${icon('retry', 13, 2)}重新回答</button>`;
+  if (!busy && last && (last.kind === 'say' || last.kind === 'error') && rewindable.length && items.some(i => i.kind === 'me' && i.id === rewindable[0]) && !items.some(i => i.id > rewindable[0] && i.kind === 'wake'))
+    html += `<div class="tools-row"><button class="regen" id="regen">${icon('retry', 13, 2)}重新回答</button>${last.kind === 'say' ? `<button class="regen" id="goon">${icon('chevronDown', 13, 2)}接着写</button>` : ''}</div>`;
   return html;
 }
 
@@ -350,6 +390,7 @@ function drawFeed({ stick, keepTop } = {}) {
   f.querySelectorAll('[data-mine]').forEach(el => armLongPress(el, () => mineMenu(Number(el.dataset.mine))));
   f.querySelectorAll('[data-theirs]').forEach(el => armLongPress(el, () => theirsMenu(Number(el.dataset.theirs))));
   const rg = f.querySelector('#regen'); if (rg) rg.onclick = regenerate;
+  const go = f.querySelector('#goon'); if (go) go.onclick = goOn;
   f.querySelectorAll('img[data-img]').forEach(im => picUrl(im.dataset.img).then(u => { im.src = u; im.onload = () => { if (stick || wasBottom) toBottom(); }; }).catch(() => {}));
   f.querySelectorAll('[data-big]').forEach(b => b.onclick = () => picUrl(b.dataset.big).then(u => {
     const box = document.createElement('div');
@@ -417,7 +458,7 @@ async function poll() {
     try {
       const d = await api(`/cats/${catId}/wait?after=${lastId}&busy=${busy ? 1 : 0}`);
       const grew = d.items.length > 0 || d.busy !== busy;
-      cat = d.cat; busy = d.busy;
+      cat = d.cat; busy = d.busy; watchLive();
       if (d.rewindable) rewindable = d.rewindable;
       merge(d.items);
       if (d.lastId) lastId = Math.max(lastId, d.lastId);
@@ -435,6 +476,7 @@ async function poll() {
 async function reload() {
   const d = await api(`/cats/${catId}/messages`);
   cat = d.cat; busy = d.busy; items = d.items; moreBefore = d.more; rewindable = d.rewindable || [];
+  watchLive();
   firstId = items.length ? items[0].id : 0;
   lastId = d.lastId;
   drawTop(); drawFeed({ stick: true });

@@ -144,7 +144,7 @@ const Maowo = (() => {
     `<div class="avatar ${cls}">${who && who.avatar ? `<img src="${esc(who.avatar)}" alt="" loading="lazy">` : esc(initial(who && who.name))}</div>`;
 
   // The four buttons at the bottom of 我的 / 游戏 / 聊天 / 猫们.
-  const TABS = [['me', '/me', '我的', 'cat'], ['games', '/', '游戏', 'gamepad'], ['diary', '/diary', '聊天', 'chat'], ['cats', '/cats', '猫们', 'paw']];
+  const TABS = [['cats', '/cats', '猫们', 'paw'], ['games', '/', '游戏', 'gamepad'], ['diary', '/diary', '聊天', 'chat'], ['me', '/me', '我的', 'cat']];
   function tabbar(active) {
     document.body.classList.add('has-tabbar');
     if (framed) return; // the shell draws the buttons

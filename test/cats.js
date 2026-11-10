@@ -67,6 +67,31 @@ function reply(body) {
   }
   return { role: 'assistant', content: '？' };
 }
+// A line that streams (SSE), piece by piece, with pauses: long text, a break in the middle, an empty answer, a tool call.
+async function streamed(body, res) {
+  const last = body.messages[body.messages.length - 1];
+  const c = typeof last.content === 'string' ? last.content.replace(/\n\n（猫窝备注：[\s\S]*）$/, '') : '';
+  res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+  const put = (delta, finish = null) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
+  const end = () => { res.write('data: [DONE]\n\n'); res.end(); };
+  const nap = ms => new Promise(r => setTimeout(r, ms));
+  if (last.role === 'tool') { put({ content: '记' }); put({ content: '好了' }, 'stop'); return end(); }
+  if (c === '长文') {
+    put({ role: 'assistant', reasoning_content: '我想想' }); await nap(500);
+    put({ content: '第一段。' }); await nap(700);
+    put({ content: '第二段。' }); await nap(300);
+    put({ content: '第三段。' }, 'stop'); return end();
+  }
+  if (c === '断掉') { put({ content: '写到一半' }); await nap(200); return res.destroy(); }
+  if (c === '空的') { put({ reasoning_content: '想啊想' }); put({}, 'length'); return end(); }
+  if (c === '太长') { put({ content: '很长很长' }); put({}, 'length'); return end(); }
+  if (c.startsWith('记住')) {
+    put({ tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'remember', arguments: '{"te' } }] });
+    put({ tool_calls: [{ index: 0, function: { arguments: `xt":${JSON.stringify(c.slice(2))}}` } }] }, 'tool_calls');
+    return end();
+  }
+  put({ content: `流：${c.slice(0, 20)}` }, 'stop'); end();
+}
 const fake = http.createServer((req, res) => {
   let data = '';
   req.on('data', b => { data += b; });
@@ -76,6 +101,7 @@ const fake = http.createServer((req, res) => {
     if (req.url === '/v1/models') return res.end(JSON.stringify({ object: 'list', data: [{ id: 'fake-2' }, { id: 'fake-1' }] }));
     const body = JSON.parse(data);
     seen.push(body);
+    if (body.model === 'fake-stream' && body.stream) return streamed(body, res);
     const message = reply(body);
     if (message.error) { res.statusCode = 400; return res.end(JSON.stringify({ error: { message: 'tool_choice not supported' } })); }
     res.end(JSON.stringify({ choices: [{ message }] }));
@@ -701,6 +727,37 @@ const ok = name => console.log('ok', name);
   w = await until(async () => { const d = await api(OWNER, `/cats/${cat.id}/messages`); return d.items.at(-1).kind === 'error' && d; }, 'error');
   assert(/401/.test(w.items.at(-1).text) && /key 不对/.test(w.items.at(-1).text));
   ok('a wrong key shows 401 (key 不对) in the window');
+
+  // Streaming: her window sees the answer while it is written; a break keeps what was written; an empty answer says so.
+  {
+    await api(OWNER, `/cats/keys/${key.id}`, { method: 'PUT', json: { name: '测试', baseUrl: FAKE + '/chat/completions', apiKey: SECRET_KEY } }).catch(() => {});
+    const sc = await api(OWNER, '/cats', { json: { name: '流流', systemPrompt: '你是流流。', keyId: key.id, model: 'fake-stream' } });
+    const win = () => api(OWNER, `/cats/${sc.id}/messages`);
+    const idle = () => until(async () => { const d = await win(); return !d.busy && d; }, 'idle');
+    await api(OWNER, `/cats/${sc.id}/messages`, { json: { text: '长文' } });
+    await until(async () => (await api(OWNER, `/cats/${sc.id}/live`)).thinking, 'live: thinking first');
+    const mid = await until(async () => { const l = await api(OWNER, `/cats/${sc.id}/live`); return l.text && l; }, 'live: text while it writes');
+    assert(mid.busy && mid.text.startsWith('第一段。') && !mid.text.includes('第三段'), 'partial text: ' + mid.text);
+    let d = await idle();
+    assert.strictEqual(d.items.at(-1).text, '第一段。第二段。第三段。');
+    assert(!d.items.at(-1).cut);
+    assert.strictEqual((await api(OWNER, `/cats/${sc.id}/live`)).text, '');
+    await api(OWNER, `/cats/${sc.id}/messages`, { json: { text: '断掉' } });
+    d = await until(async () => { const x = await win(); return !x.busy && x.items.at(-1).kind === 'say' && x.items.at(-1).text === '写到一半' && x; }, 'broken stream keeps the text');
+    assert.strictEqual(d.items.at(-1).cut, 'broken');
+    await api(OWNER, `/cats/${sc.id}/messages`, { json: { text: '太长' } });
+    d = await until(async () => { const x = await win(); return !x.busy && x.items.at(-1).text === '很长很长' && x; }, 'length');
+    assert.strictEqual(d.items.at(-1).cut, 'length');
+    await api(OWNER, `/cats/${sc.id}/messages`, { json: { text: '空的' } });
+    d = await until(async () => { const x = await win(); return !x.busy && x.items.at(-1).kind === 'error' && x; }, 'empty answer is said');
+    assert(/一个字都没回/.test(d.items.at(-1).text) && /上限/.test(d.items.at(-1).text));
+    await api(OWNER, `/cats/${sc.id}/regenerate`, { json: {} });
+    d = await until(async () => { const x = await win(); return !x.busy && x.items.filter(i => i.kind === 'error').length === 1 && x; }, 'regenerate after an empty answer');
+    await api(OWNER, `/cats/${sc.id}/messages`, { json: { text: '记住流式也能用工具' } });
+    d = await until(async () => { const x = await win(); return !x.busy && x.items.at(-1).text === '记好了' && x; }, 'tool call in pieces');
+    assert((await api(OWNER, `/cats/${sc.id}/notebook`)).notebook.includes('流式也能用工具'));
+    ok('流式: text shows while it is written, a break or the length limit keeps what was written, an empty answer says why, tool calls in pieces');
+  }
 
   // Someone else cannot see or use these.
   const friend = await api(OWNER, '/friends', { json: { name: '小叶' } });
