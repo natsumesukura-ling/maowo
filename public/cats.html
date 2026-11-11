@@ -12,231 +12,141 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
 <style>
-  main { position: relative; overflow-x: clip; }
-  .deco.vine { right: -24px; top: -8px; width: 92px; }
-  .hero { display: flex; align-items: flex-end; gap: 12px; padding: 30px 0 18px; }
-  .hero img { width: 104px; flex-shrink: 0; }
-  .hero h1 { font-family: "Noto Serif SC", serif; font-size: 28px; margin: 0; }
-  .hero .d { font-size: 13px; color: var(--text2); line-height: 1.6; padding: 4px 40px 6px 0; }
-  .tools { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-  .tools .count { flex: 0 0 100%; height: auto; border: none; background: none; justify-content: flex-end; font-size: 12px; color: var(--muted); margin-top: -4px; }
-  .tools > * { flex: 1; min-width: 0; }
-  .resident .st > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .count { height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; color: var(--text2); white-space: nowrap; }
-  .pause { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--white); border: 1px solid var(--border); margin-bottom: 22px; font: inherit; font-size: 14px; color: var(--text); text-align: left; cursor: pointer; }
-  .pause .t { flex-grow: 1; } .pause .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .switch { width: 46px; height: 28px; border-radius: 14px; background: var(--ok-text); position: relative; flex-shrink: 0; transition: background .2s; }
-  .switch::after { content: ''; position: absolute; top: 3px; left: 21px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .2s; }
-  .switch.off { background: var(--line); } .switch.off::after { left: 3px; }
-  .resident { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow); margin-bottom: 12px; text-decoration: none; color: inherit; }
-  .resident .avatar { width: 46px; height: 46px; font-size: 18px; }
-  .resident .body { flex-grow: 1; min-width: 0; border-left: 1.5px solid var(--line); padding-left: 12px; }
-  .resident .n { font-family: "Noto Serif SC", serif; font-size: 16.5px; font-weight: 700; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  main { position: relative; }
+  .head { display: flex; align-items: center; gap: 8px; padding: 18px 0 12px; }
+  .head h1 { font-family: "Noto Serif SC", serif; font-size: 26px; margin: 0; flex: 1; min-width: 0; }
+  .head .icon-btn { background: var(--card); border: 1px solid var(--border); }
+  .paused { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--secret-text, #A9503C); padding: 8px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); margin-bottom: 10px; text-decoration: none; }
+  /* one small row per cat: avatar, name, the newest line */
+  .resident { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); margin-bottom: 9px; text-decoration: none; color: inherit;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; position: relative; }
+  .resident .avatar { width: 46px; height: 46px; font-size: 18px; border-radius: 13px; flex-shrink: 0; }
+  .resident .body { flex: 1; min-width: 0; }
+  .resident .n { font-size: 15.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
   .resident .n .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .resident .m { font-size: 11.5px; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .resident .st { font-size: 12.5px; color: var(--text2); margin-top: 3px; display: flex; align-items: flex-start; gap: 6px; line-height: 1.5; }
-  .resident .st .dot { margin-top: 6px; }
-  .resident .chev { color: var(--accent); display: flex; flex-shrink: 0; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-text); flex-shrink: 0; }
+  .resident .st { font-size: 12.5px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok-text); flex-shrink: 0; }
   .dot.sleep { background: var(--line); } .dot.play, .dot.busy { background: var(--accent-line); }
   .dot.busy { animation: blink 1.2s infinite; }
   @keyframes blink { 50% { opacity: .3; } }
-  .unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #D2483A; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-family: -apple-system, sans-serif; flex-shrink: 0; }
-  .mutei { display: inline-flex; align-items: center; gap: 3px; font-family: -apple-system, sans-serif; font-size: 11.5px; font-weight: 400; color: var(--muted); padding: 2px 8px; border-radius: 999px; background: var(--white); border: 1px solid var(--border); flex-shrink: 0; }
+  .side { display: flex; align-items: center; gap: 6px; flex-shrink: 0; color: var(--muted); }
+  .unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #D2483A; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--white); border: 1px solid var(--border); color: var(--muted); }
   .gstack { position: relative; width: 46px; height: 46px; flex-shrink: 0; }
-  .resident .gstack .avatar { position: absolute; width: 27px; height: 27px; font-size: 11px; border: 2px solid var(--card); }
+  .resident .gstack .avatar { position: absolute; width: 27px; height: 27px; font-size: 11px; border: 2px solid var(--card); border-radius: 9px; }
   .gstack .avatar:nth-child(1) { left: 0; top: 0; } .gstack .avatar:nth-child(2) { right: 0; top: 6px; } .gstack .avatar:nth-child(3) { left: 10px; bottom: 0; }
   .gstack .avatar:only-child { left: 6px; top: 6px; width: 34px; height: 34px; }
-  /* long press (2 s) to move a card */
-  .resident { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; position: relative; transition: transform .18s, box-shadow .18s; }
-  .resident::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 2px; background: var(--accent-line); transform: scaleX(0); transform-origin: left; opacity: 0; }
-  .resident.pressing::after { opacity: .8; transform: scaleX(1); transition: transform 1.7s linear, opacity .2s; }
-  .resident.dragging { z-index: 5; transition: none; box-shadow: 0 10px 28px rgba(120, 80, 40, .22); background: var(--white); }
-  .resident.shift { transition: transform .18s; }
-  .hint2 { font-size: 12px; color: var(--muted); text-align: center; margin: -2px 0 12px; }
-  .adds { display: flex; gap: 10px; }
-  .adds .new { flex: 1; }
-  .adds .new svg { width: 16px; height: 16px; }
-  .pickcat { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--white); font: inherit; color: var(--text); margin-bottom: 8px; cursor: pointer; text-align: left; }
-  .pickcat .avatar { width: 40px; height: 40px; }
-  .pickcat .ck { margin-left: auto; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--line); display: flex; align-items: center; justify-content: center; color: #fff; }
-  .pickcat.on { border-color: var(--accent-line); background: var(--accent-soft); }
-  .pickcat.on .ck { background: var(--accent); border-color: var(--accent); }
-  .new { width: 100%; border: 1.5px dashed var(--accent-line); background: transparent; color: var(--accent); border-radius: 14px; height: 40px; font: inherit; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; text-decoration: none; }
-  .first { padding: 18px; border-radius: 20px; background: var(--card); border: 1px solid var(--border); font-size: 14px; color: var(--text2); line-height: 1.75; margin-bottom: 14px; }
+  /* 移动位置: arrows on each row, 「好了」 on top */
+  .moving .resident { border-style: dashed; }
+  .mv { display: flex; gap: 4px; }
+  .mv button { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--white); color: var(--text); display: grid; place-items: center; padding: 0; cursor: pointer; }
+  .mv button[disabled] { opacity: .3; }
+  .movebar { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text2); margin-bottom: 10px; }
+  .movebar span { flex: 1; }
+  .acts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .first { padding: 16px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); font-size: 14px; color: var(--text2); line-height: 1.75; margin-bottom: 14px; }
   .first b { color: var(--text); }
-  .sleeping { width: min(70%, 280px); margin: 26px auto 0; }
 </style>
 </head>
 <body>
 <main class="wrap">
-  <img class="deco vine" src="/img/art/vine.webp" alt="">
-  <div class="hero"><img class="art" src="/img/art/shelf-cat.webp" alt=""><div><h1>猫们</h1><div class="d">住在猫窝里的 AI。轮到它们、或者有人找它们，猫窝自己叫醒。</div></div></div>
+  <div class="head"><h1>猫们</h1><a class="icon-btn" id="manage" href="/cats/manage" aria-label="猫们的设置"></a></div>
   <div id="content"><div class="empty">读取中…</div></div>
-  <img class="art sleeping" src="/img/art/cat-sleep.webp" alt="">
 </main>
 <script src="/common.js"></script>
-<script src="/cats-keys.js"></script>
 <script>
 const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
 Maowo.tabbar('cats');
+$('#manage').innerHTML = icon('sliders', 21, 1.7);
 
-const QUIET = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5H11l-4.5 3.5V17h-2A1.5 1.5 0 0 1 3 15.5V6"/><path d="M3 3l18 18"/></svg>';
-const badge = x => x.mute ? `<span class="mutei">${icon('bellOff', 14, 1.8)}免打扰</span>` : x.unread ? `<span class="unread">${x.unread > 99 ? '99+' : x.unread}</span>` : '';
+const side = x => `<span class="side">${x.pinned ? '<span class="chip">置顶</span>' : ''}${x.mute ? icon('bellOff', 15, 1.8) : x.unread ? `<span class="unread">${x.unread > 99 ? '99+' : x.unread}</span>` : ''}</span>`;
+const mv = (i, n) => `<span class="mv"><button type="button" data-up ${i ? '' : 'disabled'} aria-label="上移">${icon('chevronUp', 18, 2)}</button><button type="button" data-down ${i < n - 1 ? '' : 'disabled'} aria-label="下移">${icon('chevronDown', 18, 2)}</button></span>`;
+const keyOf = x => `${x.type === 'group' ? 'g' : 'c'}:${x.id}`;
 
-function catCard(c) {
+function catCard(c, i, n) {
+  // While it is busy or at a table that is what the line says; otherwise the newest thing said.
+  const line = c.status.state === 'busy' || c.status.state === 'play' || !c.last ? c.status.text : (c.last.mine ? '你：' : '') + c.last.text;
   return `<a class="resident" data-key="c:${c.id}" href="/cats/${c.id}">${Maowo.avatar(c)}
-    <div class="body"><div class="n"><span class="nm">${esc(c.name)}</span>${badge(c)}</div>
-      <div class="m">${c.keyName ? esc(c.keyName) : '还没选钥匙'} · ${c.model ? esc(c.model) : '还没选模型'}</div>
-      <div class="st"><span class="dot ${c.status.state}"></span><span>${esc(c.status.text)}</span></div></div>
-    <span class="chev">${icon('chevronRight', 20, 2)}</span></a>`;
+    <div class="body"><div class="n"><span class="nm">${esc(c.name)}</span><span class="dot ${c.status.state}"></span></div><div class="st">${esc(line)}</div></div>
+    ${moving ? mv(i, n) : side(c)}</a>`;
 }
-function groupCard(g) {
+function groupCard(g, i, n) {
   const ms = g.members.filter(m => m.isCat);
   return `<a class="resident" data-key="g:${g.id}" href="/cats/g/${g.id}"><span class="gstack">${ms.slice(0, 3).map(m => Maowo.avatar(m)).join('')}</span>
-    <div class="body"><div class="n"><span class="nm">${esc(g.name)}</span>${badge(g)}</div>
-      <div class="m">群聊 · ${esc(ms.map(m => m.name).join('、') || '还没有猫')}</div>
-      <div class="st"><span>${g.last ? `${esc(g.last.name)}：${esc(g.last.text.length > 40 ? g.last.text.slice(0, 40) + '…' : g.last.text)}` : '还没人说话'}</span></div></div>
-    <span class="chev">${icon('chevronRight', 20, 2)}</span></a>`;
+    <div class="body"><div class="n"><span class="nm">${esc(g.name)}</span></div>
+      <div class="st">${g.last ? `${esc(g.last.name)}：${esc(g.last.text.length > 40 ? g.last.text.slice(0, 40) + '…' : g.last.text)}` : `群聊 · ${esc(ms.map(m => m.name).join('、') || '还没有猫')}`}</div></div>
+    ${moving ? mv(i, n) : side(g)}</a>`;
 }
 
-let data = null;
+let data = null, moving = false;
 function render(d) {
   data = d;
-  if (dragging) return; // do not redraw under a finger
+  const n = d.items.length;
   const html = `
-    <div class="tools">
-      <button class="btn" id="keys">${icon('key', 18, 1.8)}钥匙 · ${d.keys.length}</button>
-      <button class="btn" id="masks">${icon('card', 18, 1.8)}面具 · ${d.masks || 0}</button>
-      <button class="btn" id="presets">${icon('sliders', 18, 1.8)}预设 · ${d.presets || 0}</button>
-      <div class="count">今天叫醒了 ${d.todayWakes} 次</div>
-    </div>
-    <button class="pause" id="pause" aria-pressed="${!d.paused}"><div class="t">让大家自己玩<div class="s">${d.paused ? '现在全部暂停了：谁也不会被叫醒，你跟它们说话还是会回' : '关掉就全部暂停，谁也不会被叫醒'}</div></div><span class="switch ${d.paused ? 'off' : ''}"></span></button>
-    ${!d.keys.length && !d.cats.length ? `<div class="first"><b>第一步：</b>点上面的「钥匙」，填一把 API key（DeepSeek、GLM、Gemini 或者中转站都行）。<br><b>第二步：</b>点下面「搬进来一个新 AI」，起名字、写设定、选模型。<br>之后它就住在猫窝里啦：可以跟它聊天，轮到它玩游戏时猫窝会自己叫它。</div>` : ''}
-    <div class="ribbon"><span class="tag">住在这里的</span><span class="rule"></span></div>
-    <div id="list">${d.items.map(x => x.type === 'group' ? groupCard(x) : catCard(x)).join('')}</div>
-    ${d.items.length > 1 ? '<div class="hint2">按住一张卡片 2 秒，可以拖动换位置</div>' : d.items.length ? '' : '<div class="empty" style="padding: 8px 0 18px;">还没有猫住进来</div>'}
-    <div class="adds"><a class="new" href="/cats/new">${icon('plus', 18, 2)}搬进来一个新 AI</a>${d.cats.length ? `<button class="new" id="newgroup">${icon('plus', 18, 2)}拉一个群</button>` : ''}</div>`;
+    ${d.paused ? `<a class="paused" href="/cats/manage">${icon('bellOff', 15, 1.8)}现在全部暂停了：谁也不会被叫醒。点这里去打开</a>` : ''}
+    ${moving ? `<div class="movebar"><span>点箭头换位置。置顶的总在最前面。</span><button class="btn sm primary" id="done">好了</button></div>` : ''}
+    ${!n ? `<div class="first">还没有猫住进来。<br>点右上角的按钮，先放一把 <b>钥匙</b>（API key），再 <b>搬进来一只新猫</b>。</div>` : ''}
+    <div id="list" class="${moving ? 'moving' : ''}">${d.items.map((x, i) => x.type === 'group' ? groupCard(x, i, n) : catCard(x, i, n)).join('')}</div>`;
   if (!Maowo.setHtml($('#content'), html)) return;
-  $('#keys').onclick = () => CatKit.keys(load);
-  $('#masks').onclick = () => CatKit.masks(load);
-  $('#presets').onclick = () => CatKit.presets(load);
-  $('#pause').onclick = async () => {
-    try { await api('/cats/settings', { method: 'PUT', json: { paused: !d.paused } }); Maowo.toast(d.paused ? '好，大家可以自己玩了' : '全部暂停了，谁也不会被叫醒'); load(); }
-    catch (err) { Maowo.toast(err.message); }
-  };
-  const ng = $('#newgroup'); if (ng) ng.onclick = newGroup;
-  document.querySelectorAll('#list .resident').forEach(armDrag);
+  const done = $('#done'); if (done) done.onclick = () => { moving = false; render(data); };
+  document.querySelectorAll('#list .resident').forEach(arm);
 }
 
-function newGroup() {
-  const chosen = new Set();
-  const p = Maowo.sheet(`<h2>拉一个群</h2>
-    <label class="field">群名</label><textarea class="single" rows="1" id="ng-name" maxlength="20" placeholder="比如：周五夜谈"></textarea>
-    <label class="field">拉谁进来</label>
-    ${data.cats.map(c => `<button type="button" class="pickcat" data-pick="${c.id}">${Maowo.avatar(c)}<span style="flex-grow: 1; font-weight: 600;">${esc(c.name)}</span><span class="ck">${icon('check', 14, 2.4)}</span></button>`).join('')}
-    <button class="btn primary block" id="ng-ok" style="margin-top: 8px;">建群</button>
-    <div class="small muted" style="margin-top: 10px; line-height: 1.6;">每只猫进群还是它自己：用它自己的模型和设定，带着它原来的记忆。群里说的话也会记进它自己的记忆里。</div>`);
-  CatKit.oneLine(p);
-  p.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
-    const id = Number(b.dataset.pick);
-    chosen.has(id) ? chosen.delete(id) : chosen.add(id);
-    b.classList.toggle('on', chosen.has(id));
-  });
-  p.querySelector('#ng-ok').onclick = async () => {
-    try { const g = await api('/cats/groups', { json: { name: p.querySelector('#ng-name').value, members: [...chosen] } }); p.close(); Maowo.go(`/cats/g/${g.id}`); }
-    catch (err) { Maowo.toast(err.message); }
-  };
-}
-
-// ---------- long press (2 s) and drag to reorder ----------
-let dragging = null, justDragged = false;
-const HOLD_MS = 2000;
-function armDrag(card) {
-  let timer = null, startY = 0, startX = 0, pid = null;
-  const cancel = () => { clearTimeout(timer); timer = null; card.classList.remove('pressing'); };
+// ---------- long press: 置顶 / 免打扰 / 移动位置 ----------
+let pressed = false;
+function arm(card) {
+  const item = data.items.find(x => keyOf(x) === card.dataset.key);
+  if (moving) {
+    card.addEventListener('click', e => {
+      e.preventDefault();
+      const up = e.target.closest('[data-up]'), down = e.target.closest('[data-down]');
+      if (up || down) shift(item, up ? -1 : 1);
+    });
+    return;
+  }
+  let timer = null, x0 = 0, y0 = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; };
   card.addEventListener('contextmenu', e => e.preventDefault());
   card.setAttribute('draggable', 'false');
-  card.addEventListener('dragstart', e => e.preventDefault()); // the browser's own 「drag a link」
   card.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || dragging) return;
-    startY = e.clientY; startX = e.clientX; pid = e.pointerId;
-    card.classList.add('pressing');
-    timer = setTimeout(() => { timer = null; card.classList.remove('pressing'); startDrag(card, pid, startY); }, HOLD_MS);
+    if (e.button !== 0) return;
+    pressed = false; x0 = e.clientX; y0 = e.clientY;
+    timer = setTimeout(() => { timer = null; pressed = true; try { navigator.vibrate && navigator.vibrate(20); } catch {} menu(item); }, 550);
   });
-  card.addEventListener('pointermove', e => {
-    if (timer && (Math.abs(e.clientY - startY) > 10 || Math.abs(e.clientX - startX) > 10)) cancel(); // a scroll, not a press
-  });
+  card.addEventListener('pointermove', e => { if (timer && (Math.abs(e.clientY - y0) > 10 || Math.abs(e.clientX - x0) > 10)) cancel(); });
   card.addEventListener('pointerup', cancel);
   card.addEventListener('pointercancel', cancel);
-  card.addEventListener('click', e => { if (justDragged) { e.preventDefault(); e.stopPropagation(); } }, true);
+  card.addEventListener('click', e => { if (pressed) { e.preventDefault(); e.stopPropagation(); pressed = false; } }, true);
+}
+const put = (item, json) => api(item.type === 'group' ? `/cats/groups/${item.id}` : `/cats/${item.id}`, { method: 'PUT', json });
+function menu(item) {
+  const p = Maowo.sheet(`<h2>${esc(item.name)}</h2><div class="acts">
+    <button class="btn block" id="m-pin">${icon('pin', 18, 1.8)}${item.pinned ? '取消置顶' : '置顶'}</button>
+    <button class="btn block" id="m-mute">${icon(item.mute ? 'bell' : 'bellOff', 18, 1.8)}${item.mute ? '关掉免打扰' : '免打扰'}</button>
+    ${data.items.length > 1 ? `<button class="btn block" id="m-move">${icon('chevronUp', 18, 2)}移动位置</button>` : ''}</div>
+    <div class="small muted" style="margin-top: 10px; line-height: 1.6;">免打扰：它说话不出红点，消息照样留着。</div>`);
+  const run = async (json, say) => { try { await put(item, json); p.close(); Maowo.toast(say); await load(); } catch (err) { Maowo.toast(err.message); } };
+  p.querySelector('#m-pin').onclick = () => run({ pinned: !item.pinned }, item.pinned ? '不置顶了' : '置顶了');
+  p.querySelector('#m-mute').onclick = () => run({ mute: !item.mute }, item.mute ? '关了免打扰' : '开了免打扰');
+  const m = p.querySelector('#m-move'); if (m) m.onclick = () => { p.close(); moving = true; render(data); };
+}
+async function shift(item, by) {
+  const list = data.items;
+  const i = list.indexOf(item), j = i + by;
+  if (j < 0 || j >= list.length) return;
+  // Pinned ones stay in front: only swap inside the same part.
+  if (!!list[j].pinned !== !!item.pinned) return Maowo.toast(item.pinned ? '置顶的排在最前面，先取消置顶才能往下放' : '上面是置顶的，越不过去');
+  [list[i], list[j]] = [list[j], list[i]];
+  render({ ...data });
+  try { await api('/cats/order', { method: 'PUT', json: { items: list.map(keyOf) } }); } catch (err) { Maowo.toast(err.message); }
 }
 
-function startDrag(card, pid, startY) {
-  const list = $('#list');
-  const cards = [...list.children];
-  const from = cards.indexOf(card);
-  const rects = cards.map(c => c.getBoundingClientRect());
-  const step = rects.length > 1 ? rects[1].top - rects[0].top : rects[0].height + 12;
-  let to = from, lastY = startY, scrollTimer = null;
-  dragging = card;
-  card.classList.add('dragging');
-  cards.forEach(c => { if (c !== card) c.classList.add('shift'); });
-  try { navigator.vibrate && navigator.vibrate(25); } catch {}
-  try { card.setPointerCapture(pid); } catch {}
-  const startScroll = document.scrollingElement.scrollTop;
-  const place = () => {
-    const dy = lastY - startY + (document.scrollingElement.scrollTop - startScroll);
-    card.style.transform = `translateY(${dy}px) scale(1.02)`;
-    to = Math.max(0, Math.min(cards.length - 1, from + Math.round(dy / step)));
-    cards.forEach((c, i) => {
-      if (c === card) return;
-      let shift = 0;
-      if (from < to && i > from && i <= to) shift = -step;
-      if (from > to && i < from && i >= to) shift = step;
-      c.style.transform = shift ? `translateY(${shift}px)` : '';
-    });
-  };
-  const move = e => { if (e.pointerId !== pid) return; lastY = e.clientY; place(); };
-  // Near the top or bottom edge, the page scrolls along.
-  scrollTimer = setInterval(() => {
-    const h = window.innerHeight;
-    const v = lastY < 80 ? -8 : lastY > h - 110 ? 8 : 0;
-    if (v) { document.scrollingElement.scrollTop += v; place(); }
-  }, 16);
-  const noScroll = e => e.preventDefault();
-  document.addEventListener('touchmove', noScroll, { passive: false });
-  const end = async e => {
-    if (e.pointerId !== pid) return;
-    card.removeEventListener('pointermove', move);
-    card.removeEventListener('pointerup', end);
-    card.removeEventListener('pointercancel', end);
-    document.removeEventListener('touchmove', noScroll);
-    clearInterval(scrollTimer);
-    cards.forEach(c => { c.style.transform = ''; c.classList.remove('shift', 'dragging'); });
-    if (to !== from) {
-      const ref = to > from ? cards[to].nextSibling : cards[to];
-      list.insertBefore(card, ref);
-    }
-    dragging = null;
-    justDragged = true; setTimeout(() => { justDragged = false; }, 400);
-    if (to !== from) {
-      const order = [...list.children].map(c => c.dataset.key);
-      data.items.sort((a, b) => order.indexOf(`${a.type === 'group' ? 'g' : 'c'}:${a.id}`) - order.indexOf(`${b.type === 'group' ? 'g' : 'c'}:${b.id}`));
-      try { await api('/cats/order', { method: 'PUT', json: { items: order } }); } catch (err) { Maowo.toast(err.message); }
-    }
-  };
-  card.addEventListener('pointermove', move);
-  card.addEventListener('pointerup', end);
-  card.addEventListener('pointercancel', end);
-}
-
-async function load() { render(await api('/cats')); Maowo.tellUnread(); }
+async function load() { const d = await api('/cats'); render(d); Maowo.tellUnread(); }
 window.maowoRefresh = () => load().catch(() => {});
 load().catch(err => Maowo.toast(err.message));
 // The status line changes on its own (thinking, playing, sleeping): look again now and then while it is on screen.
-setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 15000);
+setInterval(() => { if (!document.hidden && !moving) load().catch(() => {}); }, 15000);
 </script>
 </body>
 </html>

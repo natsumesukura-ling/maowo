@@ -68,6 +68,10 @@ const Maowo = (() => {
     paw: '<circle cx="7" cy="9" r="1.8"/><circle cx="11" cy="6" r="1.8"/><circle cx="15.5" cy="7" r="1.8"/><circle cx="18.5" cy="11" r="1.8"/><path d="M8.5 17.5c0-3 2-5.5 4.5-5.5s4 2 4 4.5-1.7 3.5-4 3.5-4.5 0-4.5-2.5z"/>',
     camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+    pin: '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 13v7"/>',
+    palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.4 0 2-.8 2-1.7 0-1.6-1.2-1.8-1.2-3 0-.9.7-1.5 1.7-1.5H17a3.5 3.5 0 0 0 3.5-3.5c0-4-3.8-7.3-8.500-7.3z"/><circle cx="8" cy="11" r="1"/><circle cx="11.500" cy="7.500" r="1"/><circle cx="15.500" cy="9" r="1"/>',
+    story: '<path d="M5 4.500h10.500a2.500 2.500 0 0 1 2.500 2.500v12.500H7.500A2.500 2.500 0 0 1 5 17z"/><path d="M5 17a2.500 2.500 0 0 1 2.500-2.500H18"/><path d="M9 8.500h5"/>',
     archive: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13h4"/>',
   };
   const icon = (name, size = 18, width = 1.8) =>
@@ -290,8 +294,32 @@ const Maowo = (() => {
     </div>`;
   }
 
+  // 全局外观: her background and glass for the pages that are not chat windows. Kept in localStorage so a
+  // page wears it at once; the outer page asks the server for the newest, framed pages follow the storage.
+  const LOOK_KEY = 'maowo-look';
+  const rgbaOf = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a / 100})`; };
+  function applyLook(l) {
+    const root = document.documentElement;
+    const plain = !l || (!l.bg.image && l.bg.color === '#f7eee1' && l.card.alpha >= 100 && !l.nav.glass);
+    root.classList.toggle('look', !plain);
+    root.classList.toggle('glass', !plain && !!l.nav.glass);
+    if (plain) return;
+    const set = (k, v) => root.style.setProperty(k, v);
+    set('--l-bg', l.bg.color); set('--l-img', l.bg.image ? `url("${l.bg.image}")` : 'none'); set('--l-img-a', String(l.bg.imageAlpha / 100));
+    set('--l-card', rgbaOf('#fbf5ec', l.card.alpha)); set('--l-white', rgbaOf('#fffbf5', Math.min(100, l.card.alpha + 12)));
+    set('--l-nav', rgbaOf('#fbf5ec', l.nav.alpha)); set('--l-nav-blur', `${l.nav.blur}px`);
+  }
+  const cachedLook = () => { try { return JSON.parse(localStorage.getItem(LOOK_KEY) || 'null'); } catch { return null; } };
+  function saveLook(l) { try { localStorage.setItem(LOOK_KEY, JSON.stringify(l)); } catch {} applyLook(l); }
+  applyLook(cachedLook());
+  window.addEventListener('storage', e => { if (e.key === LOOK_KEY) applyLook(cachedLook()); });
+  if (!framed && token() && !/^\/(login|oauth)/.test(location.pathname)) {
+    fetch('/api/themes/look', { headers: { Authorization: 'Bearer ' + token() } }).then(r => (r.ok ? r.json() : null))
+      .then(l => { if (l && JSON.stringify(l) !== JSON.stringify(cachedLook())) saveLook(l); }).catch(() => {});
+  }
+
   // Ask the shell to refresh the red dot on 我的 (after reading messages).
   const tellUnread = () => { if (framed) topWin.postMessage({ maowo: 'unread' }, location.origin); };
 
-  return { voteBox, tellUnread, token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, setHtml, showRules, backTo, avatar, tabbar, sheet, pickAvatar };
+  return { voteBox, tellUnread, token, setToken, api, icon, GAME_ICON, GAME_TINT, esc, fmtDate, fmtClock, fmtDuration, fmtSilence, toast, copy, initial, toLogin, go, framed, setHtml, saveLook, showRules, backTo, avatar, tabbar, sheet, pickAvatar };
 })();

@@ -36,8 +36,11 @@ app.get('/p/me', page('me.html'));
 app.get('/p/diary', page('diary.html'));
 app.get('/p/cats', page('cats.html'));
 app.get('/dev', page('dev.html'));
+app.get('/cats/manage', page('cats-manage.html'));
+for (const p of ['/cats/themes', '/cats/themes/:tid', '/cats/look']) app.get(p, page('themes.html'));
 app.get('/cats/g/:gid', page('group.html'));
 for (const p of ['/cats/new', '/cats/:id', '/cats/:id/settings', '/cats/:id/lore']) app.get(p, page('cat.html'));
+app.get('/cats/:id/s/:sid', page('story.html'));
 app.get('/room/:id', page('room.html'));
 app.get('/archive', page('archives.html'));
 app.get('/archive/:id', page('archive.html'));
@@ -47,6 +50,7 @@ app.get('/diary/:id', page('diary.html'));
 app.use(express.static(path.join(__dirname, 'public')));
 // Profile pictures; the file names are random, see accounts.js.
 app.use('/avatars', express.static(accounts.AVATAR_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));
+app.use('/theme-img', express.static(require('./themes').IMG_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));
 
 // ============================================================
 // REST API — Vault (owner only)
@@ -175,7 +179,9 @@ app.get('/api/wake/stream', wake.stream);
 app.get('/api/machine-events/stream', wake.stream); // same as Galatea Garden's bridge expects
 app.use('/api/wake', wake.manage);
 app.use('/api/bugs', bugs.router);
+app.use('/api/themes', require('./themes').router);
 app.use('/api/cats/:id/lore', require('./lore').router);
+app.use('/api/cats/:id/stories', require('./stories').router);
 app.use('/api/cats', cats.router);
 app.use('/api', api);
 

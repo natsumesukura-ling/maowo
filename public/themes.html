@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F7EEE1">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<title>主题 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<link rel="stylesheet" href="/chat-theme.css">
+<style>
+  main.wrap { padding-bottom: 48px; }
+  .sec { font-size: 12px; letter-spacing: .1em; color: var(--muted); margin: 18px 4px 8px; }
+  .th { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); margin-bottom: 9px; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+  .sw { width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0; border: 1px solid var(--border); position: relative; overflow: hidden; background-size: cover; background-position: center; }
+  .sw i { position: absolute; left: 7px; bottom: 7px; width: 20px; height: 12px; border-radius: 6px; }
+  .sw i + i { left: auto; right: 7px; bottom: 21px; }
+  .th .t { flex: 1; min-width: 0; } .th b { display: block; font-size: 15.5px; } .th small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .new { width: 100%; border: 1.5px dashed var(--accent-line); background: transparent; color: var(--accent); border-radius: 14px; height: 44px; font: inherit; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+  /* the preview: a small chat, wearing the theme being edited */
+  .pv { position: sticky; top: 8px; z-index: 3; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 14px; isolation: isolate; background: var(--bg); }
+  .pv.themed { background: var(--t-bg); }
+  .pv.themed::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--t-img) center / cover no-repeat; opacity: var(--t-img-a); }
+  :where(.pv) .top { padding: 8px 12px; font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 15px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  :where(.pv) .feed { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+  :where(.pv) .b { max-width: 86%; padding: 8px 11px; border-radius: 18px; font-size: 13.5px; line-height: 1.6; }
+  :where(.pv .b).say { align-self: flex-start; background: var(--card); border: 1px solid var(--border); }
+  :where(.pv .b).me { align-self: flex-end; background: var(--accent-soft); }
+  :where(.pv) .bottom { padding: 8px 12px; border-top: 1px solid var(--border); background: var(--bg); }
+  :where(.pv .bottom) textarea { height: 38px; resize: none; pointer-events: none; }
+  /* the look preview: a page with two cards and a tab bar */
+  .lk { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 14px; height: 200px; isolation: isolate; }
+  .lk::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--l-img, none) center / cover no-repeat; opacity: var(--l-img-a, 1); }
+  .lk .c { margin: 12px 12px 0; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--border); font-size: 13px; }
+  .lk .nav { position: absolute; left: 10px; right: 10px; bottom: 10px; border-radius: 18px; display: grid; grid-template-columns: repeat(4, 1fr); padding: 8px 0; font-size: 11px; text-align: center; color: var(--text2); border: 1px solid var(--border); }
+  .grp { border-radius: 16px; background: var(--card); border: 1px solid var(--border); padding: 4px 14px; margin-bottom: 12px; }
+  .grp h3 { font-size: 13px; margin: 12px 0 4px; color: var(--text2); font-weight: 600; }
+  .f { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); font-size: 14px; }
+  .grp h3 + .f, .grp .f:first-child { border-top: none; }
+  .f label { flex: 1; min-width: 0; }
+  .f input[type=color] { width: 40px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; flex-shrink: 0; }
+  .f input[type=range] { width: 120px; flex-shrink: 0; accent-color: var(--accent); }
+  .f output { width: 34px; text-align: right; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .tg { width: 46px; height: 28px; border-radius: 14px; background: var(--line); position: relative; flex-shrink: 0; border: none; padding: 0; cursor: pointer; }
+  .tg::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .2s; }
+  .tg.on { background: var(--ok-text); } .tg.on::after { left: 21px; }
+  .bgpick { display: flex; align-items: center; gap: 8px; }
+  .bgpick .sw { width: 40px; height: 40px; }
+  .starts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .savebar { display: flex; gap: 8px; margin-top: 6px; }
+  .savebar .btn.primary { flex: 1; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="bar"><a class="icon-btn" id="back" aria-label="返回"></a><div id="title" style="font-family: 'Noto Serif SC', serif; font-weight: 700; font-size: 19px;"></div></header>
+  <div id="content"><div class="empty">读取中…</div></div>
+  <input type="file" id="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+</main>
+<script src="/common.js"></script>
+<script src="/chat-theme.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+$('#back').innerHTML = icon('back', 22);
+const parts = location.pathname.split('/');           // /cats/themes, /cats/themes/<id|new>, /cats/look
+const mode = parts[2] === 'look' ? 'look' : parts[3] ? 'edit' : 'list';
+Maowo.backTo($('#back'), mode === 'edit' ? '/cats/themes' : '/cats/manage');
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// ---------- pieces of the forms ----------
+const get = (o, path) => path.split('.').reduce((x, k) => x[k], o);
+const put = (o, path, v) => { const ks = path.split('.'); const last = ks.pop(); ks.reduce((x, k) => x[k], o)[last] = v; };
+const color = (path, label) => `<div class="f"><label>${label}</label><input type="color" data-k="${path}" aria-label="${label}"></div>`;
+const range = (path, label, max, unit = '') => `<div class="f"><label>${label}</label><input type="range" min="0" max="${max}" data-k="${path}" aria-label="${label}"><output data-o="${path}" data-u="${unit}"></output></div>`;
+const toggle = (path, label) => `<div class="f"><label>${label}</label><button type="button" class="tg" data-t="${path}" aria-label="${label}"></button></div>`;
+const bgRows = prefix => `<div class="f"><label>背景图片</label><span class="bgpick"><span class="sw" data-bg></span><button type="button" class="btn sm" data-up>换一张</button><button type="button" class="btn sm" data-rm>不要图</button></span></div>
+  ${range(prefix + '.imageAlpha', '图片有多实', 100, '%')}${color(prefix + '.color', '底色（没图或图变淡时露出来）')}`;
+// Fill the controls from the object and keep the object in step with them.
+function bind(root, obj, bgPath, onChange) {
+  const fill = () => {
+    root.querySelectorAll('[data-k]').forEach(el => { el.value = get(obj, el.dataset.k); });
+    root.querySelectorAll('[data-o]').forEach(el => { el.textContent = get(obj, el.dataset.o) + el.dataset.u; });
+    root.querySelectorAll('[data-t]').forEach(el => el.classList.toggle('on', !!get(obj, el.dataset.t)));
+    const sw = root.querySelector('[data-bg]'); const im = get(obj, bgPath + '.image');
+    if (sw) { sw.style.backgroundImage = im ? `url("${im}")` : 'none'; sw.style.backgroundColor = get(obj, bgPath + '.color'); }
+    onChange();
+  };
+  root.querySelectorAll('[data-k]').forEach(el => el.addEventListener('input', () => { put(obj, el.dataset.k, el.type === 'range' ? Number(el.value) : el.value); fill(); }));
+  root.querySelectorAll('[data-t]').forEach(el => el.onclick = () => { put(obj, el.dataset.t, !get(obj, el.dataset.t)); fill(); });
+  const up = root.querySelector('[data-up]');
+  if (up) up.onclick = () => { $('#file').onchange = async e => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    try {
+      const blob = await shrink(file);
+      const res = await fetch('/api/themes/image', { method: 'POST', headers: { Authorization: 'Bearer ' + Maowo.token(), 'Content-Type': blob.type }, body: blob });
+      const out = await res.json(); if (!res.ok) throw new Error(out.error || res.status);
+      put(obj, bgPath + '.image', out.url); fill();
+    } catch (err) { Maowo.toast(err.message); }
+  }; $('#file').click(); };
+  const rm = root.querySelector('[data-rm]'); if (rm) rm.onclick = () => { put(obj, bgPath + '.image', ''); fill(); };
+  fill();
+  return fill;
+}
+// Pictures are made smaller on the phone first (long side 1800px, JPEG); GIFs go as they are.
+async function shrink(file) {
+  if (file.type === 'image/gif') return file;
+  const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('这张图片打不开')); i.src = URL.createObjectURL(file); });
+  const k = Math.min(1, 1800 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(img.src);
+  return new Promise(ok => c.toBlob(b => ok(b), 'image/jpeg', 0.86));
+}
+const swatch = t => `<span class="sw" style="background-color: ${t.bg.color}; ${t.bg.image ? `background-image: url('${t.bg.image}');` : ''}"><i style="background: ${ChatTheme.rgba(t.char.color, Math.max(60, t.char.alpha))}"></i><i style="background: ${ChatTheme.rgba(t.me.color, Math.max(60, t.me.alpha))}"></i></span>`;
+
+// ---------- the list ----------
+async function list() {
+  $('#title').textContent = '主题';
+  const all = await api('/themes');
+  $('#content').innerHTML = `
+    <div class="small muted" style="line-height: 1.7; margin: 0 2px 14px;">主题管的是<b>聊天窗口</b>的样子：背景、气泡、输入框、旁白和引用的颜色。可以存好几套，每只猫、每段故事各选一套（在聊天窗口右上角的菜单里选）。没选的用默认的暖纸样子。</div>
+    ${all.map(t => `<button type="button" class="th" data-id="${t.id}">${swatch(t.theme)}<span class="t"><b>${esc(t.name)}</b><small>${t.usedBy.length ? esc(t.usedBy.join('、')) + ' 在用' : '还没有猫在用'}${t.stories ? ` · ${t.stories} 段故事` : ''}</small></span><span style="color: var(--line); display: flex;">${icon('chevronRight', 18, 2)}</span></button>`).join('') || '<div class="empty" style="padding: 6px 0 16px;">还没有主题</div>'}
+    <button type="button" class="new" id="new">${icon('plus', 18, 2)}做一套新主题</button>`;
+  document.querySelectorAll('.th').forEach(b => b.onclick = () => Maowo.go(`/cats/themes/${b.dataset.id}`));
+  $('#new').onclick = () => Maowo.go('/cats/themes/new');
+}
+
+// ---------- one theme ----------
+async function edit() {
+  const isNew = parts[3] === 'new';
+  const all = await api('/themes');
+  const row = isNew ? null : all.find(t => String(t.id) === parts[3]);
+  if (!isNew && !row) { Maowo.toast('找不到这个主题'); return Maowo.go('/cats/themes'); }
+  $('#title').textContent = isNew ? '新主题' : '改主题';
+  let t = clone(isNew ? ChatTheme.STARTS['水蓝'] : row.theme);
+  const bubble = (k, name) => `<h3>${name}</h3>${color(k + '.color', '气泡颜色')}${range(k + '.alpha', '有多实', 100, '%')}${range(k + '.blur', '毛玻璃（模糊）', 40)}${range(k + '.radius', '圆角', 28)}${color(k + '.ink', '字的颜色')}`;
+  $('#content').innerHTML = `
+    <div class="pv" id="pv"><div class="top">洛祁言</div><div class="feed" id="pv-feed"></div><div class="bottom"><textarea rows="1" placeholder="说点什么…" tabindex="-1" aria-hidden="true"></textarea></div></div>
+    <label class="field" style="margin-top: 0;">名字</label><textarea class="single" rows="1" id="name" maxlength="20" placeholder="比如：水蓝">${esc(row ? row.name : '')}</textarea>
+    ${isNew ? `<div class="sec">从哪套开始改</div><div class="starts">${Object.keys(ChatTheme.STARTS).map(n => `<button type="button" class="btn sm" data-start="${n}">${n}</button>`).join('')}</div>` : ''}
+    <div id="form">
+      <div class="sec">背景</div><div class="grp">${bgRows('bg')}${color('ink', '零碎小字的颜色（时间、名字）')}</div>
+      <div class="sec">顶栏和底栏</div><div class="grp">${color('bar.color', '颜色')}${range('bar.alpha', '有多实', 100, '%')}${range('bar.blur', '毛玻璃（模糊）', 40)}</div>
+      <div class="sec">输入框</div><div class="grp">${color('input.color', '颜色')}${range('input.alpha', '有多实', 100, '%')}${range('input.blur', '毛玻璃（模糊）', 40)}${range('input.radius', '圆角', 28)}${color('input.ink', '字的颜色')}</div>
+      <div class="sec">气泡</div><div class="grp">${bubble('char', '它的气泡')}${bubble('me', '你的气泡')}</div>
+      <div class="sec">旁白和引用</div><div class="grp">
+        ${toggle('narr.on', '旁白高亮：*…* 和 （…） 里的字')}${color('narr.color', '旁白颜色')}${toggle('narr.italic', '旁白用斜体')}${toggle('narr.hide', '把旁白两边的符号藏起来')}
+        ${toggle('quote.on', '引用高亮：“…” 和 「…」 里的话')}${color('quote.color', '引用颜色')}${toggle('quote.bold', '引用加粗')}</div>
+    </div>
+    <div class="savebar"><button class="btn primary" id="save">保存</button>${isNew ? '' : '<button class="btn danger" id="del">删掉</button>'}</div>
+    <div class="small muted" style="margin-top: 10px; line-height: 1.6;">「有多实」拉到 100% 是不透明，往左越来越透。毛玻璃要气泡有点透才看得出来。</div>`;
+  $('#name').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  const preview = () => {
+    ChatTheme.apply(t, $('#pv'));
+    $('#pv-feed').innerHTML = `<div class="b me">${ChatTheme.rich('外面下雨了，你带伞了吗？', t)}</div>
+      <div class="b say">${ChatTheme.rich('*他收了伞，在门口抖了抖水。*“带了。”（把伞往你这边偏了偏）“倒是你，站那么远干什么。”', t)}</div>`;
+  };
+  let fill = bind($('#form'), t, 'bg', preview);
+  document.querySelectorAll('[data-start]').forEach(b => b.onclick = () => { const keep = t.bg.image; Object.assign(t, clone(ChatTheme.STARTS[b.dataset.start])); t.bg.image = keep; fill(); });
+  $('#save').onclick = async () => {
+    try {
+      await api(isNew ? '/themes' : `/themes/${row.id}`, { method: isNew ? 'POST' : 'PUT', json: { name: $('#name').value, theme: t } });
+      Maowo.toast('保存好了'); Maowo.go('/cats/themes');
+    } catch (err) { Maowo.toast(err.message); }
+  };
+  const del = $('#del');
+  if (del) del.onclick = async () => {
+    if (!confirm(`删掉主题「${row.name}」？${row.usedBy.length ? `${row.usedBy.join('、')} 会换回默认的样子。` : ''}`)) return;
+    try { await api(`/themes/${row.id}`, { method: 'DELETE' }); Maowo.go('/cats/themes'); } catch (err) { Maowo.toast(err.message); }
+  };
+}
+
+// ---------- 全局外观 ----------
+async function look() {
+  $('#title').textContent = '全局外观';
+  const l = await api('/themes/look');
+  $('#content').innerHTML = `
+    <div class="small muted" style="line-height: 1.7; margin: 0 2px 14px;">这里管的是<b>聊天窗口以外</b>的页面：猫们、游戏、帖子、我的。聊天窗口的样子在「主题」里。</div>
+    <div class="lk" id="lk"><div class="c">洛祁言<br><span class="muted small">“又发呆？”他回头看了你一眼。</span></div><div class="c">阿栗<br><span class="muted small">在「下午茶 UNO」2号</span></div><div class="nav" id="lk-nav"><span>猫们</span><span>游戏</span><span>聊天</span><span>我的</span></div></div>
+    <div id="form">
+      <div class="sec">背景</div><div class="grp">${bgRows('bg')}</div>
+      <div class="sec">卡片</div><div class="grp">${range('card.alpha', '卡片有多实', 100, '%')}</div>
+      <div class="sec">导航栏</div><div class="grp">${toggle('nav.glass', '玻璃效果（浮起来、半透明）')}${range('nav.alpha', '有多实', 100, '%')}${range('nav.blur', '毛玻璃（模糊）', 40)}</div>
+    </div>
+    <div class="savebar"><button class="btn primary" id="save">保存</button><button class="btn" id="reset">恢复默认</button></div>`;
+  const preview = () => {
+    if (l.card.alpha < 30) l.card.alpha = 30;
+    const box = $('#lk');
+    box.style.backgroundColor = l.bg.color;
+    box.style.setProperty('--l-img', l.bg.image ? `url("${l.bg.image}")` : 'none');
+    box.style.setProperty('--l-img-a', String(l.bg.imageAlpha / 100));
+    box.querySelectorAll('.c').forEach(c => { c.style.background = ChatTheme.rgba('#fbf5ec', l.card.alpha); });
+    const nav = $('#lk-nav');
+    nav.style.background = ChatTheme.rgba('#fbf5ec', l.nav.glass ? l.nav.alpha : 100);
+    nav.style.backdropFilter = nav.style.webkitBackdropFilter = l.nav.glass ? `blur(${l.nav.blur}px)` : 'none';
+  };
+  bind($('#form'), l, 'bg', preview);
+  const save = async (body, say) => {
+    try { const out = await api('/themes/look', { method: 'PUT', json: body }); Maowo.saveLook(out); Maowo.toast(say); if (body !== l) location.reload(); } catch (err) { Maowo.toast(err.message); }
+  };
+  $('#save').onclick = () => save(l, '保存好了，别的页面打开就是新样子');
+  $('#reset').onclick = () => { if (confirm('恢复成默认的样子？背景图和玻璃效果都会去掉。')) save({}, '恢复默认了'); };
+}
+({ list, edit, look })[mode]().catch(err => Maowo.toast(err.message));
+</script>
+</body>
+</html>

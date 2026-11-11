@@ -142,7 +142,9 @@ for (const [table, col] of [['cat_messages', 'group_id INTEGER'], ['cat_settings
   // notebook as it was when she sent a message, so going back can put the notebook back too.
   ['cat_messages', 'run_kind TEXT'], ['cat_messages', 'nb_before TEXT'], ['cats', 'ova_from INTEGER'], ['cats', 'ova_nb TEXT'],
   // 前情提要 may be written by another (cheaper) key and model; empty = the chat one.
-  ['cats', 'summary_key_id INTEGER'], ['cats', 'summary_model TEXT'], ['cats', 'preset_id INTEGER']]) {
+  ['cats', 'summary_key_id INTEGER'], ['cats', 'summary_model TEXT'], ['cats', 'preset_id INTEGER'],
+  // 置顶: pinned cards come first on the 猫们 page.
+  ['cats', 'pinned INTEGER NOT NULL DEFAULT 0'], ['cat_groups', 'pinned INTEGER NOT NULL DEFAULT 0']]) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ }
 }
 
@@ -1234,7 +1236,7 @@ function groupCard(g) {
   const last = stmts.gLastSay.get(g.id);
   const lastAuthor = last && last.author_id ? accounts.byId(last.author_id) : null;
   return {
-    type: 'group', id: g.id, name: g.name, mode: g.mode, maxSpeak: g.max_speak, mute: !!g.mute,
+    type: 'group', id: g.id, name: g.name, mode: g.mode, maxSpeak: g.max_speak, mute: !!g.mute, pinned: !!g.pinned,
     members: stmts.members.all(g.id).map(m => { const a = accounts.byId(m.account_id); return a && { ...accounts.publicInfo(a), quiet: !!m.quiet, isCat: isCat(a.id) }; }).filter(Boolean),
     last: last ? { name: lastAuthor ? lastAuthor.name : '', text: last.text, at: last.created_at } : null,
     unread: stmts.gUnread.get(g.id, g.last_read_id).n, createdAt: g.created_at,
@@ -1268,10 +1270,18 @@ function unreadOf(ai, cat) {
   return stmts.sayAfter.all(ai.id, cat.last_read_id).filter(r => !secretFor(r.room_id, ai.owner_id)).length;
 }
 
+// The newest thing said in its window (by her or by it), for its card. Nothing from a game she is playing in.
+function lastLine(ai) {
+  const r = db.prepare("SELECT kind, text, room_id, created_at FROM cat_messages WHERE account_id = ? AND group_id IS NULL AND kind IN ('say', 'me') AND text != '' ORDER BY id DESC LIMIT 1").get(ai.id);
+  if (!r || secretFor(r.room_id, ai.owner_id)) return null;
+  const t = r.text.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+  return { mine: r.kind === 'me', text: t.length > 60 ? t.slice(0, 60) + '…' : t, at: r.created_at };
+}
 function card(ai, cat) {
   const key = cat.key_id && stmts.key.get(cat.key_id);
   return {
     ...accounts.publicInfo(ai), model: cat.model, keyName: key ? key.name : null, mute: !!cat.mute, ova: !!cat.ova_from,
+    pinned: !!cat.pinned, last: lastLine(ai), themeId: cat.theme_id || null,
     unread: unreadOf(ai, cat), status: status(ai, cat),
     // For the table: is it thinking right now, or did something stop it (an error, today's limit)?
     thinking: busy.has(ai.id) || (queues.get(ai.id) || []).length > 0,
@@ -1344,7 +1354,8 @@ function ordered(human, cats, groups) {
   try { order = JSON.parse(stmts.settings.get(human.id)?.order_json || '[]'); } catch {}
   const pos = new Map(order.map((k, i) => [k, i]));
   const all = [...cats.map(c => ({ key: `c:${c.id}`, item: { type: 'cat', ...c }, at: c.createdAt })), ...groups.map(g => ({ key: `g:${g.id}`, item: g, at: g.createdAt }))];
-  return all.sort((a, b) => (pos.has(a.key) ? pos.get(a.key) : 1e9) - (pos.has(b.key) ? pos.get(b.key) : 1e9) || String(a.at).localeCompare(String(b.at))).map(x => x.item);
+  return all.sort((a, b) => (b.item.pinned ? 1 : 0) - (a.item.pinned ? 1 : 0)
+    || (pos.has(a.key) ? pos.get(a.key) : 1e9) - (pos.has(b.key) ? pos.get(b.key) : 1e9) || String(a.at).localeCompare(String(b.at))).map(x => x.item);
 }
 router.get('/', wrap(req => {
   const list = catsOf(req.account);
@@ -1357,6 +1368,7 @@ router.get('/', wrap(req => {
     keys: stmts.keysOf.all(req.account.id).map(keyInfo),
     masks: maskStmts.of.all(req.account.id).length,
     presets: presetStmts.of.all(req.account.id).length,
+    themes: require('./themes').count(req.account.id),
     cats, groups, items: ordered(req.account, cats, groups),
   };
 }));
@@ -1408,6 +1420,7 @@ router.put('/groups/:gid', wrap(req => {
   if (b.mode !== undefined) { if (!['natural', 'all', 'call'].includes(b.mode)) throw new Error('没有这种接话方式'); f.mode = b.mode; }
   if (b.maxSpeak !== undefined) { const n = Math.round(Number(b.maxSpeak)); if (!(n >= 1 && n <= 10)) throw new Error('一轮最多 1 到 10 只'); f.max_speak = n; }
   if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;
+  if (b.pinned !== undefined) f.pinned = b.pinned ? 1 : 0;
   if (b.vision !== undefined) f.vision = b.vision ? 1 : 0;
   if (b.toolsOk !== undefined) f.tools_ok = b.toolsOk ? 1 : 0;
   const cols = Object.keys(f);
@@ -1518,6 +1531,11 @@ function applySettings(ai, b) {
       if (b.vision === undefined) f.vision = 1;
       if (b.toolsOk === undefined) f.tools_ok = 1;
     }
+  }
+  if (b.pinned !== undefined) f.pinned = b.pinned ? 1 : 0;
+  if (b.themeId !== undefined) {
+    if (b.themeId && !require('./themes').ownedBy(b.themeId, ai.owner_id)) throw new Error('找不到这个主题');
+    f.theme_id = b.themeId ? Number(b.themeId) : null;
   }
   if (b.systemPrompt !== undefined) { f.system_prompt = String(b.systemPrompt || ''); if (f.system_prompt.length > 20000) throw new Error('System prompt 太长了（最多 2 万字）'); }
   if (b.mute !== undefined) f.mute = b.mute ? 1 : 0;
@@ -1735,6 +1753,7 @@ router.post('/:id/test', wrap(async req => {
 }));
 function removeCat(aiId) {
   db.transaction(() => { stmts.clear.run(aiId); stmts.removeCat.run(aiId); stmts.removeMemberEverywhere.run(aiId); lore.removeAll(aiId); })();
+  try { require('./stories').removeAll(aiId); } catch (err) { console.error('stories.removeAll', err); }
   removeImages(aiId);
   queues.delete(aiId);
 }
@@ -2030,4 +2049,32 @@ router.post('/:id/messages', wrap(req => {
   return { ok: true };
 }));
 
-module.exports = { router, isCat, removeCat, _systemPrompt: (id) => systemPrompt(accounts.byId(id), stmts.cat.get(id)), _enqueue: enqueue, _busy: busy };
+// What stories.js needs from here: the cat with its key, who it is (without the 猫窝 tool talk), the model call.
+const kit = {
+  callModel, wrap, mine, nowIso, fillNames, withTailPreset, CONTEXT_CHARS,
+  keyOf: cat => (cat.key_id && stmts.key.get(cat.key_id)) || null,
+  // Persona for a story: her prompt, the 「放在设定里」 preset, the mask, the always-on world book;
+  // with `memory`, also the 前情提要 and the notebook of the main line.
+  persona(ai, cat, memory) {
+    const owner = accounts.byId(ai.owner_id);
+    const parts = [];
+    if (cat.system_prompt.trim()) parts.push(cat.system_prompt.trim(), '');
+    const preset = presetOf(ai, cat);
+    if (preset && preset.position !== 'bottom' && preset.content.trim()) parts.push(`【回复要求（预设「${preset.name}」）】`, preset.content.trim(), '');
+    const mask = maskOf(ai, cat);
+    if (mask) parts.push(`【和你对戏的人：${mask.name}】`, mask.content.trim() || '（没写别的）', '');
+    const book = lore.alwaysText(ai.id);
+    if (book) parts.push('世界书（设定资料，一直有效）：', book, '');
+    if (memory) {
+      if (cat.summary.trim()) parts.push('你平时的前情提要（你自己写的）：', cat.summary.trim(), '');
+      if (cat.notebook.trim()) parts.push(`你平时的小本本：\n${cat.notebook.trim()}`, '');
+    }
+    return { text: parts.join('\n'), user: mask ? mask.name : owner.name };
+  },
+  // A paragraph from a story, put into the main line's memory (a user-role line, like the old 番外 aside).
+  tellMain(aiId, title, text) {
+    const owner = accounts.byId(accounts.byId(aiId).owner_id);
+    add(aiId, 'aside', { msg: { role: 'user', content: `（${owner.name}和你演过一段故事「${title}」，那是和日常分开的一段戏。它的摘要：${text}）` }, text: `故事「${title}」的摘要告诉它了：${text}` });
+  },
+};
+module.exports = { kit, router, isCat, removeCat, _systemPrompt: (id) => systemPrompt(accounts.byId(id), stmts.cat.get(id)), _enqueue: enqueue, _busy: busy };

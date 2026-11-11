@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F7EEE1">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<title>故事 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<link rel="stylesheet" href="/chat-theme.css">
+<style>
+  body.chat { overflow: hidden; }
+  /* pinned to the screen edges, not 100vh (see the cat window) */
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  .top { padding: 0 12px 0 8px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+  .top header { display: flex; align-items: center; gap: 2px; padding: 8px 0; max-width: 560px; margin: 0 auto; }
+  .top .who { display: flex; align-items: center; gap: 10px; min-width: 0; flex-grow: 1; padding-left: 2px; }
+  .top .who > div { min-width: 0; }
+  .top .avatar { width: 36px; height: 36px; font-size: 15px; }
+  .top .n { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top .m { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #feed { flex: 1; min-height: 0; overflow-y: auto; font-family: var(--font); }
+  #feed .in { max-width: 560px; margin: 0 auto; padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 10px; }
+  .setting { align-self: stretch; font-size: 12.5px; line-height: 1.65; padding: 10px 12px; border-radius: 14px; border: 1px dashed var(--line); color: var(--text2); white-space: pre-wrap; word-break: break-word; }
+  .themed .setting { color: var(--t-ink); border-color: currentColor; opacity: .8; }
+  .setting b { display: block; font-size: 11px; letter-spacing: .1em; font-weight: 600; margin-bottom: 3px; opacity: .8; }
+  .b { max-width: 86%; padding: 10px 13px; border-radius: 18px; font-size: 14.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+  .b.say { align-self: flex-start; background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 6px; }
+  .b.me { align-self: flex-end; background: var(--accent-soft); border-bottom-right-radius: 6px; }
+  .b.me.order { background: var(--white); border: 1.5px dashed var(--accent-line); color: var(--text2); }
+  .b.me .tag { display: block; font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 2px; }
+  .themed .b.me .tag { color: inherit; opacity: .8; }
+  [data-mine], [data-theirs] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .err { align-self: center; max-width: 92%; font-size: 12.5px; color: var(--danger); background: var(--secret-bg); padding: 8px 12px; border-radius: 12px; line-height: 1.6; text-align: center; }
+  .typing { align-self: flex-start; font-size: 13px; color: var(--muted); padding: 8px 13px; border-radius: 18px; background: var(--card); border: 1px solid var(--border); }
+  .typing i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin: 0 1.5px; animation: blink 1.2s infinite; vertical-align: middle; }
+  .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .b.say.live::after { content: '▍'; opacity: .6; animation: blink 1s infinite; margin-left: 1px; }
+  .cutline { align-self: flex-start; font-size: 12px; color: var(--secret-text, #A9503C); padding: 0 4px; margin-top: -4px; line-height: 1.5; }
+  .tools-row { align-self: flex-start; display: flex; gap: 14px; margin-top: -4px; }
+  .regen { display: flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; color: var(--muted); background: none; border: none; padding: 0 4px; cursor: pointer; }
+  .bottom { border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .bottom form { max-width: 560px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+  .bottom textarea { resize: none; height: 44px; max-height: 132px; line-height: 20px; overflow-y: hidden; scrollbar-width: none; }
+  .bottom textarea::-webkit-scrollbar { display: none; }
+  .bottom .dollar { width: 36px; height: 44px; flex-shrink: 0; border: 1px solid var(--line); background: var(--white); color: var(--text2); border-radius: 12px; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; padding: 0; }
+  .bottom .dollar.on { outline: 2px solid var(--accent-line); }
+  .bottom .btn { width: 44px; padding: 0; flex-shrink: 0; }
+  .banner { max-width: 560px; margin: 0 auto 8px; font-size: 12.5px; color: var(--text2); background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 7px 10px; line-height: 1.5; }
+  .banner:empty { display: none; }
+  .detail-pre { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; line-height: 1.6; background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; max-height: 30vh; overflow-y: auto; }
+</style>
+</head>
+<body class="chat">
+<div id="app">
+  <div class="top"><header>
+    <a class="icon-btn" id="back" aria-label="回到主线"></a>
+    <div class="who" id="who"></div>
+    <button class="icon-btn" id="menu" aria-label="菜单：主线和故事"></button>
+  </header></div>
+  <div id="feed"><div class="in"></div></div>
+  <div class="bottom"><div class="banner" id="banner"></div>
+    <form id="say"><button type="button" class="dollar" id="dollar" aria-label="戏外指令">$</button><textarea id="text" rows="1" maxlength="8000" placeholder="接着演…"></textarea><button class="btn primary" type="submit" aria-label="发送"></button></form></div>
+</div>
+<script src="/common.js"></script>
+<script src="/chat-theme.js"></script>
+<script src="/story-menu.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+const [, , catId, , storyId] = location.pathname.split('/');
+const base = `/cats/${catId}/stories/${storyId}`;
+$('#back').innerHTML = icon('back', 22);
+$('#back').href = `/cats/${catId}`;
+$('#menu').innerHTML = icon('more', 22, 2);
+$('#say button[type=submit]').innerHTML = icon('send', 18, 2);
+
+let cat = null, story = null, items = [], lastId = 0, busy = false, live = { text: '', thinking: false }, liveTimer = null;
+const feed = () => $('#feed');
+const atBottom = () => { const f = feed(); return f.scrollHeight - f.scrollTop - f.clientHeight < 80; };
+const toBottom = () => { const f = feed(); f.scrollTop = f.scrollHeight; };
+const CUT = { length: '写到这里停了：一次能写的字数到上限了。点「接着写」让它往下写。', filter: '写到这里被模型那边的内容审查拦下了。', broken: '写到这里断了。前面写好的都留着，点「接着写」让它往下写。' };
+
+function drawTop() {
+  $('#who').innerHTML = `${Maowo.avatar(cat)}<div><div class="n">${esc(cat.name)}</div><div class="m">故事 · ${esc(story.title)}</div></div>`;
+  document.title = `${story.title} · ${cat.name} · 猫窝`;
+}
+function row(it) {
+  if (it.kind === 'me' || it.kind === 'order') return `<div class="b me ${it.kind === 'order' ? 'order' : ''}" data-mine="${it.id}">${it.kind === 'order' ? '<span class="tag">戏外指令</span>' : ''}${ChatTheme.rich(it.text)}</div>`;
+  if (it.kind === 'error') return `<div class="err">${esc(it.text)}</div>`;
+  return `<div class="b say" data-theirs="${it.id}">${ChatTheme.rich(it.text)}</div>${it.cut ? `<div class="cutline">${CUT[it.cut] || CUT.broken}</div>` : ''}`;
+}
+function draw({ stick } = {}) {
+  const was = atBottom();
+  let html = `<div class="setting"><b>背景设定 · ${story.withMemory ? '带着主线的记忆' : '从零开始'}</b>${esc(story.setting)}</div>` + items.map(row).join('');
+  if (busy) html += live.text ? `<div class="b say live" id="livebox">${ChatTheme.rich(live.text)}</div>` : `<div class="typing" id="livebox">${live.thinking ? '在打腹稿' : '正在写'} <i></i><i></i><i></i></div>`;
+  const last = items[items.length - 1];
+  if (!busy && last && (last.kind === 'say' || last.kind === 'error'))
+    html += `<div class="tools-row"><button class="regen" id="regen">${icon('retry', 13, 2)}重新回答</button>${last.kind === 'say' ? `<button class="regen" id="goon">${icon('chevronDown', 13, 2)}接着写</button>` : ''}</div>`;
+  $('#feed .in').innerHTML = html;
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on('regen', () => post('/regenerate', {}));
+  on('goon', () => post('/messages', { text: '$ 接着写：从上面停下的地方直接往下写，不要重复，不要重新开头。' }));
+  feed().querySelectorAll('[data-mine]').forEach(el => press(el, () => mineMenu(Number(el.dataset.mine))));
+  feed().querySelectorAll('[data-theirs]').forEach(el => press(el, () => theirsMenu(Number(el.dataset.theirs))));
+  if (stick || was) toBottom();
+}
+async function post(path, json) { try { await api(base + path, { json }); } catch (err) { Maowo.toast(err.message); } }
+
+function press(el, fn) {
+  let timer = null, x = 0, y = 0;
+  const stop = () => { clearTimeout(timer); timer = null; };
+  el.addEventListener('contextmenu', e => e.preventDefault());
+  el.addEventListener('pointerdown', e => { x = e.clientX; y = e.clientY; timer = setTimeout(() => { timer = null; fn(); }, 520); });
+  el.addEventListener('pointermove', e => { if (timer && (Math.abs(e.clientX - x) > 10 || Math.abs(e.clientY - y) > 10)) stop(); });
+  el.addEventListener('pointerup', stop); el.addEventListener('pointercancel', stop);
+}
+function mineMenu(id) {
+  const it = items.find(i => i.id === id); if (!it) return;
+  const p = Maowo.sheet(`<h2>这句话</h2><div class="detail-pre" style="margin: 8px 0 14px;">${esc(it.text)}</div>
+    <button class="btn primary block" id="rw">${icon('undo', 18, 2)}从这句重来</button>
+    <div class="small muted" style="margin-top: 8px; line-height: 1.6;">这句和它后面的内容都会从这段故事里拿掉，这句话放回输入框，改一改再发。</div>
+    <button class="btn block" id="cp" style="margin-top: 12px;">复制</button>`);
+  p.querySelector('#cp').onclick = () => { Maowo.copy(it.text); p.close(); };
+  p.querySelector('#rw').onclick = async () => {
+    try { const r = await api(base + '/rewind', { json: { messageId: id } }); p.close(); const ta = $('#text'); ta.value = r.text; ta.dispatchEvent(new Event('input')); await reload(); ta.focus(); }
+    catch (err) { Maowo.toast(err.message); }
+  };
+}
+function theirsMenu(id) {
+  const it = items.find(i => i.id === id); if (!it || it.kind !== 'say') return;
+  const p = Maowo.sheet(`<h2>它写的这段</h2><textarea id="ed" rows="10" style="resize: vertical; font-size: 14px; line-height: 1.65;">${esc(it.text)}</textarea>
+    <div class="small muted" style="margin-top: 8px; line-height: 1.6;">改了以后，故事里它写的就是你改的这样，它接着往下写时也按这个来。</div>
+    <div class="row" style="margin-top: 12px;"><button class="btn primary" id="sv">保存修改</button><button class="btn" id="cp">复制</button></div>`);
+  p.querySelector('#cp').onclick = () => { Maowo.copy(it.text); p.close(); };
+  p.querySelector('#sv').onclick = async () => {
+    try { await api(`${base}/messages/${id}`, { method: 'PUT', json: { text: p.querySelector('#ed').value } }); p.close(); await reload(); } catch (err) { Maowo.toast(err.message); }
+  };
+}
+
+// While it writes: what it has so far, every 0.7 s; only that one bubble changes.
+async function liveTick() {
+  liveTimer = null;
+  if (!busy || document.hidden) return;
+  try {
+    const d = await api(base + '/live');
+    if (busy && (d.text !== live.text || d.thinking !== live.thinking)) {
+      const stick = atBottom();
+      live = { text: d.text, thinking: d.thinking };
+      const box = $('#livebox');
+      if (box && box.classList.contains('live') && d.text) box.innerHTML = ChatTheme.rich(d.text); else draw();
+      if (stick) toBottom();
+    }
+  } catch {}
+  if (busy) liveTimer = setTimeout(liveTick, 700);
+}
+function watch() { if (!busy) { live = { text: '', thinking: false }; return; } if (!liveTimer) liveTimer = setTimeout(liveTick, 300); }
+
+function take(d, whole) {
+  story = d.story; busy = d.busy;
+  if (whole) items = d.items; else { const seen = new Set(items.map(i => i.id)); for (const it of d.items) if (!seen.has(it.id)) items.push(it); }
+  lastId = Math.max(whole ? 0 : lastId, d.lastId || 0);
+  watch();
+}
+async function reload() {
+  const [d, c] = await Promise.all([api(base), cat ? null : api(`/cats/${catId}`)]);
+  if (c) cat = c;
+  take(d, true);
+  await ChatTheme.use(story.themeId || cat.themeId);
+  drawTop(); draw({ stick: true });
+}
+async function poll() {
+  for (;;) {
+    try {
+      const d = await api(`${base}/wait?after=${lastId}&busy=${busy ? 1 : 0}`);
+      // A regenerate or a rewind takes rows away: then the whole list is read again.
+      const shrunk = d.lastId < lastId;
+      if (shrunk) { await reload(); continue; }
+      take(d, false); drawTop(); draw();
+    } catch (err) {
+      if (/找不到/.test(err.message)) { Maowo.toast(err.message); setTimeout(() => Maowo.go(`/cats/${catId}`), 1200); return; }
+      await new Promise(r => setTimeout(r, 4000));
+    }
+  }
+}
+
+const ta = $('#text');
+const grow = () => { ta.style.height = '44px'; ta.style.height = Math.min(132, ta.scrollHeight + 2) + 'px'; ta.style.overflowY = ta.scrollHeight > 132 ? 'auto' : 'hidden'; };
+const drawOrder = () => { const on = /^[$＄]/.test(ta.value); $('#dollar').classList.toggle('on', on); $('#banner').innerHTML = on ? '这条是<b>戏外指令</b>：它会照做，只管这一条。' : ''; };
+ta.addEventListener('input', () => { grow(); drawOrder(); });
+$('#dollar').onclick = () => { ta.value = /^[$＄]/.test(ta.value) ? ta.value.replace(/^[$＄]\s*/, '') : '$ ' + ta.value; drawOrder(); ta.focus(); };
+let sending = false;
+$('#say').onsubmit = async e => {
+  e.preventDefault();
+  const text = ta.value.trim();
+  if (!text || sending) return;
+  sending = true; ta.value = ''; grow(); drawOrder();
+  try { await api(base + '/messages', { json: { text } }); } catch (err) { Maowo.toast(err.message); ta.value = text; grow(); drawOrder(); }
+  sending = false;
+};
+$('#menu').onclick = () => StoryMenu.open({ catId, cat, story, onChange: async () => { cat = await api(`/cats/${catId}`); await reload(); } });
+reload().then(poll).catch(err => { Maowo.toast(err.message); if (/找不到/.test(err.message)) setTimeout(() => Maowo.go(`/cats/${catId}`), 1200); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) reload().catch(() => {}); });
+</script>
+</body>
+</html>

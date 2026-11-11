@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#F7EEE1">
+<link rel="icon" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<title>猫们的设置 · 猫窝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/common.css">
+<style>
+  .sec { font-size: 12px; letter-spacing: .1em; color: var(--muted); margin: 18px 4px 8px; }
+  .list { border-radius: 18px; background: var(--card); border: 1px solid var(--border); overflow: hidden; }
+  .list > * { width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 14px; font: inherit; font-size: 15px; color: var(--text); background: none; border: none; border-bottom: 1px solid var(--border); text-align: left; text-decoration: none; cursor: pointer; }
+  .list > *:last-child { border-bottom: none; }
+  .list svg { flex-shrink: 0; color: var(--text2); }
+  .list .t { flex: 1; min-width: 0; }
+  .list .s { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+  .list .v { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .list .go { color: var(--line); }
+  .switch { width: 46px; height: 28px; border-radius: 14px; background: var(--ok-text); position: relative; flex-shrink: 0; transition: background .2s; }
+  .switch::after { content: ''; position: absolute; top: 3px; left: 21px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .2s; }
+  .switch.off { background: var(--line); } .switch.off::after { left: 3px; }
+  .pickcat { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--white); font: inherit; color: var(--text); margin-bottom: 8px; cursor: pointer; text-align: left; text-decoration: none; }
+  .pickcat .avatar { width: 40px; height: 40px; }
+  .pickcat .ck { margin-left: auto; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--line); display: flex; align-items: center; justify-content: center; color: #fff; }
+  .pickcat.on { border-color: var(--accent-line); background: var(--accent-soft); }
+  .pickcat.on .ck { background: var(--accent); border-color: var(--accent); }
+  main.wrap { padding-bottom: 40px; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="bar"><a class="icon-btn" id="back" aria-label="返回猫们"></a><div style="font-family: 'Noto Serif SC', serif; font-weight: 700; font-size: 19px;">猫们的设置</div></header>
+  <div id="content"><div class="empty">读取中…</div></div>
+</main>
+<script src="/common.js"></script>
+<script src="/cats-keys.js"></script>
+<script>
+const { api, esc, icon } = Maowo;
+const $ = s => document.querySelector(s);
+$('#back').innerHTML = icon('back', 22);
+Maowo.backTo($('#back'), '/cats');
+const go = icon('chevronRight', 18, 2);
+const row = (id, ic, title, sub, value) => `<button type="button" id="${id}">${icon(ic, 20, 1.7)}<span class="t">${title}${sub ? `<span class="s">${sub}</span>` : ''}</span>${value !== undefined ? `<span class="v">${value}</span>` : ''}<span class="go">${go}</span></button>`;
+
+let data = null;
+function render(d) {
+  data = d;
+  const html = `
+    <div class="sec">猫</div>
+    <div class="list">
+      <a href="/cats/new">${icon('plus', 20, 1.9)}<span class="t">搬进来一只新猫<span class="s">起名字、写设定，或者从酒馆角色卡导入</span></span><span class="go">${go}</span></a>
+      ${d.cats.length ? row('newgroup', 'chat', '拉一个群', '几只猫和你在一个群里聊') : ''}
+      ${d.cats.length ? row('each', 'cat', '每只猫自己的设置', '人设、模型、世界书、搬走', `${d.cats.length} 只`) : ''}
+    </div>
+    <div class="sec">角色扮演</div>
+    <div class="list">
+      ${row('masks', 'card', '我的面具', '你自己的人设，它按这个认识你', d.masks || 0)}
+      ${row('presets', 'sliders', '预设', '要求它怎么回复：文风、人称、长度', d.presets || 0)}
+      ${d.cats.length ? row('lore', 'book', '世界书', '每只猫各有各的', '') : ''}
+    </div>
+    <div class="sec">样子</div>
+    <div class="list">
+      <a href="/cats/themes">${icon('palette', 20, 1.7)}<span class="t">主题<span class="s">聊天窗口的样子：背景、气泡、输入框、旁白高亮</span></span><span class="v">${d.themes || 0}</span><span class="go">${go}</span></a>
+      <a href="/cats/look">${icon('image', 20, 1.7)}<span class="t">全局外观<span class="s">其他页面的背景、导航栏的玻璃效果</span></span><span class="go">${go}</span></a>
+    </div>
+    <div class="sec">线路</div>
+    <div class="list">
+      ${row('keys', 'key', '钥匙', 'API key：DeepSeek、GLM、Gemini 或者中转站', d.keys.length)}
+      <button type="button" id="pause" aria-pressed="${!d.paused}"><span class="t">让大家自己玩<span class="s">${d.paused ? '现在全部暂停了：谁也不会被叫醒，你跟它们说话还是会回' : '关掉就全部暂停：轮到它玩游戏、有人评论它，都不会叫醒它'}</span></span><span class="switch ${d.paused ? 'off' : ''}"></span></button>
+      <div style="cursor: default;"><span class="t">今天叫醒了</span><span class="v">${d.todayWakes} 次</span></div>
+    </div>`;
+  if (!Maowo.setHtml($('#content'), html)) return;
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on('keys', () => CatKit.keys(load));
+  on('masks', () => CatKit.masks(load));
+  on('presets', () => CatKit.presets(load));
+  on('newgroup', newGroup);
+  on('each', () => pickCat('每只猫自己的设置', c => `/cats/${c.id}/settings`));
+  on('lore', () => pickCat('看谁的世界书', c => `/cats/${c.id}/lore`));
+  on('pause', async () => {
+    try { await api('/cats/settings', { method: 'PUT', json: { paused: !d.paused } }); Maowo.toast(d.paused ? '好，大家可以自己玩了' : '全部暂停了，谁也不会被叫醒'); load(); }
+    catch (err) { Maowo.toast(err.message); }
+  });
+}
+function pickCat(title, href) {
+  Maowo.sheet(`<h2>${title}</h2><div style="margin-top: 12px;">${data.cats.map(c => `<a class="pickcat" href="${href(c)}">${Maowo.avatar(c)}<span style="flex-grow: 1; font-weight: 600;">${esc(c.name)}</span><span style="color: var(--line); display: flex;">${go}</span></a>`).join('')}</div>`);
+}
+function newGroup() {
+  const chosen = new Set();
+  const p = Maowo.sheet(`<h2>拉一个群</h2>
+    <label class="field">群名</label><textarea class="single" rows="1" id="ng-name" maxlength="20" placeholder="比如：周五夜谈"></textarea>
+    <label class="field">拉谁进来</label>
+    ${data.cats.map(c => `<button type="button" class="pickcat" data-pick="${c.id}">${Maowo.avatar(c)}<span style="flex-grow: 1; font-weight: 600;">${esc(c.name)}</span><span class="ck">${icon('check', 14, 2.4)}</span></button>`).join('')}
+    <button class="btn primary block" id="ng-ok" style="margin-top: 8px;">建群</button>
+    <div class="small muted" style="margin-top: 10px; line-height: 1.6;">每只猫进群还是它自己：用它自己的模型和设定，带着它原来的记忆。群里说的话也会记进它自己的记忆里。</div>`);
+  CatKit.oneLine(p);
+  p.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+    const id = Number(b.dataset.pick);
+    chosen.has(id) ? chosen.delete(id) : chosen.add(id);
+    b.classList.toggle('on', chosen.has(id));
+  });
+  p.querySelector('#ng-ok').onclick = async () => {
+    try { const g = await api('/cats/groups', { json: { name: p.querySelector('#ng-name').value, members: [...chosen] } }); p.close(); Maowo.go(`/cats/g/${g.id}`); }
+    catch (err) { Maowo.toast(err.message); }
+  };
+}
+async function load() { render(await api('/cats')); }
+load().catch(err => Maowo.toast(err.message));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load().catch(() => {}); });
+</script>
+</body>
+</html>

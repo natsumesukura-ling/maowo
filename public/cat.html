@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/common.css">
+<link rel="stylesheet" href="/chat-theme.css">
 <style>
   /* ---------- the window ---------- */
   body.chat { overflow: hidden; }
@@ -140,6 +141,8 @@
 <a class="btn sm soft newchip" id="newchip" href="#">新消息 ↓</a>
 <script src="/common.js"></script>
 <script src="/cats-keys.js"></script>
+<script src="/chat-theme.js"></script>
+<script src="/story-menu.js"></script>
 <script>
 const { api, esc, icon } = Maowo;
 const $ = s => document.querySelector(s);
@@ -155,14 +158,11 @@ const timeOf = iso => { const d = new Date(iso); const now = new Date(); const s
 // ============================================================
 // The window
 // ============================================================
+let themeShown = undefined;
 let cat = null, lastId = 0, busy = false, items = [], moreBefore = false, firstId = 0, rewindable = [];
 
 function drawTop() {
   $('#who').innerHTML = `${Maowo.avatar(cat)}<div><div class="n">${esc(cat.name)}</div><div class="m"><span class="dot ${busy ? 'busy' : cat.status.state}"></span><span>${esc(busy ? '正在想…' : cat.status.text)}</span></div></div>`;
-  const m = $('#mute');
-  m.classList.toggle('on', cat.mute);
-  m.innerHTML = icon(cat.mute ? 'bellOff' : 'bell', 22, 1.7);
-  m.setAttribute('aria-label', cat.mute ? '免打扰（开着）' : '免打扰（关着）');
   document.title = `${cat.name} · 猫们 · 猫窝`;
   const o = $('#ova');
   if (o) { o.classList.toggle('ova-on', !!cat.ova); o.setAttribute('aria-label', cat.ova ? '番外中，点这里结束' : '开始番外'); }
@@ -312,7 +312,7 @@ async function liveTick() {
       liveNow = { text: d.text, thinking: d.thinking };
       const box = $('#livebox');
       // Only this one box changes: redrawing the whole list would make pictures blink.
-      if (box && box.classList.contains('live') && d.text) box.textContent = d.text;
+      if (box && box.classList.contains('live') && d.text) box.innerHTML = ChatTheme.rich(d.text);
       else drawFeed();
       if (stick) toBottom();
     }
@@ -336,8 +336,8 @@ function rowHtml(it, prev) {
   let out = '';
   if (!prev || Date.parse(it.createdAt) - Date.parse(prev.createdAt) > 10 * 60000) out += `<div class="stamp">${timeOf(it.createdAt)}</div>`;
   if (it.kind === 'me') return out + (it.images && it.images.length ? `<div class="mepics ${it.images.length === 1 ? 'one' : ''}" data-mine="${it.id}">${it.images.map(f => `<button type="button" data-big="${esc(f)}" aria-label="看大图"><img data-img="${esc(f)}" alt="图片"></button>`).join('')}</div>` : '')
-    + (it.text ? `<div class="b me ${it.order ? 'order' : ''} ${it.ova ? 'ova' : ''}" data-mine="${it.id}">${it.order ? '<span class="tag">戏外指令</span>' : ''}${esc(it.text)}</div>` : '');
-  if (it.kind === 'say') return out + `<div class="b say ${it.ova ? 'ova' : ''}" data-theirs="${it.id}">${esc(it.text)}</div>`
+    + (it.text ? `<div class="b me ${it.order ? 'order' : ''} ${it.ova ? 'ova' : ''}" data-mine="${it.id}">${it.order ? '<span class="tag">戏外指令</span>' : ''}${ChatTheme.rich(it.text)}</div>` : '');
+  if (it.kind === 'say') return out + `<div class="b say ${it.ova ? 'ova' : ''}" data-theirs="${it.id}">${ChatTheme.rich(it.text)}</div>`
     + (it.cut ? `<div class="cutline">${CUT_WHY[it.cut] || CUT_WHY.broken}</div>` : '');
   if (it.kind === 'note') return out + `<div class="noteline">${esc(it.text)}</div>`;
   if (it.kind === 'aside') return out + `<div class="noteline aside">${esc(it.text)}</div>`;
@@ -368,7 +368,7 @@ function feedHtml() {
     html += rowHtml(it, prev);
     prev = it;
   }
-  if (busy) html += liveNow.text ? `<div class="b say live" id="livebox">${esc(liveNow.text)}</div>`
+  if (busy) html += liveNow.text ? `<div class="b say live" id="livebox">${ChatTheme.rich(liveNow.text)}</div>`
     : `<div class="typing" id="livebox">${liveNow.thinking ? '在打腹稿' : '正在想'} <i></i><i></i><i></i></div>`;
   // 重新回答 under its last answer to her newest message.
   const last = items[items.length - 1];
@@ -477,6 +477,7 @@ async function reload() {
   const d = await api(`/cats/${catId}/messages`);
   cat = d.cat; busy = d.busy; items = d.items; moreBefore = d.more; rewindable = d.rewindable || [];
   watchLive();
+  if (window.ChatTheme && themeShown !== (cat.themeId || null)) { themeShown = cat.themeId || null; await ChatTheme.use(themeShown); }
   firstId = items.length ? items[0].id : 0;
   lastId = d.lastId;
   drawTop(); drawFeed({ stick: true });
@@ -525,27 +526,16 @@ function startChat() {
     <div class="top"><header>
       <a class="icon-btn" id="back" aria-label="返回猫们">${icon('back', 22)}</a>
       <div class="who" id="who"></div>
-      <button class="icon-btn" id="play" aria-label="一起玩">${icon('gamepad', 22, 1.7)}</button>
-      <button class="icon-btn" id="ova" aria-label="番外">${icon('drama', 22, 1.7)}</button>
-      <button class="icon-btn" id="mute"></button>
       <button class="icon-btn" id="book" aria-label="小本本">${icon('notebook', 22, 1.7)}</button>
-      <a class="icon-btn" id="set" href="/cats/${catId}/settings" aria-label="设置">${icon('sliders', 22, 1.7)}</a>
+      <button class="icon-btn" id="menu" aria-label="菜单：主线和故事">${icon('more', 22, 2)}</button>
     </header></div>
     <div id="feed"><div class="in"></div></div>
     <div class="bottom"><div class="banner" id="banner"></div><div class="picks" id="picks"></div><form id="say"><button type="button" class="pic-btn" id="pic" aria-label="发图片">${icon('image', 21, 1.7)}</button><button type="button" class="dollar" id="dollar" aria-label="戏外指令">$</button><textarea id="text" rows="1" maxlength="4000" placeholder="说点什么…"></textarea><button class="btn primary" type="submit" aria-label="发送">${icon('send', 18, 2)}</button></form>
       <input type="file" id="picfile" accept="image/*" multiple hidden></div>`;
   Maowo.backTo($('#back'), '/cats');
   $('#book').onclick = showNotebook;
-  $('#mute').onclick = async () => {
-    try {
-      cat = await api(`/cats/${catId}`, { method: 'PUT', json: { mute: !cat.mute } });
-      drawTop(); Maowo.tellUnread();
-      Maowo.toast(cat.mute ? '开了免打扰：它说话不出红点，消息照样留着' : '关了免打扰');
-    } catch (err) { Maowo.toast(err.message); }
-  };
+  $('#menu').onclick = () => StoryMenu.open({ catId, cat, story: null, onPlay: playTogether, onChange: () => reload().then(() => Maowo.tellUnread()).catch(() => {}) });
   const ta = $('#text');
-  $('#ova').onclick = () => cat.ova ? endOva() : startOva();
-  $('#play').onclick = playTogether;
   // $ at the start makes it an order from outside the story: the button just adds or takes away the $.
   const drawOrder = () => { $('#dollar').classList.toggle('on', /^[$＄]/.test(ta.value)); drawBanner(); };
   $('#dollar').onclick = () => { ta.value = /^[$＄]/.test(ta.value) ? ta.value.replace(/^[$＄]\s*/, '') : '$ ' + ta.value; drawOrder(); ta.focus(); };

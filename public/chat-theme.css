@@ -1,0 +1,20 @@
+/* 主题 on the chat pages: only when <body class="themed"> (set by chat-theme.js). The variables come from the theme. */
+.narr { color: var(--t-narr, inherit); font-style: var(--t-narr-style, normal); }
+.quote { color: var(--t-quote, inherit); font-weight: var(--t-quote-w, inherit); }
+.themed { color: var(--t-ink); }
+body.themed { background: var(--t-bg); }
+body.themed #app { background: var(--t-bg); isolation: isolate; }
+body.themed #app::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--t-img) center / cover no-repeat; opacity: var(--t-img-a); }
+.themed .top, .themed .bottom { background: var(--t-bar); -webkit-backdrop-filter: blur(var(--t-bar-blur)); backdrop-filter: blur(var(--t-bar-blur)); border-color: transparent; }
+.themed .top .n, .themed .top .icon-btn { color: var(--t-ink); }
+.themed .top .m, .themed .stamp, .themed .regen, .themed .wakeline { color: var(--t-ink); opacity: .72; }
+.themed .wakeline::before, .themed .wakeline::after { background: currentColor; opacity: .25; }
+.themed .b.say { background: var(--t-char); color: var(--t-char-ink); border-color: transparent; border-radius: var(--t-char-r); -webkit-backdrop-filter: blur(var(--t-char-blur)); backdrop-filter: blur(var(--t-char-blur)); }
+.themed .b.me { background: var(--t-me); color: var(--t-me-ink); border-radius: var(--t-me-r); -webkit-backdrop-filter: blur(var(--t-me-blur)); backdrop-filter: blur(var(--t-me-blur)); }
+.themed .b.say { border-bottom-left-radius: min(6px, var(--t-char-r)); }
+.themed .b.me { border-bottom-right-radius: min(6px, var(--t-me-r)); }
+.themed .b.me.order { border: 1.5px dashed currentColor; }
+.themed .typing { background: var(--t-char); color: var(--t-char-ink); border-color: transparent; }
+.themed .bottom textarea { background: var(--t-in); color: var(--t-in-ink); border-color: transparent; border-radius: var(--t-in-r); -webkit-backdrop-filter: blur(var(--t-in-blur)); backdrop-filter: blur(var(--t-in-blur)); }
+.themed .bottom textarea::placeholder { color: var(--t-in-ink); opacity: .55; }
+.themed .bottom .pic-btn, .themed .bottom .dollar { background: var(--t-in); color: var(--t-in-ink); border-color: transparent; border-radius: var(--t-in-r); }

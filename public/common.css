@@ -151,3 +151,12 @@ body.night .avatar.me { background: var(--text); color: var(--bg); }
 .votebox .vb-n { font-weight: 600; white-space: nowrap; }
 .votebox .vb-from { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
 .votebox .abstain .vb-to { font-weight: 400; color: var(--muted); }
+
+/* 全局外观 (绫's own background and glass, from /cats/look): set by common.js as variables on <html>.
+   Not on the chat pages (they wear a 主题) and not on pages marked .nolook (the game room has its night). */
+html.look { background: var(--l-bg); }
+html.look body:not(.chat):not(.nolook) { background: transparent; --card: var(--l-card); --white: var(--l-white); }
+html.look body:not(.chat):not(.nolook)::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--l-img) center / cover no-repeat; opacity: var(--l-img-a); }
+html.look.glass .tabbar { left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); padding: 6px; border-radius: 24px; border: 1px solid rgba(255, 255, 255, .55);
+  background: var(--l-nav); -webkit-backdrop-filter: blur(var(--l-nav-blur)) saturate(1.2); backdrop-filter: blur(var(--l-nav-blur)) saturate(1.2); box-shadow: 0 6px 22px rgba(60, 40, 20, .12); }
+html.look.glass .sheet-panel { --card: #FBF5EC; --white: #FFFBF5; }

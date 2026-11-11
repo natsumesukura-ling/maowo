@@ -6,6 +6,14 @@
 > **方向在变（2026-11-10）**：绫要把猫窝从「游戏大厅」大改成「可以陪她玩狼人杀的酒馆」，想法记在 [docs/NEXT.md](docs/NEXT.md)，**先读它**。
 > 这一页讲的是**现在跑着的代码**，仍然准确；但下面「一句话」里的定位、页面的主次、「网页风格」会被新方向取代，别把它们当成以后的目标。
 
+## 大改第一轮（2026-11-11 做完，照 docs/NEXT.md「定了的」）
+
+- **猫们页**（`public/cats.html`）：只有角色卡，一行一只（小方头像、名字、最近一句话 `card().last`）。右上角一个按钮去 **`/cats/manage`**（`public/cats-manage.html`）：搬进来新猫、拉群、每只猫的设置、面具、预设、世界书、主题、全局外观、钥匙、总开关。**长按一行**（0.55 秒）出菜单：置顶（`cats.pinned` / `cat_groups.pinned`，`ordered()` 里置顶的排前面）、免打扰、移动位置（进「排位置」模式，每行出上下箭头，不再是按住 2 秒拖）。
+- **聊天窗口**（`public/cat.html`）：顶上只留小本本和「⋯」菜单（`public/story-menu.js`，主线和故事窗口共用）：主线 / 各段故事切换、开新故事、告诉主线、改名、删、选主题、一起玩、免打扰、它的设置。番外按钮没有了；旧的番外代码（`ova_*`）还在，只为了把正在演的番外正常结束，以后可以删。
+- **故事**（`stories.js`，页面 `public/story.html`，网址 `/cats/<id>/s/<sid>`，`test/stories.js`）：每只猫一条主线 + 任意多段故事。表 `cat_stories`、`cat_story_messages`（和主线的 `cat_messages` 完全分开，所以主线的代码没动）。开故事：绫写背景设定，猫先开场；开关「带上主线的记忆」（`with_memory`，默认开：带前情提要和小本本）。故事里**没有工具**、不会被游戏叫醒；流式输出、`$` 戏外指令、重新回答、接着写、从这句重来、改它的话都有；太长了把旧的一半写进**这段故事自己的摘要**（`cat_stories.summary`）。请求的第一条 user 消息固定是一句开场提示（`OPENER`，不存库），这样开头不变。「告诉主线的它」：一段摘要（她写，或猫的模型总结）作为 `aside` 行进主线的记忆（`cats.kit.tellMain`）。人设部分用 `cats.kit.persona`（System prompt、放在设定里的预设、面具、常驻世界书；**关键词触发的世界书条目在故事里还不生效**）。
+- **主题和全局外观**（`themes.js`，页面 `public/themes.html`：`/cats/themes`、`/cats/themes/<id|new>`、`/cats/look`）：主题是一小份 JSON（背景图 / 透明度 / 底色、顶栏底栏、输入框、两种气泡的颜色 + 透明度 + 模糊 + 圆角 + 字色、旁白高亮、引用高亮），**只存认识的字段、每个都卡在范围里**（`cleanTheme`），页面用 `public/chat-theme.js` 变成 `<body class="themed">` 上的 CSS 变量，样式在 `public/chat-theme.css`。可以存好几套，`cats.theme_id`、`cat_stories.theme_id` 各选一套（故事没选跟猫的，都没选就是原来的暖纸）。旁白（`*…*`、`（…）`）和引用（`“…”`、`「…」`）在 `ChatTheme.rich()` 里上色。背景图传到 `<data>/theme-images/`，从 `/theme-img/<随机名>` 读（和头像一样靠随机名，CSS 带不了 token）。全局外观（表 `looks`，一人一份）管聊天窗口以外的页面：背景、卡片透明度、导航栏玻璃；`common.js` 的 `applyLook` 把它放到 `<html class="look">` 的变量上，存在 localStorage `maowo-look`，外层页面每次打开向服务器要最新的。聊天页（`body.chat`）和房间页（`body.nolook`）不吃全局外观。**群聊窗口还没接主题。**
+- 还没做（NEXT.md 里的）：预设的注入深度、游戏轻装模式、把 `cats.js` 拆开、头像选项 / 字体细调 / 自定义 CSS（美化第二批）、群聊的主题和流式。
+
 ## 一句话
 
 猫窝（maowo）是主人「绫」自己的小服务器：AI 和人一起玩桌游的平台（狼人杀、五子棋），加上 AI 写的**日记**、主人的**存档**。通过 MCP 接入 Claude 和 ChatGPT，也有手机网页。核心理念是**东西放在自己能控制的地方**，不依赖任何一个平台的账号。
@@ -100,7 +108,7 @@
   ```
   curl -fsSL "https://raw.githubusercontent.com/natsumesukura-ling/maowo/ccr-d223d08b-tyy5yy/deploy/install.sh?v=N" | sudo bash
   ```
-  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 73）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
+  `?v=N` 是为了绕过 GitHub 的缓存，每次给绫命令时把 N 加一（目前用到 74）。绫是在腾讯云网页的「登录 → 免密连接」终端里粘贴的。
 - 脚本做的事：装 Node.js 22 → 代码放 `/opt/maowo` → `npm ci` → systemd 服务 `maowo`（只监听 127.0.0.1:3000）→ Caddy 反代并自动申请 HTTPS 证书。
 - **数据全在 `/var/lib/maowo`**：`games.db`（SQLite，所有表）、`vault/`（存档文件）、`avatars/`（头像，文件名随机）、`maowo-token.txt`（主人 token）。更新只换 `/opt/maowo`，不碰数据。
 - 看日志：`journalctl -u maowo -n 50`；重启：`systemctl restart maowo`。
@@ -132,6 +140,8 @@ notify.js        消息提醒（铃铛、inbox、AI 工具回复末尾的提醒�
 wake.js          唤醒桥服务器端（SSE 推送、唤醒钥匙）；bridge/ 是装在 AI 电脑上的小程序
 lore.js          猫们的世界书（常驻 / 关键词触发，上传 txt / md / docx / 酒馆 json）
 cats.js          猫们：住在猫窝里的 AI（钥匙、窗口、调模型、小本本、闹钟、叫醒）；页面 public/cats.html、cat.html、cats-keys.js
+stories.js       故事：每只猫主线之外的一段段独立故事（见上面「大改第一轮」）
+themes.js        主题（聊天窗口的样子）和全局外观（其他页面）；页面 public/themes.html、chat-theme.js / .css
 bugs.js          Bug 本（含 REST 路由和 MCP 工具）
 vault.js         存档（含 REST 路由和 MCP 工具）
 backup.js        导出 / 导入 zip
